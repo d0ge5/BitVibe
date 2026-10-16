@@ -12,6 +12,13 @@ namespace ottobit
 {
 inline constexpr float kPi = 3.14159265358979323846f;
 
+// Linear blend that is exact at both ends. (a + (b - a) * t is off by a rounding error even at
+// t = 1, which would add noise to a signal that should pass through untouched.)
+inline float lerpExact(float a, float b, float t)
+{
+    return t <= 0.0f ? a : (t >= 1.0f ? b : a + (b - a) * t);
+}
+
 // One-pole smoother. Snaps to the target once it is close enough, which avoids denormals and
 // lets "neutral" settings reproduce the input bit-exactly.
 struct Smoother
@@ -144,7 +151,7 @@ public:
             phase += (1.0f - ratio) / window;
             phase -= std::floor(phase);
         }
-        return amount >= 1.0f ? wet : in + (wet - in) * amount;
+        return lerpExact(in, wet, amount);
     }
 
 private:

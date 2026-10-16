@@ -46,8 +46,10 @@ Name: "vst3"; Description: "VST3 plug-in"; Types: full plugin custom; Flags: fix
 Name: "standalone"; Description: "Standalone application (use without a DAW)"; Types: full
 
 [Files]
-; {commoncf64} is "Common Files" for an all-users install and %LOCALAPPDATA%\Programs\Common otherwise.
-Source: "{#BuildDir}\VST3\{#MyAppName}.vst3\*"; DestDir: "{commoncf64}\VST3\{#MyAppName}.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
+; {autocf} is "C:\Program Files\Common Files" for an all-users install and
+; %LOCALAPPDATA%\Programs\Common for a per-user install. (Do not use {commoncf} or {commoncf64}:
+; they stay on the system folder even in per-user mode, which a non-admin cannot write to.)
+Source: "{#BuildDir}\VST3\{#MyAppName}.vst3\*"; DestDir: "{autocf}\VST3\{#MyAppName}.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BuildDir}\Standalone\{#MyAppName}.exe"; DestDir: "{app}"; Components: standalone; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\..\NOTICE.md"; DestDir: "{app}"; DestName: "NOTICE.txt"; Flags: ignoreversion

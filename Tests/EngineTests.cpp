@@ -4,6 +4,7 @@
 #include "Engine.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <random>
@@ -65,13 +66,27 @@ Signal sine(double f, double seconds, float amp = 0.5f)
     return s;
 }
 
+// Portable pseudo-random numbers in [-1, 1) with full float precision. The standard distributions
+// give different values on MSVC and libc++, which made some checks depend on the platform.
+struct Rng
+{
+    uint32_t state;
+    explicit Rng(uint32_t seed) : state(seed != 0 ? seed : 1u) {}
+    float next()
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return (float) ((double) state / 4294967296.0) * 2.0f - 1.0f;
+    }
+};
+
 Signal noise(double seconds, float amp = 0.5f, unsigned seed = 1)
 {
-    std::mt19937 rng(seed);
-    std::uniform_real_distribution<float> d(-amp, amp);
+    Rng rng(seed);
     Signal s((size_t) (seconds * kFs));
     for (auto& v : s)
-        v = d(rng);
+        v = amp * rng.next();
     return s;
 }
 
@@ -230,7 +245,7 @@ void testSampleRate()
     const Signal out = render(p, noise(1.0));
     size_t same = 0, total = 0;
     for (size_t i = 3000; i + 1 < out.size(); ++i, ++total)
-        same += out[i] == out[i + 1];
+        same += std::abs(out[i] - out[i + 1]) < 1.0e-6f; // held = unchanged (up to rounding)
     const double frac = (double) same / (double) total;
     CHECK(std::abs(frac - 11.0 / 12.0) < 0.01, "hold fraction %g (expected %g)", frac, 11.0 / 12.0);
 }
@@ -284,10 +299,9 @@ void testAttackDetector()
 Signal singleBurst(double seconds)
 {
     Signal s((size_t) (seconds * kFs), 0.0f);
-    std::mt19937 rng(7);
-    std::uniform_real_distribution<float> d(-0.6f, 0.6f);
+    Rng rng(7);
     for (size_t i = 0; i < (size_t) (0.02 * kFs); ++i)
-        s[(size_t) (0.1 * kFs) + i] = d(rng) * (1.0f - (float) i / (0.02f * (float) kFs));
+        s[(size_t) (0.1 * kFs) + i] = 0.6f * rng.next() * (1.0f - (float) i / (0.02f * (float) kFs));
     return s;
 }
 
@@ -393,7 +407,7 @@ void testSequencer()
     out = render(s, noise(1.0));
     size_t same = 0, total = 0;
     for (size_t i = 6000; i + 1 < out.size(); ++i, ++total)
-        same += out[i] == out[i + 1];
+        same += std::abs(out[i] - out[i + 1]) < 1.0e-6f; // held = unchanged (up to rounding)
     CHECK(std::abs((double) same / (double) total - 0.9) < 0.02, "hold fraction %g", (double) same / (double) total);
 
     // Audio-band sequencing (x128 at 6000 BPM) must still be stable, and gates the signal (ring-mod-like).

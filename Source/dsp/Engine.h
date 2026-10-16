@@ -204,7 +204,7 @@ public:
                 }
 
                 const float filtered = ch.ladder.process(y, G);
-                y += (filtered - y) * filterMix;
+                y = lerpExact(y, filtered, filterMix);
                 y *= muteGain;
                 y *= outGain;
 
@@ -214,7 +214,7 @@ public:
                     ch.ladder.reset();
                 }
 
-                io[c][n] = dry[(size_t) c] + (y - dry[(size_t) c]) * bypassMix;
+                io[c][n] = lerpExact(dry[(size_t) c], y, bypassMix);
             }
 
             beatPhase += 1.0 / beatSamples;
