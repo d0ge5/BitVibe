@@ -1,10 +1,36 @@
-# Ottobit Jr. Replica (VST3)
+# Ottoclone
 
-An unofficial software recreation of the Meris Ottobit Jr. bitcrusher / filter / stutter / sequencer
-pedal, built from the behaviour documented in the official manual (v6) and published reviews. It is a
-behavioural re-implementation written from scratch: no Meris code, firmware or artwork is used.
-"Meris" and "Ottobit" are trademarks of their owner; if you ever distribute this, give it its own
-name and face.
+A bitcrusher / ladder-filter / stutter / 6-step sequencer effect plug-in (VST3, plus Audio Unit and a
+Standalone app) that recreates the behaviour of the Meris Ottobit Jr. guitar pedal. It is built from
+the behaviour documented in the official manual (v6) and published reviews, and written from scratch:
+no Meris code, firmware or artwork is used.
+
+Ottoclone is an independent, unofficial project, **not affiliated with, endorsed by or sponsored by
+Meris**. "Meris" and "Ottobit" are trademarks of their owner and are used here only to say what this
+is modelled on.
+
+## Installing
+
+Download the installer for your system:
+
+| System | Installer | What it installs |
+| --- | --- | --- |
+| Windows 10/11 (64-bit) | `Ottoclone-<version>-Windows-x64-Setup.exe` | VST3 in `C:\Program Files\Common Files\VST3`, optional Standalone app |
+| macOS 11+ (Apple Silicon and Intel) | `Ottoclone-<version>-macOS.pkg` | VST3, Audio Unit and optional Standalone app |
+
+**Windows.** Run the setup. The installers are not code-signed, so SmartScreen may say "Windows
+protected your PC": choose *More info → Run anyway*. The installer asks for administrator rights to
+write to the shared VST3 folder; if you pick *Install for me only* it installs into
+`%LOCALAPPDATA%\Programs\Common\VST3` instead (most, but not all, hosts scan that folder). Uninstall
+from *Settings → Apps*.
+
+**macOS.** Open the `.pkg` (right-click → *Open* if macOS blocks it) and pick the formats you want.
+The build is not signed with an Apple Developer ID, so macOS may refuse the plug-in or app the first
+time: open *System Settings → Privacy & Security* and choose *Open Anyway*. To uninstall delete
+`/Library/Audio/Plug-Ins/VST3/Ottoclone.vst3`, `/Library/Audio/Plug-Ins/Components/Ottoclone.component`
+and `/Applications/Ottoclone.app`.
+
+Then restart your DAW or rescan plug-ins; Ottoclone is listed under *Fx / Distortion*.
 
 ## Controls
 
@@ -38,6 +64,7 @@ tempo, input / output gain, trigger sensitivity, *Sync* to the host tempo, *Hold
 (instrument vs line level) and the stutter snippet length (1/4, 1/8 or 1/16 note).
 
 The factory sound is Preset 1: pitch sequencer, continuous, steps -7, -3, -12, +7, +4, 0 semitones.
+Set **Sequencer** to *Off* to hear a clean signal.
 
 ## What follows the manual, and what is a guess
 
@@ -63,41 +90,61 @@ hardware preset slots / MIDI CC / SysEx (use your DAW's presets and automation i
 mono-sum of a stereo input when stutter/sequencer are active (this version stays in stereo), and the
 true/buffered bypass options.
 
-## Building
+## Building from source
 
-Needs Visual Studio 2026 (C++ workload), CMake and Ninja. JUCE 8 is a git submodule in
-`third_party/JUCE`, pinned to 8.0.12 (JUCE is AGPLv3 / commercial: fine for personal use, but
-distributing a closed-source build needs a JUCE licence).
+Needs a C++20 toolchain and CMake. JUCE 8 is a git submodule in `third_party/JUCE`, pinned to 8.0.12.
 
 ```bat
-git clone --recursive https://github.com/<you>/ottoclone.git
+git clone --recursive https://github.com/d0ge5/ottoclone.git
 cd ottoclone
 :: or, in an existing clone:  git submodule update --init
 ```
 
+**Windows** (Visual Studio 2026 C++ workload, CMake, Ninja):
+
 ```bat
-build.bat                  :: plugin (VST3 + Standalone) and the DSP tests
-build.bat ottobit_tests    :: just the DSP tests
-build\ottobit_tests.exe    :: run them
+build.bat                      :: plugin (VST3 + Standalone) and the DSP tests
+build.bat ottobit_tests        :: just the DSP tests
+build\ottobit_tests.exe        :: run them
 ```
 
-The VST3 ends up in `build\OttobitJrReplica_artefacts\Release\VST3\`. Copy the whole
-`Ottobit Jr Replica.vst3` folder to `C:\Program Files\Common Files\VST3\` (needs admin) and rescan
-plugins in your DAW. A Standalone app is built in `build\OttobitJrReplica_artefacts\Release\Standalone\`
-for quick testing without a DAW.
+The VST3 ends up in `build\Ottoclone_artefacts\Release\VST3\Ottoclone.vst3` and the Standalone app in
+`...\Release\Standalone\`.
+
+**macOS** (Xcode command line tools, CMake) builds a universal binary with VST3 + Audio Unit +
+Standalone:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+### Making the installers
+
+* **Windows**: install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`),
+  run `build.bat`, then `installer\windows\build_installer.bat`. The result is
+  `dist\Ottoclone-<version>-Windows-x64-Setup.exe`.
+* **macOS**: needs a Mac. Either run `installer/macos/build_pkg.sh build dist` after building, or run the
+  **Build installers** GitHub Actions workflow (Actions tab → *Run workflow*, or push a `v*` tag), which
+  builds the universal binaries on a macOS runner, runs the DSP tests, checks the Audio Unit with
+  `auval` and uploads `Ottoclone-<version>-macOS.pkg` as a workflow artifact.
+* The version number lives in the `VERSION` file.
+* Signing: the Windows installer and macOS package are unsigned by default. `build_pkg.sh` can sign and
+  notarize if you export Apple Developer credentials (see the comments at the top of the script; that
+  path has not been exercised yet).
 
 ### Verification tools
 
 ```bat
 cmake -S . -B build -DOTTOBIT_BUILD_SMOKETEST=ON
-build.bat OttobitSmokeTest OttobitEditorSnapshot
+build.bat OttocloneSmokeTest OttocloneEditorSnapshot
 ```
 
-* `OttobitSmokeTest <.vst3> <outdir>` loads the built VST3 through JUCE's plugin host, checks the
+* `OttocloneSmokeTest <.vst3> <outdir>` loads the built VST3 through JUCE's plugin host, checks the
   parameters, runs audio through several settings, tests bypass / state save-restore / odd block
   sizes, and writes demo WAVs (a plucked string through the factory sound, bit-crush + filter,
   stutter, filter sequence).
-* `OttobitEditorSnapshot <outdir>` renders the editor (both layers) to PNG without opening a window.
+* `OttocloneEditorSnapshot <outdir>` renders the editor (both layers) to PNG without opening a window.
 
 The DSP tests also pass under MSVC AddressSanitizer (`/fsanitize=address`).
 
@@ -110,5 +157,15 @@ Source/dsp/Engine.h       the pedal: signal chain, sequencer, tempo (no JUCE dep
 Source/Plugin*.{h,cpp}    JUCE processor (parameters, state) and the pedal-shaped editor
 Tests/EngineTests.cpp     offline checks of everything above
 Tools/                    VST3 smoke-test host and editor-to-PNG renderer
+installer/windows         Inno Setup script and build wrapper
+installer/macos           .pkg build script, installer text, signing entitlements
+.github/workflows         macOS installer build
 artifacts/                editor screenshots (the demo WAVs are generated by the smoke test, not committed)
 ```
+
+## Licence
+
+Ottoclone is free software under the **GNU Affero General Public License v3.0** (`LICENSE`). It uses
+JUCE 8 under JUCE's AGPLv3 option and the MIT-licensed VST 3 SDK; see `NOTICE.md`. If you give anyone
+a build, you must also make the corresponding source available to them (this repository does that
+once it is public). VST is a trademark of Steinberg Media Technologies GmbH.

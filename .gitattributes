@@ -3,3 +3,6 @@
 *.cmd text eol=crlf
 *.png binary
 *.wav binary
+*.sh text eol=lf
+*.yml text eol=lf
+*.in text eol=lf

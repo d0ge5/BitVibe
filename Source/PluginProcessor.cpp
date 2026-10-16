@@ -83,7 +83,7 @@ OttobitProcessor::OttobitProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", AudioChannelSet::stereo(), true)
                          .withOutput("Output", AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "OttobitJr", createLayout())
+      apvts(*this, nullptr, "Ottoclone", createLayout())
 {
     auto raw = [this](const char* id) { return apvts.getRawParameterValue(id); };
     pSample = raw(ids::sampleRate);

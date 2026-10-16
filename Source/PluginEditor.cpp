@@ -486,10 +486,10 @@ void OttobitEditor::paint(Graphics& g)
     // Title
     g.setColour(kInk);
     g.setFont(bold(26.0f));
-    g.drawText("OTTOBIT Jr.", Rectangle<int>(kFace.getX(), 22, kFace.getWidth(), 32), Justification::centred);
+    g.drawText("OTTOCLONE", Rectangle<int>(kFace.getX(), 22, kFace.getWidth(), 32), Justification::centred);
     g.setColour(kInkDim);
     g.setFont(plain(10.5f));
-    g.drawText("UNOFFICIAL SOFTWARE REPLICA", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
+    g.drawText("UNOFFICIAL  -  NOT AFFILIATED WITH MERIS", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
 
     const int currentStep = proc.getEngine().getCurrentStep();
 

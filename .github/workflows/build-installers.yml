@@ -1,0 +1,58 @@
+name: Build installers
+
+# Builds the macOS installer (universal arm64 + x86_64) on a GitHub macOS runner.
+# Run it by hand (Actions tab -> "Build installers" -> Run workflow, or `gh workflow run`), or push
+# a tag like v0.1.0. The Windows installer is built locally with installer\windows\build_installer.bat.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  macos:
+    name: macOS installer (universal)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: DSP tests
+        run: ./build/ottobit_tests
+
+      - name: Check architectures
+        run: |
+          lipo -info build/Ottoclone_artefacts/Release/VST3/Ottoclone.vst3/Contents/MacOS/Ottoclone
+          lipo -info build/Ottoclone_artefacts/Release/AU/Ottoclone.component/Contents/MacOS/Ottoclone
+
+      - name: Validate Audio Unit (informational)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/Ottoclone_artefacts/Release/AU/Ottoclone.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Otcl Ottc
+
+      - name: Package
+        # Without secrets this makes an ad-hoc-signed, unsigned-pkg installer.
+        env:
+          APPLE_APP_IDENTITY: ${{ secrets.APPLE_APP_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash installer/macos/build_pkg.sh build dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ottoclone-macOS
+          path: dist/*.pkg
+          if-no-files-found: error
