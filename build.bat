@@ -1,7 +1,7 @@
 @echo off
 rem Configures and builds with the Visual Studio 2026 C++ toolchain + Ninja.
 rem Usage:  build.bat [target ...]        (default: all)
-rem         build.bat ottobit_tests       (DSP tests only, no JUCE compile)
+rem         build.bat bitvibe_tests       (DSP tests only, no JUCE compile)
 setlocal
 
 set "VCVARS=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"

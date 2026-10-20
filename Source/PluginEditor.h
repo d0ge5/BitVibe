@@ -51,11 +51,11 @@ private:
     bool pressed = false;
 };
 
-class OttobitEditor : public juce::AudioProcessorEditor, private juce::Timer
+class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
-    explicit OttobitEditor(OttobitProcessor&);
-    ~OttobitEditor() override;
+    explicit BitVibeEditor(BitVibeProcessor&);
+    ~BitVibeEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -81,9 +81,9 @@ private:
     juce::Point<float> knobCentre(int index) const;
     juce::String readoutText(int index) const;
     float rawValue(const char* id) const;
-    ottobit::SeqType seqType() const;
+    bitvibe::SeqType seqType() const;
 
-    OttobitProcessor& proc;
+    BitVibeProcessor& proc;
     PedalLookAndFeel laf;
     juce::Image background;
 
@@ -107,5 +107,5 @@ private:
     bool tapDown = false, holdFromTap = false;
     double tapPressMs = 0.0;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OttobitEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BitVibeEditor)
 };

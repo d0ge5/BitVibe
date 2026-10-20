@@ -1,6 +1,6 @@
 #pragma once
 
-// DSP building blocks for the Ottobit Jr. replica. Header-only, no JUCE dependency.
+// DSP building blocks for BitVibe. Header-only, no JUCE dependency.
 // Nothing here allocates after prepare(), so it is safe to call from the audio thread.
 
 #include <algorithm>
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace ottobit
+namespace bitvibe
 {
 inline constexpr float kPi = 3.14159265358979323846f;
 
@@ -179,8 +179,8 @@ private:
 };
 
 // Four-pole transistor-ladder-style low-pass (zero-delay-feedback form) with a soft clipper in
-// the loop. The manual calls the pedal's filter a "Meris original ladder style low pass filter"
-// and a review describes it as resonant, but the resonance amount is not documented.
+// the loop. The hardware's documentation describes its filter as a ladder-style low-pass and a
+// review describes it as resonant, but the resonance amount is not documented.
 // ASSUMED: fixed moderate resonance.
 class LadderFilter
 {
@@ -375,4 +375,4 @@ private:
     bool reverse = false, infinite = false, heldByUser = false;
     State state = State::Idle;
 };
-} // namespace ottobit
+} // namespace bitvibe

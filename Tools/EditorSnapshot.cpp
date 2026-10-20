@@ -1,5 +1,5 @@
 // Instantiates the processor and editor directly (no plugin host) and renders the GUI to PNG files,
-// so the look can be checked without opening a DAW.   OttobitEditorSnapshot <output directory>
+// so the look can be checked without opening a DAW.   BitVibeEditorSnapshot <output directory>
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -10,13 +10,13 @@ using namespace juce;
 
 namespace
 {
-void setValue(OttobitProcessor& p, const char* id, float plain)
+void setValue(BitVibeProcessor& p, const char* id, float plain)
 {
     if (auto* prm = p.apvts.getParameter(id))
         prm->setValueNotifyingHost(prm->convertTo0to1(plain));
 }
 
-void save(OttobitEditor& ed, const File& file)
+void save(BitVibeEditor& ed, const File& file)
 {
     auto img = ed.createComponentSnapshot(ed.getLocalBounds(), true, 1.5f);
     file.deleteFile();
@@ -32,19 +32,19 @@ int main(int argc, char** argv)
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc < 2)
     {
-        std::puts("usage: OttobitEditorSnapshot <output dir>");
+        std::puts("usage: BitVibeEditorSnapshot <output dir>");
         return 2;
     }
     ScopedJuceInitialiser_GUI init;
     const File outDir(argv[1]);
     outDir.createDirectory();
 
-    OttobitProcessor processor;
+    BitVibeProcessor processor;
     processor.setPlayConfigDetails(2, 2, 48000.0, 512);
     processor.prepareToPlay(48000.0, 512);
 
     {
-        std::unique_ptr<OttobitEditor> ed(static_cast<OttobitEditor*>(processor.createEditor()));
+        std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(processor.createEditor()));
         save(*ed, outDir.getChildFile("editor_front.png"));
         ed->setAltLayer(true);
         save(*ed, outDir.getChildFile("editor_alt_pitch.png"));
@@ -58,7 +58,7 @@ int main(int argc, char** argv)
     setValue(processor, "seqType", 1.0f);
     setValue(processor, "hold", 1.0f);
     {
-        std::unique_ptr<OttobitEditor> ed(static_cast<OttobitEditor*>(processor.createEditor()));
+        std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(processor.createEditor()));
         save(*ed, outDir.getChildFile("editor_played.png"));
         ed->setAltLayer(true);
         save(*ed, outDir.getChildFile("editor_alt_filter.png"));

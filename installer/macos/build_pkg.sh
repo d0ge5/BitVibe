@@ -4,9 +4,9 @@
 #   installer/macos/build_pkg.sh <cmake build dir> <output dir>
 #
 # The package offers three choices (all ticked by default):
-#   VST3         -> /Library/Audio/Plug-Ins/VST3/Ottoclone.vst3
-#   Audio Unit   -> /Library/Audio/Plug-Ins/Components/Ottoclone.component
-#   Standalone   -> /Applications/Ottoclone.app
+#   VST3         -> /Library/Audio/Plug-Ins/VST3/BitVibe.vst3
+#   Audio Unit   -> /Library/Audio/Plug-Ins/Components/BitVibe.component
+#   Standalone   -> /Applications/BitVibe.app
 #
 # Without any credentials the bundles are ad-hoc signed and the .pkg is unsigned, so macOS will
 # show an "unidentified developer" warning on first open (see the conclusion page). To produce a
@@ -23,11 +23,11 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 BUILD="${1:?usage: build_pkg.sh <cmake build dir> <output dir>}"
 OUT="${2:?usage: build_pkg.sh <cmake build dir> <output dir>}"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
-ART="$BUILD/Ottoclone_artefacts/Release"
+ART="$BUILD/BitVibe_artefacts/Release"
 
-VST3="$ART/VST3/Ottoclone.vst3"
-AU="$ART/AU/Ottoclone.component"
-APP="$ART/Standalone/Ottoclone.app"
+VST3="$ART/VST3/BitVibe.vst3"
+AU="$ART/AU/BitVibe.component"
+APP="$ART/Standalone/BitVibe.app"
 for b in "$VST3" "$AU" "$APP"; do
     [[ -d "$b" ]] || { echo "error: missing build artefact: $b" >&2; exit 1; }
 done
@@ -53,7 +53,7 @@ sign_bundle "$AU"
 sign_bundle "$APP" --entitlements "$HERE/Standalone.entitlements"
 
 echo "== Architectures"
-for b in "$VST3/Contents/MacOS/Ottoclone" "$AU/Contents/MacOS/Ottoclone" "$APP/Contents/MacOS/Ottoclone"; do
+for b in "$VST3/Contents/MacOS/BitVibe" "$AU/Contents/MacOS/BitVibe" "$APP/Contents/MacOS/BitVibe"; do
     lipo -info "$b"
 done
 
@@ -77,16 +77,16 @@ make_component() {
 }
 
 echo "== Component packages"
-make_component vst3       com.ottoclone.pkg.vst3       /Library/Audio/Plug-Ins/VST3       "$VST3"
-make_component au         com.ottoclone.pkg.au         /Library/Audio/Plug-Ins/Components "$AU"
-make_component standalone com.ottoclone.pkg.standalone /Applications                      "$APP"
+make_component vst3       com.bitvibe.pkg.vst3       /Library/Audio/Plug-Ins/VST3       "$VST3"
+make_component au         com.bitvibe.pkg.au         /Library/Audio/Plug-Ins/Components "$AU"
+make_component standalone com.bitvibe.pkg.standalone /Applications                      "$APP"
 
 echo "== Installer"
 sed "s/@VERSION@/$VERSION/g" "$HERE/distribution.xml.in" > "$WORK/distribution.xml"
 cp "$HERE/resources/welcome.html" "$HERE/resources/conclusion.html" "$WORK/resources/"
 cp "$ROOT/LICENSE" "$WORK/resources/license.txt"
 
-PKG="$OUT/Ottoclone-$VERSION-macOS.pkg"
+PKG="$OUT/BitVibe-$VERSION-macOS.pkg"
 rm -f "$PKG"
 args=(--distribution "$WORK/distribution.xml" --resources "$WORK/resources" --package-path "$WORK/pkgs")
 if [[ -n "${APPLE_INSTALLER_IDENTITY:-}" ]]; then

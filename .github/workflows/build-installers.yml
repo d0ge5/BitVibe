@@ -25,21 +25,21 @@ jobs:
         run: cmake --build build --parallel
 
       - name: DSP tests
-        run: ./build/ottobit_tests
+        run: ./build/bitvibe_tests
 
       - name: Check architectures
         run: |
-          lipo -info build/Ottoclone_artefacts/Release/VST3/Ottoclone.vst3/Contents/MacOS/Ottoclone
-          lipo -info build/Ottoclone_artefacts/Release/AU/Ottoclone.component/Contents/MacOS/Ottoclone
+          lipo -info build/BitVibe_artefacts/Release/VST3/BitVibe.vst3/Contents/MacOS/BitVibe
+          lipo -info build/BitVibe_artefacts/Release/AU/BitVibe.component/Contents/MacOS/BitVibe
 
       - name: Validate Audio Unit (informational)
         continue-on-error: true
         timeout-minutes: 10
         run: |
           mkdir -p ~/Library/Audio/Plug-Ins/Components
-          cp -R build/Ottoclone_artefacts/Release/AU/Ottoclone.component ~/Library/Audio/Plug-Ins/Components/
+          cp -R build/BitVibe_artefacts/Release/AU/BitVibe.component ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar || true
-          auval -v aufx Otcl Ottc
+          auval -v aufx Bvib Bvbe
 
       - name: Package
         # Without secrets this makes an ad-hoc-signed, unsigned-pkg installer.
@@ -53,6 +53,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Ottoclone-macOS
+          name: BitVibe-macOS
           path: dist/*.pkg
           if-no-files-found: error

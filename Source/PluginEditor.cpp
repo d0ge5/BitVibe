@@ -207,7 +207,7 @@ void PedalButton::mouseUp(const MouseEvent& e)
 // ------------------------------------------------------------------------------------------
 // Editor
 
-OttobitEditor::OttobitEditor(OttobitProcessor& p)
+BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     : AudioProcessorEditor(&p),
       proc(p),
       bypassParam(*p.apvts.getParameter(ids::bypass), [](float) {}),
@@ -219,8 +219,8 @@ OttobitEditor::OttobitEditor(OttobitProcessor& p)
     static constexpr const char* frontIds[kKnobs] = { ids::sampleRate, ids::filter, ids::bits,
                                                       ids::stutter,    ids::seqPlay, ids::seqMult };
     static constexpr const char* labels[kKnobs] = { "SAMPLE", "FILTER", "BITS", "STUTTER", "SEQUENCER", "SEQ MULT" };
-    const int ticks[kKnobs] = { 11, 11, 11, ottobit::mapping::kStutterPositions, ottobit::mapping::kSeqPlayPositions,
-                                ottobit::mapping::kSeqMultPositions };
+    const int ticks[kKnobs] = { 11, 11, 11, bitvibe::mapping::kStutterPositions, bitvibe::mapping::kSeqPlayPositions,
+                                bitvibe::mapping::kSeqMultPositions };
 
     for (int i = 0; i < kKnobs; ++i)
     {
@@ -314,7 +314,7 @@ OttobitEditor::OttobitEditor(OttobitProcessor& p)
     startTimerHz(30);
 }
 
-OttobitEditor::~OttobitEditor()
+BitVibeEditor::~BitVibeEditor()
 {
     stopTimer();
     for (auto& k : knobs)
@@ -331,7 +331,7 @@ OttobitEditor::~OttobitEditor()
     setLookAndFeel(nullptr);
 }
 
-void OttobitEditor::configureKnob(Slider& s, int ticks)
+void BitVibeEditor::configureKnob(Slider& s, int ticks)
 {
     s.setSliderStyle(Slider::RotaryVerticalDrag);
     s.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
@@ -341,7 +341,7 @@ void OttobitEditor::configureKnob(Slider& s, int ticks)
     s.getProperties().set("ticks", ticks);
 }
 
-void OttobitEditor::setAltLayer(bool on)
+void BitVibeEditor::setAltLayer(bool on)
 {
     altLayer = on;
     for (auto& k : knobs)
@@ -354,30 +354,30 @@ void OttobitEditor::setAltLayer(bool on)
     repaint();
 }
 
-float OttobitEditor::rawValue(const char* id) const
+float BitVibeEditor::rawValue(const char* id) const
 {
     return proc.apvts.getRawParameterValue(id)->load();
 }
 
-ottobit::SeqType OttobitEditor::seqType() const
+bitvibe::SeqType BitVibeEditor::seqType() const
 {
-    return (ottobit::SeqType) jlimit(0, 2, roundToInt(rawValue(ids::seqType)));
+    return (bitvibe::SeqType) jlimit(0, 2, roundToInt(rawValue(ids::seqType)));
 }
 
-Rectangle<int> OttobitEditor::knobBounds(int index) const
+Rectangle<int> BitVibeEditor::knobBounds(int index) const
 {
     const auto c = knobCentre(index);
     return Rectangle<int>(kKnobSize, kKnobSize).withCentre(c.toInt());
 }
 
-Point<float> OttobitEditor::knobCentre(int index) const
+Point<float> BitVibeEditor::knobCentre(int index) const
 {
     return { (float) kColX[(size_t) (index % 3)], (float) kRowY[(size_t) (index / 3)] };
 }
 
-String OttobitEditor::readoutText(int i) const
+String BitVibeEditor::readoutText(int i) const
 {
-    using namespace ottobit;
+    using namespace bitvibe;
 
     if (altLayer)
     {
@@ -416,7 +416,7 @@ String OttobitEditor::readoutText(int i) const
     }
 }
 
-void OttobitEditor::buildBackground()
+void BitVibeEditor::buildBackground()
 {
     background = Image(Image::ARGB, kWidth, kHeight, true);
     Graphics g(background);
@@ -455,7 +455,7 @@ void OttobitEditor::buildBackground()
     g.drawRoundedRectangle(glob.reduced(0.5f), 10.0f, 1.0f);
 }
 
-void OttobitEditor::resized()
+void BitVibeEditor::resized()
 {
     for (int i = 0; i < kKnobs; ++i)
     {
@@ -479,17 +479,17 @@ void OttobitEditor::resized()
     stutterLenBox.setBounds(304, 654, 148, 24);
 }
 
-void OttobitEditor::paint(Graphics& g)
+void BitVibeEditor::paint(Graphics& g)
 {
     g.drawImageAt(background, 0, 0);
 
     // Title
     g.setColour(kInk);
     g.setFont(bold(26.0f));
-    g.drawText("OTTOCLONE", Rectangle<int>(kFace.getX(), 22, kFace.getWidth(), 32), Justification::centred);
+    g.drawText("BITVIBE", Rectangle<int>(kFace.getX(), 22, kFace.getWidth(), 32), Justification::centred);
     g.setColour(kInkDim);
     g.setFont(plain(10.5f));
-    g.drawText("UNOFFICIAL  -  NOT AFFILIATED WITH MERIS", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
+    g.drawText("UNOFFICIAL  -  INDEPENDENT PROJECT", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
 
     const int currentStep = proc.getEngine().getCurrentStep();
 
@@ -518,8 +518,8 @@ void OttobitEditor::paint(Graphics& g)
     // Footswitch area
     const bool bypassed = rawValue(ids::bypass) > 0.5f;
     const auto type = seqType();
-    drawLed(g, { 88.0f - 52.0f, 383.0f }, 4.5f, kAccent, type == ottobit::SeqType::Pitch);
-    drawLed(g, { 88.0f + 52.0f, 383.0f }, 4.5f, kAccent, type == ottobit::SeqType::Filter);
+    drawLed(g, { 88.0f - 52.0f, 383.0f }, 4.5f, kAccent, type == bitvibe::SeqType::Pitch);
+    drawLed(g, { 88.0f + 52.0f, 383.0f }, 4.5f, kAccent, type == bitvibe::SeqType::Filter);
     drawLed(g, { 88.0f, 410.0f }, 6.0f, kRed, !bypassed);
 
     const bool tapBlink = proc.getEngine().getBeatPhase() < 0.18f;
@@ -573,7 +573,7 @@ void OttobitEditor::paint(Graphics& g)
     }
 }
 
-void OttobitEditor::timerCallback()
+void BitVibeEditor::timerCallback()
 {
     // Holding the tap switch freezes the stutter buffer (manual, section 4).
     if (tapDown && !holdFromTap && Time::getMillisecondCounterHiRes() - tapPressMs > 300.0)
@@ -586,7 +586,7 @@ void OttobitEditor::timerCallback()
     const auto type = seqType();
     for (auto& k : knobs)
     {
-        const int ticks = type == ottobit::SeqType::Pitch ? 27 : 11;
+        const int ticks = type == bitvibe::SeqType::Pitch ? 27 : 11;
         if ((int) k.step.getProperties().getWithDefault("ticks", 11) != ticks)
             k.step.getProperties().set("ticks", ticks);
     }

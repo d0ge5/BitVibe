@@ -1,10 +1,10 @@
 # Notices
 
-**Ottoclone** is free software, licensed under the **GNU Affero General Public License v3.0**
-(see `LICENSE`). Copyright (C) 2026 the Ottoclone contributors. The complete corresponding source
-code is at <https://github.com/d0ge5/ottoclone>.
+**BitVibe** is free software, licensed under the **GNU Affero General Public License v3.0**
+(see `LICENSE`). Copyright (C) 2026 the BitVibe contributors. The complete corresponding source
+code is at <https://github.com/d0ge5/BitVibe>.
 
-Ottoclone is an independent, unofficial software recreation of the behaviour of a guitar pedal,
+BitVibe is an independent, unofficial software recreation of the behaviour of a guitar pedal,
 written from the publicly available manual and published reviews. It is **not affiliated with,
 endorsed by or sponsored by Meris**. "Meris" and "Ottobit" are trademarks of their respective owner
 and are used here only to say what this software is modelled on.

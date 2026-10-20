@@ -1,13 +1,13 @@
 #pragma once
 
-// Ottobit Jr. replica engine: stereo-capable, header-only, no JUCE dependency.
+// BitVibe engine: stereo-capable, header-only, no JUCE dependency.
 //
 // Signal chain (per channel):   in -> Stutter -> Pitch (sequencer) -> Sample-rate reducer
 //                                  -> Bit-depth reducer (+ gate) -> Ladder filter -> Mute -> out
 // One shared controller runs the pick-attack detector, the 6-step sequencer, tempo and the
 // stutter triggers, so both channels always stay in lock-step.
 //
-// ASSUMED (the manual does not specify): the order of the blocks in the chain, the fixed ladder
+// ASSUMED (the published documentation does not specify): the order of the blocks in the chain, the fixed ladder
 // resonance, the stutter snippet length (a note division of the tempo) and the detector design.
 
 #include "Components.h"
@@ -16,7 +16,7 @@
 #include <array>
 #include <atomic>
 
-namespace ottobit
+namespace bitvibe
 {
 struct Params
 {
@@ -439,4 +439,4 @@ private:
     std::atomic<int> stepOut { -1 };
     std::atomic<bool> stutterOut { false };
 };
-} // namespace ottobit
+} // namespace bitvibe

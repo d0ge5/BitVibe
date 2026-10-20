@@ -1,13 +1,13 @@
-# Ottoclone
+# BitVibe
 
 <table>
   <tr>
-    <td align="center"><img src="artifacts/editor_front.png" width="340" alt="Ottoclone front panel"><br><sub>Front panel</sub></td>
-    <td align="center"><img src="artifacts/editor_alt_pitch.png" width="340" alt="Ottoclone Alt layer showing the six sequencer steps"><br><sub>Alt layer: the six sequencer steps</sub></td>
+    <td align="center"><img src="artifacts/editor_front.png" width="340" alt="BitVibe front panel"><br><sub>Front panel</sub></td>
+    <td align="center"><img src="artifacts/editor_alt_pitch.png" width="340" alt="BitVibe Alt layer showing the six sequencer steps"><br><sub>Alt layer: the six sequencer steps</sub></td>
   </tr>
 </table>
 
-**Ottoclone** is a free, open-source bitcrusher / ladder-filter / stutter / 6-step-sequencer effect for
+**BitVibe** is a free, open-source bitcrusher / ladder-filter / stutter / 6-step-sequencer effect for
 guitar and synths: a **VST3** plug-in (plus **Audio Unit** on macOS and a **Standalone** app). It is written
 from scratch in C++ with [JUCE](https://juce.com) and is inspired by a hardware pedal (see
 [Credits](#credits-and-licence)). The aim is to put those ideas, plus some extras only a plug-in can offer,
@@ -17,7 +17,7 @@ in the hands of more people for free.
 > and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
 > macOS build has not been run on a real Mac yet. Bug reports are welcome.
 >
-> Ottoclone is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
+> BitVibe is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
 > the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
 [Features](#features) · [Install](#install) · [Using it](#using-it) · [Design notes](#design-notes) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
@@ -37,14 +37,14 @@ in the hands of more people for free.
 
 ## Install
 
-Prebuilt installers will be attached to the [Releases](https://github.com/d0ge5/ottoclone/releases) page.
+Prebuilt installers will be attached to the [Releases](https://github.com/d0ge5/BitVibe/releases) page.
 **None have been published yet**; until then, build them yourself (see
 [Building from source](#building-from-source)).
 
 | System | Installer | What it installs |
 | --- | --- | --- |
-| Windows 10/11, 64-bit | `Ottoclone-<version>-Windows-x64-Setup.exe` | VST3 plug-in, optional Standalone app |
-| macOS 11+, Apple Silicon or Intel | `Ottoclone-<version>-macOS.pkg` | VST3, Audio Unit, optional Standalone app |
+| Windows 10/11, 64-bit | `BitVibe-<version>-Windows-x64-Setup.exe` | VST3 plug-in, optional Standalone app |
+| macOS 11+, Apple Silicon or Intel | `BitVibe-<version>-macOS.pkg` | VST3, Audio Unit, optional Standalone app |
 
 Neither installer is code-signed, so your system will warn you the first time.
 
@@ -53,7 +53,7 @@ Neither installer is code-signed, so your system will warn you the first time.
 1. Run the setup. If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
 2. Pick **Install for all users** (asks for an administrator password) or **Install for me only**.
 3. Accept the licence, choose the full install or the plug-in only, and finish.
-4. Open your DAW and rescan plug-ins. Ottoclone is listed under **Fx / Distortion**.
+4. Open your DAW and rescan plug-ins. BitVibe is listed under **Fx / Distortion**.
 
 No extra runtime is needed. "Install for me only" uses `%LOCALAPPDATA%\Programs\Common\VST3`, which some
 DAWs do not scan by default; if the plug-in is missing, add that folder to the DAW's plug-in paths.
@@ -67,8 +67,8 @@ Uninstall from *Settings → Apps*.
 3. Restart your DAW. Logic Pro uses the Audio Unit and may take a minute to validate it the first time.
 4. If macOS blocks the plug-in, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 
-To uninstall, delete `/Library/Audio/Plug-Ins/VST3/Ottoclone.vst3`,
-`/Library/Audio/Plug-Ins/Components/Ottoclone.component` and `/Applications/Ottoclone.app`.
+To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
+`/Library/Audio/Plug-Ins/Components/BitVibe.component` and `/Applications/BitVibe.app`.
 
 ## Using it
 
@@ -101,7 +101,7 @@ noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal fir
 
 ## Design notes
 
-Ottoclone's behaviour is defined from the manufacturer's published documentation and reviews of the
+BitVibe's behaviour is defined from the manufacturer's published documentation and reviews of the
 hardware, not from any of its code.
 
 **Based on that documentation:** the ranges above, the 23-position stutter table, stutter hold, the 6-step
@@ -121,7 +121,7 @@ gate, and the instrument/line headroom difference.
 
 **Not implemented yet:** an expression-pedal morph between two sets of settings, 16 preset slots with
 MIDI CC and SysEx (use your DAW's presets and automation instead), and a true/buffered bypass option.
-Ottoclone also stays in stereo where the hardware reportedly sums to mono while the stutter or sequencer is
+BitVibe also stays in stereo where the hardware reportedly sums to mono while the stutter or sequencer is
 active.
 
 ## Building from source
@@ -129,8 +129,8 @@ active.
 JUCE 8 is a git submodule pinned to 8.0.12, so clone with `--recursive`:
 
 ```sh
-git clone --recursive https://github.com/d0ge5/ottoclone.git
-cd ottoclone
+git clone --recursive https://github.com/d0ge5/BitVibe.git
+cd BitVibe
 # already cloned without it?  git submodule update --init
 ```
 
@@ -139,11 +139,11 @@ its default 2026 path; edit the `VCVARS` line at the top if yours is elsewhere.
 
 ```bat
 build.bat                 :: plug-in (VST3 + Standalone) and the DSP tests
-build.bat ottobit_tests   :: just the DSP tests (skips compiling the plug-in)
-build\ottobit_tests.exe   :: run them
+build.bat bitvibe_tests   :: just the DSP tests (skips compiling the plug-in)
+build\bitvibe_tests.exe   :: run them
 ```
 
-The VST3 is built to `build\Ottoclone_artefacts\Release\VST3\Ottoclone.vst3`.
+The VST3 is built to `build\BitVibe_artefacts\Release\VST3\BitVibe.vst3`.
 
 **macOS** needs the Xcode command line tools and CMake, and builds a universal binary with VST3,
 Audio Unit and Standalone:
@@ -157,10 +157,10 @@ cmake --build build --parallel
 
 - **Windows:** install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`),
   run `build.bat`, then `installer\windows\build_installer.bat`. The result is
-  `dist\Ottoclone-<version>-Windows-x64-Setup.exe`.
+  `dist\BitVibe-<version>-Windows-x64-Setup.exe`.
 - **macOS:** needs a Mac. Either run `installer/macos/build_pkg.sh build dist` after building, or run the
   **Build installers** workflow in the repository's *Actions* tab. It builds on a macOS runner, runs the tests,
-  validates the Audio Unit with `auval` and uploads `Ottoclone-<version>-macOS.pkg` as a workflow artifact.
+  validates the Audio Unit with `auval` and uploads `BitVibe-<version>-macOS.pkg` as a workflow artifact.
 - The version number lives in the [`VERSION`](VERSION) file. Signing and notarization hooks exist in
   `build_pkg.sh` (configured through environment variables) but have not been tried yet.
 
@@ -175,14 +175,14 @@ passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two extra tools check the built plug-in itself:
 
 ```bat
-cmake -S . -B build -DOTTOBIT_BUILD_SMOKETEST=ON
-build.bat OttocloneSmokeTest OttocloneEditorSnapshot
+cmake -S . -B build -DBITVIBE_BUILD_SMOKETEST=ON
+build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 ```
 
-- `OttocloneSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
+- `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
   runs audio through several settings, tests bypass, state save/restore and odd block sizes, and writes demo
   WAV files.
-- `OttocloneEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
+- `BitVibeEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
   is how the screenshots above were made).
 
 </details>
@@ -207,11 +207,11 @@ artifacts/                editor screenshots
 
 ## Credits and licence
 
-Ottoclone is inspired by the **Meris Ottobit Jr.** pedal. It is an independent project and is **not
+BitVibe is inspired by the **Meris Ottobit Jr.** pedal. It is an independent project and is **not
 affiliated with, endorsed by or sponsored by Meris**. "Meris" and "Ottobit" are trademarks of their owner and
 are mentioned here only to credit that inspiration.
 
-Ottoclone is free software under the [GNU Affero General Public License v3.0](LICENSE). It uses
+BitVibe is free software under the [GNU Affero General Public License v3.0](LICENSE). It uses
 [JUCE 8](https://juce.com) under JUCE's AGPLv3 option and the MIT-licensed VST 3 SDK; see
 [`NOTICE.md`](NOTICE.md). If you distribute a build, the AGPL requires you to make the corresponding source
 available to the people you give it to. VST is a trademark of Steinberg Media Technologies GmbH.

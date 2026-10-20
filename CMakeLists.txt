@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Single source of truth for the version: the VERSION file (also read by the installer scripts).
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" OTTOCLONE_VERSION LIMIT_COUNT 1)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" BITVIBE_VERSION LIMIT_COUNT 1)
 
 if(APPLE)
     # Universal binary (Apple Silicon + Intel). Must be set before project().
@@ -9,7 +9,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build universal binaries")
 endif()
 
-project(Ottoclone VERSION ${OTTOCLONE_VERSION} LANGUAGES C CXX)
+project(BitVibe VERSION ${BITVIBE_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,41 +21,41 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-option(OTTOBIT_BUILD_TESTS  "Build the offline DSP tests" ON)
-option(OTTOBIT_BUILD_PLUGIN "Build the JUCE plugin (VST3 + Standalone, + AU on macOS)" ON)
+option(BITVIBE_BUILD_TESTS  "Build the offline DSP tests" ON)
+option(BITVIBE_BUILD_PLUGIN "Build the JUCE plugin (VST3 + Standalone, + AU on macOS)" ON)
 
 # The DSP engine is header-only and has no JUCE dependency, so it can be tested on its own.
-add_library(ottobit_dsp INTERFACE)
-target_include_directories(ottobit_dsp INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp)
+add_library(bitvibe_dsp INTERFACE)
+target_include_directories(bitvibe_dsp INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp)
 
-if(OTTOBIT_BUILD_TESTS)
+if(BITVIBE_BUILD_TESTS)
     enable_testing()
-    add_executable(ottobit_tests Tests/EngineTests.cpp)
-    target_link_libraries(ottobit_tests PRIVATE ottobit_dsp)
+    add_executable(bitvibe_tests Tests/EngineTests.cpp)
+    target_link_libraries(bitvibe_tests PRIVATE bitvibe_dsp)
     if(MSVC)
-        target_compile_options(ottobit_tests PRIVATE /W4 /fp:precise)
+        target_compile_options(bitvibe_tests PRIVATE /W4 /fp:precise)
     else()
-        target_compile_options(ottobit_tests PRIVATE -Wall -Wextra)
+        target_compile_options(bitvibe_tests PRIVATE -Wall -Wextra)
     endif()
-    add_test(NAME dsp COMMAND ottobit_tests)
+    add_test(NAME dsp COMMAND bitvibe_tests)
 endif()
 
-if(OTTOBIT_BUILD_PLUGIN)
+if(BITVIBE_BUILD_PLUGIN)
     add_subdirectory(third_party/JUCE)
 
-    set(OTTOCLONE_FORMATS VST3 Standalone)
+    set(BITVIBE_FORMATS VST3 Standalone)
     if(APPLE)
-        list(APPEND OTTOCLONE_FORMATS AU)
+        list(APPEND BITVIBE_FORMATS AU)
     endif()
 
-    juce_add_plugin(Ottoclone
-        COMPANY_NAME                "Ottoclone"
-        BUNDLE_ID                   com.ottoclone.Ottoclone
-        PLUGIN_MANUFACTURER_CODE    Ottc
-        PLUGIN_CODE                 Otcl
-        PRODUCT_NAME                "Ottoclone"
-        VERSION                     ${OTTOCLONE_VERSION}
-        FORMATS                     ${OTTOCLONE_FORMATS}
+    juce_add_plugin(BitVibe
+        COMPANY_NAME                "BitVibe"
+        BUNDLE_ID                   com.bitvibe.BitVibe
+        PLUGIN_MANUFACTURER_CODE    Bvbe
+        PLUGIN_CODE                 Bvib
+        PRODUCT_NAME                "BitVibe"
+        VERSION                     ${BITVIBE_VERSION}
+        FORMATS                     ${BITVIBE_FORMATS}
         IS_SYNTH                    FALSE
         NEEDS_MIDI_INPUT            FALSE
         NEEDS_MIDI_OUTPUT           FALSE
@@ -64,21 +64,21 @@ if(OTTOBIT_BUILD_PLUGIN)
         AU_MAIN_TYPE                kAudioUnitType_Effect
         # macOS only: lets the Standalone app receive audio input.
         MICROPHONE_PERMISSION_ENABLED TRUE
-        MICROPHONE_PERMISSION_TEXT  "Ottoclone processes the audio coming from your audio interface."
+        MICROPHONE_PERMISSION_TEXT  "BitVibe processes the audio coming from your audio interface."
         COPY_PLUGIN_AFTER_BUILD     FALSE)
 
-    target_sources(Ottoclone PRIVATE
+    target_sources(BitVibe PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp)
 
-    target_compile_definitions(Ottoclone PUBLIC
+    target_compile_definitions(BitVibe PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
-    target_link_libraries(Ottoclone
+    target_link_libraries(BitVibe
         PRIVATE
-            ottobit_dsp
+            bitvibe_dsp
             juce::juce_audio_utils
         PUBLIC
             juce::juce_recommended_config_flags
@@ -86,35 +86,35 @@ if(OTTOBIT_BUILD_PLUGIN)
             juce::juce_recommended_warning_flags)
 
     # Optional: a console host that loads the built VST3, runs audio through it, renders the
-    # editor to a PNG and writes demo WAVs.   cmake -DOTTOBIT_BUILD_SMOKETEST=ON ...
-    option(OTTOBIT_BUILD_SMOKETEST "Build the VST3 load/render smoke test" OFF)
-    if(OTTOBIT_BUILD_SMOKETEST)
-        juce_add_console_app(OttocloneSmokeTest PRODUCT_NAME "OttocloneSmokeTest")
-        target_sources(OttocloneSmokeTest PRIVATE Tools/PluginSmokeTest.cpp)
-        target_compile_definitions(OttocloneSmokeTest PRIVATE
+    # editor to a PNG and writes demo WAVs.   cmake -DBITVIBE_BUILD_SMOKETEST=ON ...
+    option(BITVIBE_BUILD_SMOKETEST "Build the VST3 load/render smoke test" OFF)
+    if(BITVIBE_BUILD_SMOKETEST)
+        juce_add_console_app(BitVibeSmokeTest PRODUCT_NAME "BitVibeSmokeTest")
+        target_sources(BitVibeSmokeTest PRIVATE Tools/PluginSmokeTest.cpp)
+        target_compile_definitions(BitVibeSmokeTest PRIVATE
             JUCE_PLUGINHOST_VST3=1
             JUCE_USE_CURL=0
             JUCE_WEB_BROWSER=0)
-        target_link_libraries(OttocloneSmokeTest PRIVATE
+        target_link_libraries(BitVibeSmokeTest PRIVATE
             juce::juce_audio_processors
             juce::juce_audio_formats
             juce::juce_gui_basics
             juce::juce_recommended_config_flags)
-        add_dependencies(OttocloneSmokeTest Ottoclone_VST3)
+        add_dependencies(BitVibeSmokeTest BitVibe_VST3)
 
         # Renders the editor (both layers) straight to PNG, no host or window needed.
-        juce_add_console_app(OttocloneEditorSnapshot PRODUCT_NAME "OttocloneEditorSnapshot")
-        target_sources(OttocloneEditorSnapshot PRIVATE
+        juce_add_console_app(BitVibeEditorSnapshot PRODUCT_NAME "BitVibeEditorSnapshot")
+        target_sources(BitVibeEditorSnapshot PRIVATE
             Tools/EditorSnapshot.cpp
             Source/PluginProcessor.cpp
             Source/PluginEditor.cpp)
-        target_include_directories(OttocloneEditorSnapshot PRIVATE Source)
-        target_compile_definitions(OttocloneEditorSnapshot PRIVATE
-            JucePlugin_Name="Ottoclone"
+        target_include_directories(BitVibeEditorSnapshot PRIVATE Source)
+        target_compile_definitions(BitVibeEditorSnapshot PRIVATE
+            JucePlugin_Name="BitVibe"
             JUCE_USE_CURL=0
             JUCE_WEB_BROWSER=0)
-        target_link_libraries(OttocloneEditorSnapshot PRIVATE
-            ottobit_dsp
+        target_link_libraries(BitVibeEditorSnapshot PRIVATE
+            bitvibe_dsp
             juce::juce_audio_utils
             juce::juce_recommended_config_flags)
     endif()

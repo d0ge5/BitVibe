@@ -15,12 +15,12 @@ if not defined ISCC (
     exit /b 1
 )
 
-if not exist "%ROOT%\build\Ottoclone_artefacts\Release\VST3\Ottoclone.vst3" (
+if not exist "%ROOT%\build\BitVibe_artefacts\Release\VST3\BitVibe.vst3" (
     echo The plugin has not been built yet. Run build.bat first.
     exit /b 1
 )
 
-"%ISCC%" /Qp /DMyAppVersion=%VERSION% "%~dp0Ottoclone.iss" || exit /b 1
+"%ISCC%" /Qp /DMyAppVersion=%VERSION% "%~dp0BitVibe.iss" || exit /b 1
 echo.
 echo Installer written to %ROOT%\dist
 endlocal

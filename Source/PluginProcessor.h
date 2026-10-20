@@ -26,10 +26,10 @@ inline constexpr const char* stutterLen = "stutterLen";
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 } // namespace ids
 
-class OttobitProcessor : public juce::AudioProcessor
+class BitVibeProcessor : public juce::AudioProcessor
 {
 public:
-    OttobitProcessor();
+    BitVibeProcessor();
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -61,16 +61,16 @@ public:
     void tapTempo();
 
     juce::AudioProcessorValueTreeState apvts;
-    ottobit::Engine& getEngine() { return engine; }
+    bitvibe::Engine& getEngine() { return engine; }
 
     // Tempo actually in use (the host's when sync is on); for display only.
     float getEffectiveBpm() const { return effectiveBpm.load(std::memory_order_relaxed); }
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    ottobit::Params readParams();
+    bitvibe::Params readParams();
 
-    ottobit::Engine engine;
+    bitvibe::Engine engine;
 
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::atomic<float>* pSample = nullptr;
@@ -89,7 +89,7 @@ private:
     std::atomic<float>* pHeadroom = nullptr;
     std::atomic<float>* pSensitivity = nullptr;
     std::atomic<float>* pStutterLen = nullptr;
-    std::array<std::atomic<float>*, ottobit::kNumSteps> pSteps {};
+    std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
 
     std::atomic<float> effectiveBpm { 120.0f };
 
@@ -97,5 +97,5 @@ private:
     double tapAverageMs = 0.0;
     int tapCount = 0;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OttobitProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BitVibeProcessor)
 };

@@ -1,6 +1,6 @@
 // Loads the built VST3 the way a DAW would (through JUCE's plugin host), pushes audio through it,
 // renders the editor to a PNG and writes a few demo WAV files.
-//   OttobitSmokeTest <path to .vst3> <output directory>
+//   BitVibeSmokeTest <path to .vst3> <output directory>
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -118,7 +118,7 @@ int main(int argc, char** argv)
 {
     if (argc < 3)
     {
-        std::puts("usage: OttobitSmokeTest <plugin.vst3> <output dir>");
+        std::puts("usage: BitVibeSmokeTest <plugin.vst3> <output dir>");
         return 2;
     }
     std::setvbuf(stdout, nullptr, _IONBF, 0);

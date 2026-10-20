@@ -18,9 +18,9 @@ String hzText(float hz)
 }
 } // namespace
 
-AudioProcessorValueTreeState::ParameterLayout OttobitProcessor::createLayout()
+AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 {
-    using namespace ottobit;
+    using namespace bitvibe;
     Layout layout;
     auto id = [](const char* s) { return ParameterID { s, 1 }; };
 
@@ -79,11 +79,11 @@ AudioProcessorValueTreeState::ParameterLayout OttobitProcessor::createLayout()
     return layout;
 }
 
-OttobitProcessor::OttobitProcessor()
+BitVibeProcessor::BitVibeProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", AudioChannelSet::stereo(), true)
                          .withOutput("Output", AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "Ottoclone", createLayout())
+      apvts(*this, nullptr, "BitVibe", createLayout())
 {
     auto raw = [this](const char* id) { return apvts.getRawParameterValue(id); };
     pSample = raw(ids::sampleRate);
@@ -102,35 +102,35 @@ OttobitProcessor::OttobitProcessor()
     pHeadroom = raw(ids::headroom);
     pSensitivity = raw(ids::sensitivity);
     pStutterLen = raw(ids::stutterLen);
-    for (int i = 0; i < ottobit::kNumSteps; ++i)
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
 
     bypassParam = apvts.getParameter(ids::bypass);
 }
 
-void OttobitProcessor::prepareToPlay(double sampleRate, int)
+void BitVibeProcessor::prepareToPlay(double sampleRate, int)
 {
     engine.prepare(sampleRate);
 }
 
-bool OttobitProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
+bool BitVibeProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     const auto& in = layouts.getMainInputChannelSet();
     const auto& out = layouts.getMainOutputChannelSet();
     return in == out && (in == AudioChannelSet::mono() || in == AudioChannelSet::stereo());
 }
 
-ottobit::Params OttobitProcessor::readParams()
+bitvibe::Params BitVibeProcessor::readParams()
 {
-    ottobit::Params p;
+    bitvibe::Params p;
     p.sampleRate = pSample->load();
     p.filter = pFilter->load();
     p.bits = pBits->load();
     p.stutter = roundToInt(pStutter->load());
     p.seqPlay = roundToInt(pSeqPlay->load());
     p.seqMult = roundToInt(pSeqMult->load());
-    p.seqType = (ottobit::SeqType) roundToInt(pSeqType->load());
-    for (int i = 0; i < ottobit::kNumSteps; ++i)
+    p.seqType = (bitvibe::SeqType) roundToInt(pSeqType->load());
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
         p.steps[(size_t) i] = pSteps[(size_t) i]->load();
 
     p.tempoBpm = pTempo->load();
@@ -139,7 +139,7 @@ ottobit::Params OttobitProcessor::readParams()
             if (auto pos = head->getPosition())
                 if (auto bpm = pos->getBpm())
                     p.tempoBpm = (float) *bpm;
-    p.tempoBpm = jlimit(ottobit::kMinTempoBpm, ottobit::kMaxTempoBpm, p.tempoBpm);
+    p.tempoBpm = jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoBpm, p.tempoBpm);
     effectiveBpm.store(p.tempoBpm, std::memory_order_relaxed);
 
     p.bypass = pBypass->load() > 0.5f;
@@ -152,24 +152,24 @@ ottobit::Params OttobitProcessor::readParams()
     return p;
 }
 
-void OttobitProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
+void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
 {
     ScopedNoDenormals noDenormals;
-    const int numChannels = std::min(buffer.getNumChannels(), ottobit::Engine::kMaxChannels);
+    const int numChannels = std::min(buffer.getNumChannels(), bitvibe::Engine::kMaxChannels);
     for (int c = numChannels; c < buffer.getNumChannels(); ++c)
         buffer.clear(c, 0, buffer.getNumSamples());
 
     engine.process(buffer.getArrayOfWritePointers(), numChannels, buffer.getNumSamples(), readParams());
 }
 
-void OttobitProcessor::tapTempo()
+void BitVibeProcessor::tapTempo()
 {
     const double now = Time::getMillisecondCounterHiRes();
     const double interval = now - lastTapMs;
     lastTapMs = now;
 
     // A pause longer than the slowest tempo (23.4 BPM = 2564 ms) starts a new tap sequence.
-    if (interval > 60000.0 / ottobit::kMinTempoBpm || interval < 60000.0 / ottobit::kMaxTempoBpm)
+    if (interval > 60000.0 / bitvibe::kMinTempoBpm || interval < 60000.0 / bitvibe::kMaxTempoBpm)
     {
         tapCount = 0;
         return;
@@ -178,23 +178,23 @@ void OttobitProcessor::tapTempo()
     tapAverageMs = tapCount == 0 ? interval : 0.5 * (tapAverageMs + interval);
     ++tapCount;
 
-    const float bpm = jlimit(ottobit::kMinTempoBpm, ottobit::kMaxTempoBpm, (float) (60000.0 / tapAverageMs));
+    const float bpm = jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoBpm, (float) (60000.0 / tapAverageMs));
     if (auto* param = apvts.getParameter(ids::tempo))
         param->setValueNotifyingHost(param->convertTo0to1(bpm));
 }
 
-AudioProcessorEditor* OttobitProcessor::createEditor()
+AudioProcessorEditor* BitVibeProcessor::createEditor()
 {
-    return new OttobitEditor(*this);
+    return new BitVibeEditor(*this);
 }
 
-void OttobitProcessor::getStateInformation(MemoryBlock& destData)
+void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary(*xml, destData);
 }
 
-void OttobitProcessor::setStateInformation(const void* data, int sizeInBytes)
+void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary(data, sizeInBytes))
         if (xml->hasTagName(apvts.state.getType()))
@@ -203,5 +203,5 @@ void OttobitProcessor::setStateInformation(const void* data, int sizeInBytes)
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new OttobitProcessor();
+    return new BitVibeProcessor();
 }

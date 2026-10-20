@@ -1,5 +1,5 @@
-// Offline checks of the Ottobit Jr. replica engine against the behaviour documented in the manual.
-// Plain C++, no framework: build target `ottobit_tests`, exit code 0 means everything passed.
+// Offline checks of the BitVibe engine against the behaviour described in the published documentation.
+// Plain C++, no framework: build target `bitvibe_tests`, exit code 0 means everything passed.
 
 #include "Engine.h"
 
@@ -10,7 +10,7 @@
 #include <random>
 #include <vector>
 
-using namespace ottobit;
+using namespace bitvibe;
 
 namespace
 {

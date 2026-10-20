@@ -1,14 +1,14 @@
 #pragma once
 
-// Control-to-value mappings for the pedal, taken from the Ottobit Jr. manual (v6) wherever it
-// states a value, and marked "ASSUMED" where the manual is silent. Header-only and free of JUCE
+// Control-to-value mappings, taken from the hardware's published documentation wherever it
+// states a value, and marked "ASSUMED" where the documentation is silent. Header-only and free of JUCE
 // so the engine, the editor and the offline tests all share one definition.
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 
-namespace ottobit
+namespace bitvibe
 {
 inline constexpr int kNumSteps = 6;
 
@@ -145,4 +145,4 @@ namespace mapping
         return ((float) (std::clamp(semitones, -12, 12) + 13) + 0.5f) / 27.0f;
     }
 } // namespace mapping
-} // namespace ottobit
+} // namespace bitvibe

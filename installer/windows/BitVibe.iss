@@ -1,4 +1,4 @@
-; Ottoclone - Windows installer (Inno Setup 6).
+; BitVibe - Windows installer (Inno Setup 6).
 ; Build with installer\windows\build_installer.bat after building the plugin (build.bat).
 ; The VST3 goes to the standard VST3 folder: "C:\Program Files\Common Files\VST3" for an all-users
 ; install, or "%LOCALAPPDATA%\Programs\Common\VST3" if the user picks "Install for me only".
@@ -6,18 +6,18 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
-#define MyAppName "Ottoclone"
-#define BuildDir "..\..\build\Ottoclone_artefacts\Release"
+#define MyAppName "BitVibe"
+#define BuildDir "..\..\build\BitVibe_artefacts\Release"
 
 [Setup]
 ; Never change AppId: Windows uses it to recognise upgrades and the uninstall entry.
-AppId={{CB8F787E-E096-4B97-84E6-8ABE0C682E6C}
+AppId={{BAD024DF-E4D4-4868-BD76-AB2394315DCF}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
-AppPublisher=Ottoclone
-AppPublisherURL=https://github.com/d0ge5/ottoclone
-AppSupportURL=https://github.com/d0ge5/ottoclone
+AppPublisher=BitVibe
+AppPublisherURL=https://github.com/d0ge5/BitVibe
+AppSupportURL=https://github.com/d0ge5/BitVibe
 VersionInfoVersion={#MyAppVersion}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}

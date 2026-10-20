@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Ottoclone @VERSION@</title>
-    <organization>com.ottoclone</organization>
+    <title>BitVibe @VERSION@</title>
+    <organization>com.bitvibe</organization>
     <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <allowed-os-versions>
@@ -19,19 +19,19 @@
     </choices-outline>
 
     <choice id="vst3" title="VST3 plug-in"
-            description="Installs Ottoclone.vst3 into /Library/Audio/Plug-Ins/VST3 (Ableton Live, Reaper, Bitwig, Cubase, Studio One, ...).">
-        <pkg-ref id="com.ottoclone.pkg.vst3"/>
+            description="Installs BitVibe.vst3 into /Library/Audio/Plug-Ins/VST3 (Ableton Live, Reaper, Bitwig, Cubase, Studio One, ...).">
+        <pkg-ref id="com.bitvibe.pkg.vst3"/>
     </choice>
     <choice id="au" title="Audio Unit plug-in"
-            description="Installs Ottoclone.component into /Library/Audio/Plug-Ins/Components (Logic Pro, GarageBand, MainStage).">
-        <pkg-ref id="com.ottoclone.pkg.au"/>
+            description="Installs BitVibe.component into /Library/Audio/Plug-Ins/Components (Logic Pro, GarageBand, MainStage).">
+        <pkg-ref id="com.bitvibe.pkg.au"/>
     </choice>
     <choice id="standalone" title="Standalone app"
-            description="Installs Ottoclone.app into /Applications so you can use it without a DAW.">
-        <pkg-ref id="com.ottoclone.pkg.standalone"/>
+            description="Installs BitVibe.app into /Applications so you can use it without a DAW.">
+        <pkg-ref id="com.bitvibe.pkg.standalone"/>
     </choice>
 
-    <pkg-ref id="com.ottoclone.pkg.vst3" version="@VERSION@" onConclusion="none">vst3.pkg</pkg-ref>
-    <pkg-ref id="com.ottoclone.pkg.au" version="@VERSION@" onConclusion="none">au.pkg</pkg-ref>
-    <pkg-ref id="com.ottoclone.pkg.standalone" version="@VERSION@" onConclusion="none">standalone.pkg</pkg-ref>
+    <pkg-ref id="com.bitvibe.pkg.vst3" version="@VERSION@" onConclusion="none">vst3.pkg</pkg-ref>
+    <pkg-ref id="com.bitvibe.pkg.au" version="@VERSION@" onConclusion="none">au.pkg</pkg-ref>
+    <pkg-ref id="com.bitvibe.pkg.standalone" version="@VERSION@" onConclusion="none">standalone.pkg</pkg-ref>
 </installer-gui-script>
