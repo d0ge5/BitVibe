@@ -2,12 +2,15 @@
 // Plain C++, no framework: build target `bitvibe_tests`, exit code 0 means everything passed.
 
 #include "Engine.h"
+#include "Morph.h"
+#include "Presets.h"
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <random>
+#include <string>
 #include <vector>
 
 using namespace bitvibe;
@@ -479,6 +482,258 @@ void testRobustness()
         ok = ok && std::isfinite(l[i]) && std::isfinite(r[i]);
     CHECK(ok, "stereo path produced bad samples");
 }
+
+// Two knob sets that differ in every field, so a mix-up between them shows.
+KnobSet morphSetA()
+{
+    KnobSet k;
+    k.sampleRate = 0.2f;
+    k.filter = 0.9f;
+    k.bits = 0.4f;
+    k.stutter = 3;
+    k.seqPlay = 1;
+    k.seqMult = 2;
+    k.steps = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f };
+    k.seqType = SeqType::Pitch;
+    return k;
+}
+
+KnobSet morphSetB()
+{
+    KnobSet k;
+    k.sampleRate = 0.8f;
+    k.filter = 0.1f;
+    k.bits = 1.0f;
+    k.stutter = 20;
+    k.seqPlay = 4;
+    k.seqMult = 7;
+    k.steps = { 0.9f, 0.8f, 0.7f, 0.6f, 0.5f, 0.0f };
+    k.seqType = SeqType::SampleRate;
+    return k;
+}
+
+bool near(float a, float b, float tol = 1.0e-6f) { return std::abs(a - b) <= tol; }
+
+void testMorph()
+{
+    std::puts("morph: toe-up / toe-down knob sets blend per block");
+    const KnobSet up = morphSetA(), down = morphSetB();
+
+    // The defaults of a knob set match the defaults of the engine parameters.
+    CHECK(KnobSet {} == knobsOf(Params {}), "KnobSet defaults differ from Params defaults");
+
+    // End points are exact.
+    CHECK(morph::blend(up, down, 0.0f) == up, "expression 0 must give the toe-up set");
+    CHECK(morph::blend(up, down, 1.0f) == down, "expression 1 must give the toe-down set");
+
+    // Out-of-range and non-finite expression values are clamped (NaN and infinity count as 0).
+    CHECK(morph::blend(up, down, -3.0f) == up, "negative expression clamps to toe up");
+    CHECK(morph::blend(up, down, 7.5f) == down, "expression above 1 clamps to toe down");
+    CHECK(morph::blend(up, down, std::nanf("")) == up, "NaN expression gives toe up");
+    CHECK(morph::blend(up, down, INFINITY) == up, "infinite expression is rejected");
+
+    // Continuous knobs: linear in knob position, the six steps independently.
+    const KnobSet mid = morph::blend(up, down, 0.5f);
+    CHECK(near(mid.sampleRate, 0.5f) && near(mid.filter, 0.5f) && near(mid.bits, 0.7f), "midpoint %g %g %g",
+          (double) mid.sampleRate, (double) mid.filter, (double) mid.bits);
+    const std::array<float, kNumSteps> midSteps { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.3f };
+    for (size_t i = 0; i < midSteps.size(); ++i)
+        CHECK(near(mid.steps[i], midSteps[i]), "step %d at midpoint is %g", (int) i, (double) mid.steps[i]);
+
+    const KnobSet quarter = morph::blend(up, down, 0.25f);
+    CHECK(near(quarter.sampleRate, 0.35f) && near(quarter.filter, 0.7f), "quarter point %g %g",
+          (double) quarter.sampleRate, (double) quarter.filter);
+    CHECK(near(quarter.steps[0], 0.3f) && near(quarter.steps[5], 0.45f), "quarter steps %g %g",
+          (double) quarter.steps[0], (double) quarter.steps[5]);
+
+    // A sweep never leaves the range spanned by the two sets and moves monotonically
+    // (sample rate and bits rise from set A to set B, the filter falls).
+    bool inRange = true, monotone = true;
+    float prev[3] = { up.sampleRate, up.filter, up.bits };
+    const float lo[3] = { std::min(up.sampleRate, down.sampleRate), std::min(up.filter, down.filter),
+                          std::min(up.bits, down.bits) };
+    const float hi[3] = { std::max(up.sampleRate, down.sampleRate), std::max(up.filter, down.filter),
+                          std::max(up.bits, down.bits) };
+    const bool expectRise[3] = { true, false, true };
+    for (int i = 0; i <= 200; ++i)
+    {
+        const KnobSet k = morph::blend(up, down, (float) i / 200.0f);
+        const float v[3] = { k.sampleRate, k.filter, k.bits };
+        for (int j = 0; j < 3; ++j)
+        {
+            inRange = inRange && v[j] >= lo[j] - 1.0e-6f && v[j] <= hi[j] + 1.0e-6f;
+            monotone = monotone && (expectRise[j] ? v[j] >= prev[j] - 1.0e-6f : v[j] <= prev[j] + 1.0e-6f);
+            prev[j] = v[j];
+        }
+    }
+    CHECK(inRange, "swept knob left the range between the two sets");
+    CHECK(monotone, "swept knob was not monotonic");
+
+    // Discrete knobs hop at the midpoint, all together.
+    const KnobSet justBelow = morph::blend(up, down, 0.4999f);
+    const KnobSet atMid = morph::blend(up, down, 0.5f);
+    CHECK(justBelow.stutter == up.stutter && justBelow.seqPlay == up.seqPlay && justBelow.seqMult == up.seqMult &&
+              justBelow.seqType == up.seqType,
+          "discrete knobs must still be toe-up just below the midpoint");
+    CHECK(atMid.stutter == down.stutter && atMid.seqPlay == down.seqPlay && atMid.seqMult == down.seqMult &&
+              atMid.seqType == down.seqType,
+          "discrete knobs must be toe-down from the midpoint on");
+    bool onlyTwoValues = true;
+    for (int i = 0; i <= 100; ++i)
+    {
+        const int stutter = morph::blend(up, down, (float) i / 100.0f).stutter;
+        onlyTwoValues = onlyTwoValues && (stutter == up.stutter || stutter == down.stutter);
+    }
+    CHECK(onlyTwoValues, "a discrete knob must never take a value in between");
+
+    // Two identical sets stay identical at every position (no drift from rounding).
+    bool identical = true;
+    const KnobSet def {};
+    for (int i = 0; i <= 100; ++i)
+        identical = identical && morph::blend(def, def, (float) i / 100.0f) == def;
+    CHECK(identical, "blending a set with itself changed it");
+
+    // applyKnobs only touches the knob fields.
+    Params p;
+    p.tempoBpm = 333.0f;
+    p.bypass = true;
+    p.stutterHold = true;
+    p.inputGainDb = 5.0f;
+    p.outputGainDb = -3.0f;
+    p.lineHeadroom = true;
+    p.triggerSensitivity = 0.9f;
+    p.stutterDivision = 2;
+    applyKnobs(p, down);
+    CHECK(knobsOf(p) == down, "applyKnobs / knobsOf do not round-trip");
+    CHECK(p.tempoBpm == 333.0f && p.bypass && p.stutterHold && p.inputGainDb == 5.0f && p.outputGainDb == -3.0f &&
+              p.lineHeadroom && p.triggerSensitivity == 0.9f && p.stutterDivision == 2,
+          "applyKnobs changed a setting that is not a knob");
+
+    // sanitise() pulls everything into range.
+    KnobSet bad;
+    bad.sampleRate = 4.0f;
+    bad.filter = -1.0f;
+    bad.bits = std::nanf("");
+    bad.stutter = 99;
+    bad.seqPlay = -4;
+    bad.seqMult = 12;
+    bad.steps = { 2.0f, -2.0f, 0.5f, INFINITY, 0.25f, 1.0f };
+    bad.seqType = (SeqType) 9;
+    const KnobSet fixed = morph::sanitise(bad);
+    CHECK(fixed.sampleRate == 1.0f && fixed.filter == 0.0f && fixed.bits == 0.0f, "sanitise knobs %g %g %g",
+          (double) fixed.sampleRate, (double) fixed.filter, (double) fixed.bits);
+    CHECK(fixed.stutter == 22 && fixed.seqPlay == 0 && fixed.seqMult == 7 && fixed.seqType == SeqType::SampleRate,
+          "sanitise discrete knobs");
+    CHECK(fixed.steps[0] == 1.0f && fixed.steps[1] == 0.0f && fixed.steps[2] == 0.5f && fixed.steps[3] == 0.0f &&
+              fixed.steps[4] == 0.25f && fixed.steps[5] == 1.0f,
+          "sanitise steps");
+    CHECK(morph::sanitise(up) == up && morph::sanitise(down) == down, "sanitise changed a valid set");
+}
+
+void testMorphThroughEngine()
+{
+    std::puts("morph: sweeping the expression every block drives the engine smoothly");
+
+    // Toe up is clean, toe down crushes to a few bits: the quantisation error must grow as the
+    // expression moves, starting from nothing.
+    KnobSet up;
+    up.seqPlay = 0;
+    KnobSet down = up;
+    down.bits = 0.05f;
+
+    const Signal in = sine(220.0, 2.0, 0.5f);
+    const Params base;
+    const Signal out = render(base, in,
+                              [&](Params& p, size_t pos)
+                              {
+                                  const float expression = (float) ((double) pos / (double) in.size());
+                                  applyKnobs(p, morph::blend(up, down, expression));
+                              });
+
+    Signal error(in.size());
+    for (size_t i = 0; i < in.size(); ++i)
+        error[i] = out[i] - in[i];
+    const double e0 = rms(error, 0.0, 0.2), e1 = rms(error, 0.7, 0.9), e2 = rms(error, 1.2, 1.4),
+                 e3 = rms(error, 1.8, 2.0);
+    CHECK(e0 < 1.0e-6, "toe-up end must be clean, error %g", e0);
+    CHECK(e1 > e0 && e2 > e1 && e3 > e2, "error should grow with the expression: %g %g %g %g", e0, e1, e2, e3);
+    CHECK(e3 > 0.02, "toe-down end should be heavily crushed, error %g", e3);
+
+    // Jumping between a clean set and a running sequencer every few blocks must stay well behaved.
+    KnobSet a = up, b = up;
+    b.seqPlay = 5;
+    const Signal tone = sine(196.0, 1.5, 0.5f);
+    const Signal hop = render(base, tone,
+                              [&](Params& p, size_t pos)
+                              { applyKnobs(p, morph::blend(a, b, (pos / 4096) % 2 ? 1.0f : 0.0f)); });
+    bool finite = true;
+    float peak = 0.0f;
+    for (float v : hop)
+    {
+        finite = finite && std::isfinite(v);
+        peak = std::max(peak, std::abs(v));
+    }
+    CHECK(finite && peak < 2.0f, "toggling between the two sets produced bad samples (peak %g)", (double) peak);
+}
+
+void testPresets()
+{
+    std::puts("presets: sixteen factory slots");
+    CHECK(kNumPresets == 16, "expected 16 preset slots");
+
+    // Slot 1 is the sound the plug-in has always started with.
+    const FactoryPreset first = factoryPreset(0);
+    const Params def;
+    CHECK(first.knobs == knobsOf(def), "slot 1 must be the default knob set");
+    CHECK(first.knobs.seqPlay == 5 && first.knobs.seqType == SeqType::Pitch, "slot 1 must run the pitch sequencer");
+    const float expected[kNumSteps] = { -7, -3, -12, 7, 4, 0 };
+    for (int i = 0; i < kNumSteps; ++i)
+    {
+        const auto step = mapping::decodeStep(first.knobs.steps[(size_t) i], SeqType::Pitch);
+        CHECK(step.kind == mapping::Step::Kind::Active && step.semitones == expected[i], "slot 1 step %d is %g", i,
+              (double) step.semitones);
+    }
+    CHECK(first.tempoBpm == def.tempoBpm && first.stutterDivision == def.stutterDivision && !first.morphOn,
+          "slot 1 tempo / stutter length / morph must be the defaults");
+    CHECK(std::string(first.name) == "Pitch Sequence", "slot 1 name is %s", first.name);
+
+    // Every slot is valid, named, and (unless it uses the morph) has matching toe snapshots.
+    bool valid = true, named = true, unique = true;
+    for (int i = 0; i < kNumPresets; ++i)
+    {
+        const FactoryPreset f = factoryPreset(i);
+        valid = valid && morph::sanitise(f.knobs) == f.knobs && morph::sanitise(f.toeUp) == f.toeUp &&
+                morph::sanitise(f.toeDown) == f.toeDown && f.tempoBpm >= kMinTempoBpm && f.tempoBpm <= kMaxTempoBpm &&
+                f.stutterDivision >= 0 && f.stutterDivision <= 2;
+        named = named && f.name != nullptr && f.name[0] != '\0';
+        if (!f.morphOn)
+            valid = valid && f.toeUp == f.knobs && f.toeDown == f.knobs;
+        for (int j = 0; j < i; ++j)
+            unique = unique && std::string(f.name) != std::string(factoryPreset(j).name);
+    }
+    CHECK(valid, "a factory preset has a value outside its range");
+    CHECK(named, "a factory preset has no name");
+    CHECK(unique, "factory preset names must be unique");
+
+    // The morph presets really use two different sets, starting at toe up.
+    int morphing = 0;
+    for (int i = 0; i < kNumPresets; ++i)
+    {
+        const FactoryPreset f = factoryPreset(i);
+        if (f.morphOn)
+        {
+            ++morphing;
+            CHECK(!(f.toeUp == f.toeDown) && f.knobs == f.toeUp,
+                  "morph preset %d must differ between toe up and toe down", i + 1);
+        }
+    }
+    CHECK(morphing >= 1, "expected at least one factory preset that demonstrates the morph");
+
+    // Out-of-range slot numbers are clamped, not undefined.
+    CHECK(std::string(factoryPreset(-4).name) == "Pitch Sequence" &&
+              std::string(factoryPreset(99).name) == std::string(factoryPreset(kNumPresets - 1).name),
+          "slot numbers must be clamped");
+}
 } // namespace
 
 int main()
@@ -492,6 +747,9 @@ int main()
     testStutter();
     testSequencer();
     testRobustness();
+    testMorph();
+    testMorphThroughEngine();
+    testPresets();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;

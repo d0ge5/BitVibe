@@ -50,6 +50,8 @@ AudioBuffer<float> makePluck(double seconds)
     return b;
 }
 
+bool near(float a, float b, float tol = 2.0e-3f) { return std::abs(a - b) <= tol; }
+
 AudioProcessorParameter* findParam(AudioProcessor& p, const String& name)
 {
     for (auto* prm : p.getParameters())
@@ -148,7 +150,9 @@ int main(int argc, char** argv)
     plugin->setPlayConfigDetails(2, 2, kFs, kBlock);
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
-    check(plugin->getParameters().size() == 22, "exposes" + String(plugin->getParameters().size()) + " parameters");
+    // 24 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
+    check(plugin->getParameters().size() == 25 && findParam(*plugin, "Program") != nullptr,
+          "exposes " + String(plugin->getParameters().size()) + " parameters (24 + Program selector)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 
@@ -238,7 +242,105 @@ int main(int argc, char** argv)
         check(ok, "odd-sized blocks (1, 7, 64, 333, 511) are finite");
     }
 
-    // 8. (optional) Editor through the VST3 view
+    // 8. Preset slots: recall through the host's program list, global settings left alone, state round trip
+    {
+        auto value = [&](const char* name)
+        {
+            auto* prm = findParam(*plugin, name);
+            return prm != nullptr ? prm->getValue() : -1.0f;
+        };
+        auto text = [&](const char* name)
+        {
+            auto* prm = findParam(*plugin, name);
+            return prm != nullptr ? prm->getText(prm->getValue(), 32) : String("?");
+        };
+        auto maxDifference = [](const AudioBuffer<float>& a, const AudioBuffer<float>& b)
+        {
+            double d = 0;
+            for (int c = 0; c < a.getNumChannels(); ++c)
+                for (int i = 0; i < a.getNumSamples(); ++i)
+                    d = jmax(d, (double) std::abs(a.getSample(c, i) - b.getSample(c, i)));
+            return d;
+        };
+
+        check(plugin->getNumPrograms() == 16, "exposes " + String(plugin->getNumPrograms()) + " preset slots");
+        StringArray names;
+        for (int i = 0; i < plugin->getNumPrograms(); ++i)
+            names.add(plugin->getProgramName(i));
+        StringArray unique(names);
+        unique.removeDuplicates(false);
+        check(names.size() == 16 && unique.size() == 16 && !names.contains(""), "preset names are set and unique");
+        check(names[0] == "Pitch Sequence", "slot 1 is '" + names[0] + "'");
+        std::printf("    presets: %s\n", names.joinIntoString(" | ").toRawUTF8());
+        check(plugin->getCurrentProgram() == 0, "starts on slot 1");
+
+        // Recall slot 3 on top of edited settings: the sound comes from the slot, the rig settings stay.
+        setNormalised(*plugin, "Bits", 0.3f);
+        setNormalised(*plugin, "Input Gain", 0.75f);
+        plugin->setCurrentProgram(2);
+        check(plugin->getCurrentProgram() == 2, "slot 3 selected");
+        check(near(value("Sample Rate"), 0.62f) && near(value("Filter"), 0.55f) && near(value("Bits"), 0.45f),
+              "slot 3 restores its Sample / Filter / Bits knobs");
+        check(text("Sequencer Play") == "Off", "slot 3 turns the sequencer off (" + text("Sequencer Play") + ")");
+        check(near(value("Input Gain"), 0.75f), "recalling a preset leaves the input gain alone");
+        setNormalised(*plugin, "Input Gain", 0.5f); // back to 0 dB
+
+        // Slot 1 brings the factory sound back exactly: same knobs and the same audio as at start-up.
+        plugin->setCurrentProgram(0);
+        check(text("Sequencer Play") == "Continuous" && text("Sequencer Type") == "Pitch", "slot 1 runs the pitch sequencer");
+        bool stepsOk = near(value("Bits"), 1.0f) && near(value("Filter"), 1.0f);
+        const float expectedSteps[6] = { 6.5f / 27, 10.5f / 27, 1.5f / 27, 20.5f / 27, 17.5f / 27, 13.5f / 27 };
+        for (int i = 0; i < 6; ++i)
+            stepsOk = stepsOk && near(value(("Step " + String(i + 1)).toRawUTF8()), expectedSteps[(size_t) i]);
+        check(stepsOk, "slot 1 restores the factory steps (-7, -3, -12, +7, +4, 0 semitones)");
+        plugin->reset();
+        const auto again = render(*plugin, pluck);
+        const double diff = maxDifference(again, factory);
+        check(diff < 1.0e-3, "slot 1 sounds like the factory sound (max diff " + String(diff, 6) + ")");
+
+        // A slot with a stored expression-morph set-up: clean at toe up, crushed + stutter at toe down.
+        plugin->setCurrentProgram(10);
+        check(text("Expression Morph") == "On", "slot 11 switches the morph on");
+        plugin->reset();
+        const auto toeUp = render(*plugin, pluck);
+        check(maxDifference(toeUp, pluck) < 1.0e-3, "expression at toe up leaves the signal clean");
+        setNormalised(*plugin, "Expression", 1.0f);
+        plugin->reset();
+        const auto toeDown = render(*plugin, pluck);
+        float toeDownPeak = 0;
+        check(allFinite(toeDown, toeDownPeak) && maxDifference(toeDown, pluck) > 0.05,
+              "expression at toe down plays the stored crushed set (diff " + String(maxDifference(toeDown, pluck), 3) + ")");
+        writeWav(toeDown, outDir.getChildFile("5_morph_toe_down.wav"));
+
+        // Halfway: continuous knobs glide, so the result is neither end point.
+        setNormalised(*plugin, "Expression", 0.8f);
+        plugin->reset();
+        const auto morphed = render(*plugin, pluck);
+        check(maxDifference(morphed, toeUp) > 0.01 && maxDifference(morphed, toeDown) > 0.01,
+              "expression at 80% differs from both end points");
+
+        // State round trip: the stored sets, the slot list, the current slot and the expression survive.
+        MemoryBlock saved;
+        plugin->getStateInformation(saved);
+        plugin->setCurrentProgram(0); // wipes the live sound and the stored sets
+        setNormalised(*plugin, "Expression", 0.0f);
+        check(text("Expression Morph") == "Off", "slot 1 switches the morph off again");
+        plugin->setStateInformation(saved.getData(), (int) saved.getSize());
+        check(plugin->getCurrentProgram() == 10, "state restores the selected slot (" + String(plugin->getCurrentProgram()) + ")");
+        check(text("Expression Morph") == "On" && near(value("Expression"), 0.8f), "state restores the morph switch and expression");
+        plugin->reset();
+        const auto restored = render(*plugin, pluck);
+        const double stateDiff = maxDifference(restored, morphed);
+        check(stateDiff < 1.0e-4, "restored state sounds identical, stored sets included (max diff " + String(stateDiff, 6) + ")");
+        check(plugin->getProgramName(10) == names[10] && plugin->getProgramName(15) == names[15], "slot names survive the round trip");
+
+        // Back to slot 1 and the shipped state for the remaining checks.
+        plugin->setCurrentProgram(0);
+        setByText(*plugin, "Expression Morph", "Off");
+        plugin->reset();
+    }
+
+    // 9. (optional) Editor through the VST3 view
     const bool wantEditor = argc > 3 && String(argv[3]) == "--editor";
     plugin->reset();
     std::unique_ptr<AudioProcessorEditor> editor(wantEditor ? plugin->createEditorIfNeeded() : nullptr);

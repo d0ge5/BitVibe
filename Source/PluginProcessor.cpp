@@ -76,8 +76,77 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                      NormalisableRange<float>(0.0f, 1.0f), 0.5f));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::stutterLen), "Stutter Length",
                                                       StringArray { "1/4 note", "1/8 note", "1/16 note" }, 1));
+
+    // ---- expression morph --------------------------------------------------------------
+    // 0 = toe-up knob set, 1 = toe-down knob set; only heard while Expression Morph is on.
+    layout.add(std::make_unique<AudioParameterFloat>(
+        id(ids::expression), "Expression", NormalisableRange<float>(0.0f, 1.0f), 0.0f,
+        AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
+            .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::morph), "Expression Morph", false));
     return layout;
 }
+
+namespace
+{
+// Parameters a preset slot stores, in this order. Bypass, stutter hold, host sync, the expression
+// position and the input / output / headroom / trigger settings are left out on purpose (see the
+// comment in the header).
+std::vector<String> presetParameterIds()
+{
+    std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult };
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        list.push_back(ids::step(i));
+    for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph })
+        list.emplace_back(id);
+    return list;
+}
+
+constexpr int kMaxPresetNameLength = 32;
+
+String cleanPresetName(const String& name, const String& fallback)
+{
+    const auto trimmed = name.trim().substring(0, kMaxPresetNameLength).trim();
+    return trimmed.isEmpty() ? fallback : trimmed;
+}
+
+// Knob sets are written as one node of plain attributes named like the parameters.
+ValueTree knobsToTree(const bitvibe::KnobSet& k, const Identifier& type)
+{
+    ValueTree t(type);
+    t.setProperty(ids::sampleRate, (double) k.sampleRate, nullptr);
+    t.setProperty(ids::filter, (double) k.filter, nullptr);
+    t.setProperty(ids::bits, (double) k.bits, nullptr);
+    t.setProperty(ids::stutter, k.stutter, nullptr);
+    t.setProperty(ids::seqPlay, k.seqPlay, nullptr);
+    t.setProperty(ids::seqMult, k.seqMult, nullptr);
+    t.setProperty(ids::seqType, (int) k.seqType, nullptr);
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        t.setProperty(Identifier(ids::step(i)), (double) k.steps[(size_t) i], nullptr);
+    return t;
+}
+
+// Anything missing keeps the value in `fallback`; everything is pulled into its legal range.
+bitvibe::KnobSet knobsFromTree(const ValueTree& t, const bitvibe::KnobSet& fallback)
+{
+    if (!t.isValid())
+        return fallback;
+
+    bitvibe::KnobSet k = fallback;
+    auto number = [&t](const char* id, double def) { return (double) t.getProperty(Identifier(id), def); };
+    k.sampleRate = (float) number(ids::sampleRate, k.sampleRate);
+    k.filter = (float) number(ids::filter, k.filter);
+    k.bits = (float) number(ids::bits, k.bits);
+    k.stutter = roundToInt(number(ids::stutter, k.stutter));
+    k.seqPlay = roundToInt(number(ids::seqPlay, k.seqPlay));
+    k.seqMult = roundToInt(number(ids::seqMult, k.seqMult));
+    k.seqType = (bitvibe::SeqType) roundToInt(number(ids::seqType, (double) (int) k.seqType));
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        k.steps[(size_t) i] = (float) number(ids::step(i).toRawUTF8(), k.steps[(size_t) i]);
+    return bitvibe::morph::sanitise(k);
+}
+} // namespace
 
 BitVibeProcessor::BitVibeProcessor()
     : AudioProcessor(BusesProperties()
@@ -102,10 +171,17 @@ BitVibeProcessor::BitVibeProcessor()
     pHeadroom = raw(ids::headroom);
     pSensitivity = raw(ids::sensitivity);
     pStutterLen = raw(ids::stutterLen);
+    pExpression = raw(ids::expression);
+    pMorph = raw(ids::morph);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
 
     bypassParam = apvts.getParameter(ids::bypass);
+
+    for (const auto& id : presetParameterIds())
+        presetParams.push_back({ id, apvts.getParameter(id) });
+    jassert(std::none_of(presetParams.begin(), presetParams.end(), [](const PresetParam& p) { return p.param == nullptr; }));
+    resetToFactoryBank();
 }
 
 void BitVibeProcessor::prepareToPlay(double sampleRate, int)
@@ -120,18 +196,44 @@ bool BitVibeProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
     return in == out && (in == AudioChannelSet::mono() || in == AudioChannelSet::stereo());
 }
 
+bitvibe::KnobSet BitVibeProcessor::liveKnobs() const
+{
+    bitvibe::KnobSet k;
+    k.sampleRate = pSample->load();
+    k.filter = pFilter->load();
+    k.bits = pBits->load();
+    k.stutter = roundToInt(pStutter->load());
+    k.seqPlay = roundToInt(pSeqPlay->load());
+    k.seqMult = roundToInt(pSeqMult->load());
+    k.seqType = (bitvibe::SeqType) roundToInt(pSeqType->load());
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        k.steps[(size_t) i] = pSteps[(size_t) i]->load();
+    return k;
+}
+
+void BitVibeProcessor::refreshMorphCache()
+{
+    // Never wait on the message thread: if it is in the middle of a capture, keep last block's copy.
+    const SpinLock::ScopedTryLockType lock(morphLock);
+    if (lock.isLocked())
+    {
+        cachedToeUp = toeUp;
+        cachedToeDown = toeDown;
+    }
+}
+
 bitvibe::Params BitVibeProcessor::readParams()
 {
     bitvibe::Params p;
-    p.sampleRate = pSample->load();
-    p.filter = pFilter->load();
-    p.bits = pBits->load();
-    p.stutter = roundToInt(pStutter->load());
-    p.seqPlay = roundToInt(pSeqPlay->load());
-    p.seqMult = roundToInt(pSeqMult->load());
-    p.seqType = (bitvibe::SeqType) roundToInt(pSeqType->load());
-    for (int i = 0; i < bitvibe::kNumSteps; ++i)
-        p.steps[(size_t) i] = pSteps[(size_t) i]->load();
+    bitvibe::applyKnobs(p, liveKnobs());
+
+    // With the morph on, the twelve knobs (front panel and Alt layer) come from the two stored sets,
+    // blended by the expression; the knobs themselves only matter when capturing a set.
+    if (pMorph->load() > 0.5f)
+    {
+        refreshMorphCache();
+        bitvibe::applyKnobs(p, bitvibe::morph::blend(cachedToeUp, cachedToeDown, pExpression->load()));
+    }
 
     p.tempoBpm = pTempo->load();
     if (pTempoSync->load() > 0.5f)
@@ -188,17 +290,268 @@ AudioProcessorEditor* BitVibeProcessor::createEditor()
     return new BitVibeEditor(*this);
 }
 
+// ------------------------------------------------------------------------------------------
+// Expression morph sets
+
+void BitVibeProcessor::captureToeUp()
+{
+    const auto knobs = liveKnobs();
+    const SpinLock::ScopedLockType lock(morphLock);
+    toeUp = knobs;
+}
+
+void BitVibeProcessor::captureToeDown()
+{
+    const auto knobs = liveKnobs();
+    const SpinLock::ScopedLockType lock(morphLock);
+    toeDown = knobs;
+}
+
+bitvibe::KnobSet BitVibeProcessor::getToeUp() const
+{
+    const SpinLock::ScopedLockType lock(morphLock);
+    return toeUp;
+}
+
+bitvibe::KnobSet BitVibeProcessor::getToeDown() const
+{
+    const SpinLock::ScopedLockType lock(morphLock);
+    return toeDown;
+}
+
+// ------------------------------------------------------------------------------------------
+// Preset slots
+
+int BitVibeProcessor::presetIndex(const String& id) const
+{
+    for (size_t i = 0; i < presetParams.size(); ++i)
+        if (presetParams[i].id == id)
+            return (int) i;
+    return -1;
+}
+
+BitVibeProcessor::PresetSlot BitVibeProcessor::makeFactorySlot(int index) const
+{
+    const auto f = bitvibe::factoryPreset(index);
+
+    PresetSlot s;
+    s.name = f.name;
+    s.toeUp = f.toeUp;
+    s.toeDown = f.toeDown;
+    s.values.reserve(presetParams.size());
+    for (const auto& pp : presetParams)
+        s.values.push_back(pp.param->getDefaultValue());
+
+    auto set = [&](const String& id, float plain)
+    {
+        const int i = presetIndex(id);
+        jassert(i >= 0);
+        if (i >= 0)
+            s.values[(size_t) i] = presetParams[(size_t) i].param->convertTo0to1(plain);
+    };
+    set(ids::sampleRate, f.knobs.sampleRate);
+    set(ids::filter, f.knobs.filter);
+    set(ids::bits, f.knobs.bits);
+    set(ids::stutter, (float) f.knobs.stutter);
+    set(ids::seqPlay, (float) f.knobs.seqPlay);
+    set(ids::seqMult, (float) f.knobs.seqMult);
+    set(ids::seqType, (float) (int) f.knobs.seqType);
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        set(ids::step(i), f.knobs.steps[(size_t) i]);
+    set(ids::tempo, f.tempoBpm);
+    set(ids::stutterLen, (float) f.stutterDivision);
+    set(ids::morph, f.morphOn ? 1.0f : 0.0f);
+    return s;
+}
+
+BitVibeProcessor::PresetSlot BitVibeProcessor::snapshotCurrent() const
+{
+    PresetSlot s;
+    s.values.reserve(presetParams.size());
+    for (const auto& pp : presetParams)
+        s.values.push_back(pp.param->getValue());
+    s.toeUp = getToeUp();
+    s.toeDown = getToeDown();
+    return s;
+}
+
+void BitVibeProcessor::applySlot(const PresetSlot& s)
+{
+    {
+        const SpinLock::ScopedLockType lock(morphLock);
+        toeUp = s.toeUp;
+        toeDown = s.toeDown;
+    }
+    for (size_t i = 0; i < presetParams.size() && i < s.values.size(); ++i)
+        presetParams[i].param->setValueNotifyingHost(s.values[i]);
+}
+
+void BitVibeProcessor::resetToFactoryBank()
+{
+    const ScopedLock lock(presetLock);
+    for (int i = 0; i < bitvibe::kNumPresets; ++i)
+        slots[(size_t) i] = makeFactorySlot(i);
+    currentProgram = 0;
+    // The plug-in starts on slot 1, which is the default sound the parameters already have.
+    applySlot(slots[0]);
+}
+
+void BitVibeProcessor::recallProgram(int index)
+{
+    PresetSlot slot;
+    {
+        const ScopedLock lock(presetLock);
+        currentProgram = index;
+        slot = slots[(size_t) index];
+    }
+    applySlot(slot);
+    updateHostDisplay(ChangeDetails().withProgramChanged(true));
+}
+
+void BitVibeProcessor::setCurrentProgram(int index)
+{
+    index = jlimit(0, bitvibe::kNumPresets - 1, index);
+
+    // Some hosts select the current program again right after restoring the plug-in state. Honouring
+    // that would throw away knob changes that the state has just brought back, so it is ignored; the
+    // editor's own prev / next buttons always move to a different slot.
+    if (index == currentProgram.load())
+        return;
+    recallProgram(index);
+}
+
+const String BitVibeProcessor::getProgramName(int index)
+{
+    if (index < 0 || index >= bitvibe::kNumPresets)
+        return {};
+    const ScopedLock lock(presetLock);
+    return slots[(size_t) index].name;
+}
+
+void BitVibeProcessor::changeProgramName(int index, const String& newName)
+{
+    if (index < 0 || index >= bitvibe::kNumPresets)
+        return;
+    {
+        const ScopedLock lock(presetLock);
+        auto& slot = slots[(size_t) index];
+        slot.name = cleanPresetName(newName, slot.name);
+    }
+    updateHostDisplay(ChangeDetails().withProgramChanged(true));
+}
+
+void BitVibeProcessor::saveCurrentPreset()
+{
+    auto now = snapshotCurrent();
+    const ScopedLock lock(presetLock);
+    auto& slot = slots[(size_t) currentProgram.load()];
+    now.name = slot.name;
+    slot = std::move(now);
+}
+
+bool BitVibeProcessor::isCurrentPresetModified() const
+{
+    const auto now = snapshotCurrent();
+    const ScopedLock lock(presetLock);
+    const auto& slot = slots[(size_t) currentProgram.load()];
+    if (!(now.toeUp == slot.toeUp) || !(now.toeDown == slot.toeDown) || now.values.size() != slot.values.size())
+        return true;
+    for (size_t i = 0; i < now.values.size(); ++i)
+        if (std::abs(now.values[i] - slot.values[i]) > 1.0e-4f)
+            return true;
+    return false;
+}
+
+// ------------------------------------------------------------------------------------------
+// State
+//
+//   <BitVibe program="0">
+//     <PARAM id="sample" value="1.0"/> ...                  all parameters (the value tree of the APVTS)
+//     <MORPH> <UP sample=".." .../> <DOWN .../> </MORPH>     the two expression-morph knob sets
+//     <PRESETS> <PRESET name=".." sample=".." ...> <UP/> <DOWN/> </PRESET> x16 </PRESETS>
+//   </BitVibe>
+// A state saved before the presets existed has neither MORPH nor PRESETS and loads with the factory bank.
+
+ValueTree BitVibeProcessor::slotToTree(const PresetSlot& s) const
+{
+    ValueTree t("PRESET");
+    t.setProperty("name", s.name, nullptr);
+    for (size_t i = 0; i < presetParams.size() && i < s.values.size(); ++i)
+        t.setProperty(Identifier(presetParams[i].id), (double) s.values[i], nullptr);
+    t.appendChild(knobsToTree(s.toeUp, "UP"), nullptr);
+    t.appendChild(knobsToTree(s.toeDown, "DOWN"), nullptr);
+    return t;
+}
+
+BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromTree(const ValueTree& t, int index) const
+{
+    PresetSlot s = makeFactorySlot(index); // anything the file does not say stays as shipped
+    s.name = cleanPresetName(t["name"].toString(), s.name);
+    for (size_t i = 0; i < presetParams.size(); ++i)
+    {
+        const Identifier key(presetParams[i].id);
+        if (t.hasProperty(key))
+        {
+            const double v = (double) t[key];
+            if (std::isfinite(v))
+                s.values[i] = (float) jlimit(0.0, 1.0, v);
+        }
+    }
+    s.toeUp = knobsFromTree(t.getChildWithName("UP"), s.toeUp);
+    s.toeDown = knobsFromTree(t.getChildWithName("DOWN"), s.toeDown);
+    return s;
+}
+
 void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
 {
-    if (auto xml = apvts.copyState().createXml())
+    auto state = apvts.copyState();
+    state.setProperty("program", currentProgram.load(), nullptr);
+
+    ValueTree morphNode("MORPH");
+    morphNode.appendChild(knobsToTree(getToeUp(), "UP"), nullptr);
+    morphNode.appendChild(knobsToTree(getToeDown(), "DOWN"), nullptr);
+    state.appendChild(morphNode, nullptr);
+
+    ValueTree bank("PRESETS");
+    {
+        const ScopedLock lock(presetLock);
+        for (const auto& slot : slots)
+            bank.appendChild(slotToTree(slot), nullptr);
+    }
+    state.appendChild(bank, nullptr);
+
+    if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
 }
 
 void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary(data, sizeInBytes))
-        if (xml->hasTagName(apvts.state.getType()))
-            apvts.replaceState(ValueTree::fromXml(*xml));
+    auto xml = getXmlFromBinary(data, sizeInBytes);
+    if (xml == nullptr || !xml->hasTagName(apvts.state.getType()))
+        return;
+
+    auto state = ValueTree::fromXml(*xml);
+    const auto morphNode = state.getChildWithName("MORPH");
+    const auto bank = state.getChildWithName("PRESETS");
+    const int program = jlimit(0, bitvibe::kNumPresets - 1, (int) state.getProperty("program", 0));
+    state.removeChild(morphNode, nullptr); // keep the parameter tree free of the extra nodes
+    state.removeChild(bank, nullptr);
+    state.removeProperty("program", nullptr);
+    apvts.replaceState(state);
+
+    {
+        const SpinLock::ScopedLockType lock(morphLock);
+        toeUp = knobsFromTree(morphNode.getChildWithName("UP"), bitvibe::KnobSet {});
+        toeDown = knobsFromTree(morphNode.getChildWithName("DOWN"), bitvibe::KnobSet {});
+    }
+
+    const ScopedLock lock(presetLock);
+    for (int i = 0; i < bitvibe::kNumPresets; ++i)
+    {
+        const auto node = bank.isValid() && i < bank.getNumChildren() ? bank.getChild(i) : ValueTree();
+        slots[(size_t) i] = node.isValid() ? slotFromTree(node, i) : makeFactorySlot(i);
+    }
+    currentProgram = program;
 }
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -31,7 +31,11 @@ in the hands of more people for free.
 - **6-step sequencer** for pitch (±12 semitones), filter cutoff or sample rate, with per-step skip/mute,
   1× to 128× tempo multiplier and tap tempo from 23.4 to 6000 BPM (fast enough for ring-mod tones).
 - Stutter and sequencer are triggered by **pick-attack detection**.
-- **Plug-in extras:** tempo sync to the host, all 22 parameters automatable, input and output gain,
+- **Expression morph:** store two complete sets of knobs (including the six step knobs), "toe up" and
+  "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
+- **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
+  the plug-in and in your DAW's program list.
+- **Plug-in extras:** tempo sync to the host, all 24 parameters automatable, input and output gain,
   adjustable trigger sensitivity and stutter length, and processing that stays in stereo. No reported
   latency, and light on CPU (under 1 % of one core in my measurements).
 
@@ -73,7 +77,7 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 ## Using it
 
 The window is laid out like a guitar pedal: six knobs, a bypass footswitch, a tap footswitch and a
-sequencer type switch.
+sequencer type switch, with a preset and expression-morph strip on top.
 
 | Knob | What it does | Alt layer |
 | --- | --- | --- |
@@ -95,9 +99,46 @@ sequencer type switch.
 - The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Trigger** sensitivity for the
   attack detector, host tempo **Sync**, instrument/line **Headroom**, and the stutter snippet length.
 
-It starts with a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0 semitones).
-Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or triggers on
-noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
+It starts on preset 1, a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0
+semitones). Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or
+triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
+
+### Presets
+
+<img src="artifacts/editor_morph.png" align="right" width="300" alt="BitVibe with the preset bar and expression strip">
+
+The bar at the top of the window holds **16 preset slots**. The `<` and `>` buttons step through them (wrapping
+around), and the same list appears as the plug-in's programs in your DAW. Double-click the name to rename a
+slot.
+
+- A slot remembers the sound: the six knobs, the six step knobs, the sequencer type, tempo, stutter length,
+  the morph switch and the two morph sets. It does **not** remember what belongs to your rig or to the
+  moment: bypass, stutter hold, host sync, the Expression position, input / output gain, headroom and
+  trigger sensitivity keep their values when you change preset.
+- Recalling a slot loads its sound. Changes you make afterwards are kept in the session (an orange dot next
+  to the name says the slot has unsaved changes) but are only written into the slot by **SAVE**; changing
+  slot first discards them. Selecting the slot you are already on does nothing, so a host that re-selects
+  the current program after loading a project cannot wipe your changes.
+- Slots 1 to 12 are factory sounds (slot 1 is the default pitch sequence, 11 and 12 demonstrate the morph),
+  slots 13 to 16 are clean and meant to be overwritten. All sixteen are saved with your project.
+
+### Expression morph
+
+The strip under the preset bar has a horizontal **Expression** slider between **SET UP** and **SET DOWN**.
+
+1. Set the knobs (and, on the Alt layer, the six steps) for the sound you want with the pedal's toe up and
+   press **SET UP**. The 12 knob positions and the sequencer type are stored as the *toe-up* set.
+2. Change the knobs to the other sound and press **SET DOWN** for the *toe-down* set.
+3. Switch **MORPH** on. The sound now comes from the two stored sets, blended by Expression: 0 % is the
+   toe-up set, 100 % the toe-down set. While Morph is on the knobs only matter when you capture a set, and
+   their readouts are dimmed. Switch it off to hear the knobs again.
+
+Expression and Morph are ordinary plug-in parameters, so you can automate them or map a MIDI pedal to them
+in your DAW. The blend is computed for every audio block: the three effect knobs and the six steps move
+smoothly (the frequency knobs glide the same way turning them would), while the discrete ones - stutter
+position, sequencer passes, multiplier and type - jump from the toe-up to the toe-down value at the
+midpoint (50 %). A pitch step swept between two values passes through every semitone zone in between (and
+through *skip* / *mute* if a set puts that step at the very end of the knob).
 
 ## Design notes
 
@@ -118,9 +159,11 @@ gate, and the instrument/line headroom difference.
 - The stutter snippet is a note division of the tempo (default 1/8) that starts about 8 ms before the
   detected pick.
 - A generic fast/slow envelope pick detector and a grainy two-tap delay-line pitch shifter.
+- The morph blend law: linear in knob position, with every discrete knob switching at 50 %.
+- What a preset slot contains (see [Presets](#presets)) and the factory sounds in slots 2 to 12.
 
-**Not implemented yet:** an expression-pedal morph between two sets of settings, 16 preset slots with
-MIDI CC and SysEx (use your DAW's presets and automation instead), and a true/buffered bypass option.
+**Not implemented yet:** MIDI CC and SysEx control of the presets (use your DAW's program list and
+automation instead), and a true/buffered bypass option.
 BitVibe also stays in stereo where the hardware reportedly sums to mono while the stutter or sequencer is
 active.
 
@@ -168,9 +211,9 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 130 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
-response, attack detection, stutter timing, sequencer behaviour and a randomized robustness test). It also
-passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 180 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
+morph blend and the factory presets). It also passes under MSVC AddressSanitizer and runs on macOS in CI.
 
 Two extra tools check the built plug-in itself:
 
@@ -180,10 +223,13 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 ```
 
 - `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
-  runs audio through several settings, tests bypass, state save/restore and odd block sizes, and writes demo
-  WAV files.
+  runs audio through several settings, tests bypass, state save/restore and odd block sizes, recalls
+  presets through the host's program list, sweeps the expression morph and round-trips the state, and
+  writes demo WAV files.
 - `BitVibeEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
-  is how the screenshots above were made).
+  is how the screenshots above were made). It also runs processor-level checks that a host cannot reach:
+  capturing the morph sets, renaming and saving presets, and state round trips (including old and damaged
+  state); its exit code is non-zero if one fails.
 
 </details>
 
@@ -194,7 +240,9 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 Source/dsp/Mapping.h      knob → value tables (shared by engine, GUI and tests)
 Source/dsp/Components.h   attack detector, pitch shifter, ladder filter, stutter buffer
 Source/dsp/Engine.h       the effect: signal chain, sequencer, tempo (no JUCE dependency)
-Source/Plugin*.{h,cpp}    JUCE processor (parameters, state) and the pedal-style editor
+Source/dsp/Morph.h        expression-morph knob sets and the blend maths (no JUCE dependency)
+Source/dsp/Presets.h      the 16 factory preset slots (no JUCE dependency)
+Source/Plugin*.{h,cpp}    JUCE processor (parameters, presets, state) and the pedal-style editor
 Tests/EngineTests.cpp     offline checks of the engine
 Tools/                    VST3 smoke-test host and editor-to-PNG renderer
 installer/windows         Inno Setup script and build wrapper

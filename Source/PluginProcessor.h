@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Engine.h"
+#include "Morph.h"
+#include "Presets.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -22,6 +24,8 @@ inline constexpr const char* outputGain = "outputGain";
 inline constexpr const char* headroom = "headroom";
 inline constexpr const char* sensitivity = "sensitivity";
 inline constexpr const char* stutterLen = "stutterLen";
+inline constexpr const char* expression = "expression";
+inline constexpr const char* morph = "morph";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 } // namespace ids
@@ -46,11 +50,25 @@ public:
     // A held or long stutter keeps playing after the input stops.
     double getTailLengthSeconds() const override { return 10.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return "Factory 1"; }
-    void changeProgramName(int, const juce::String&) override {}
+    // Sixteen preset slots. A slot holds the sound (knobs, tempo, stutter length, morph set-up) but not
+    // the settings that belong to the player's rig or the moment: bypass, stutter hold, host sync, the
+    // expression position, input / output gain, headroom and trigger sensitivity keep their values when
+    // a preset is recalled.
+    int getNumPrograms() override { return bitvibe::kNumPresets; }
+    int getCurrentProgram() override { return currentProgram.load(); }
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
+    void changeProgramName(int index, const juce::String& newName) override;
+
+    // Editor actions (message thread).
+    void saveCurrentPreset();            // writes the live sound into the selected slot
+    bool isCurrentPresetModified() const; // live sound differs from the selected slot
+
+    // Expression morph: the two knob sets the expression parameter sweeps between.
+    void captureToeUp();   // stores the current knob values as the toe-up set
+    void captureToeDown(); // stores the current knob values as the toe-down set
+    bitvibe::KnobSet getToeUp() const;
+    bitvibe::KnobSet getToeDown() const;
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -67,8 +85,34 @@ public:
     float getEffectiveBpm() const { return effectiveBpm.load(std::memory_order_relaxed); }
 
 private:
+    // Everything a preset slot remembers: the normalised value of each preset parameter (in the order
+    // of presetParams) and the two morph sets.
+    struct PresetSlot
+    {
+        juce::String name;
+        std::vector<float> values;
+        bitvibe::KnobSet toeUp, toeDown;
+    };
+
+    struct PresetParam
+    {
+        juce::String id;
+        juce::RangedAudioParameter* param = nullptr;
+    };
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     bitvibe::Params readParams();
+    bitvibe::KnobSet liveKnobs() const;
+    void refreshMorphCache();
+
+    int presetIndex(const juce::String& id) const;
+    PresetSlot makeFactorySlot(int index) const;
+    PresetSlot snapshotCurrent() const;
+    void applySlot(const PresetSlot&);
+    void recallProgram(int index);
+    juce::ValueTree slotToTree(const PresetSlot&) const;
+    PresetSlot slotFromTree(const juce::ValueTree&, int index) const;
+    void resetToFactoryBank();
 
     bitvibe::Engine engine;
 
@@ -89,7 +133,20 @@ private:
     std::atomic<float>* pHeadroom = nullptr;
     std::atomic<float>* pSensitivity = nullptr;
     std::atomic<float>* pStutterLen = nullptr;
+    std::atomic<float>* pExpression = nullptr;
+    std::atomic<float>* pMorph = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
+
+    // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
+    mutable juce::SpinLock morphLock;
+    bitvibe::KnobSet toeUp, toeDown;
+    bitvibe::KnobSet cachedToeUp, cachedToeDown; // audio thread only
+
+    // Preset bank (message thread; the audio thread never touches it).
+    mutable juce::CriticalSection presetLock;
+    std::vector<PresetParam> presetParams;
+    std::array<PresetSlot, bitvibe::kNumPresets> slots;
+    std::atomic<int> currentProgram { 0 };
 
     std::atomic<float> effectiveBpm { 120.0f };
 

@@ -16,6 +16,8 @@ public:
     void drawComboBox(juce::Graphics&, int width, int height, bool isButtonDown, int buttonX, int buttonY,
                       int buttonW, int buttonH, juce::ComboBox&) override;
     juce::Font getComboBoxFont(juce::ComboBox&) override;
+    void drawLinearSlider(juce::Graphics&, int x, int y, int width, int height, float sliderPos, float minSliderPos,
+                          float maxSliderPos, juce::Slider::SliderStyle, juce::Slider&) override;
 };
 
 // Round metal footswitch with separate press / release callbacks (the tap switch needs both).
@@ -76,6 +78,8 @@ private:
 
     void timerCallback() override;
     void buildBackground();
+    void stepProgram(int direction);
+    void refreshPresetName();
     void configureKnob(juce::Slider&, int ticks);
     juce::Rectangle<int> knobBounds(int index) const;
     juce::Point<float> knobCentre(int index) const;
@@ -101,7 +105,20 @@ private:
     FootSwitch bypassSwitch, tapSwitch;
     PedalButton altButton { "ALT" }, typeButton { "SEQ TYPE" };
 
+    // preset bar and expression morph strip (the panel above the pedal face)
+    juce::Label presetLabel;
+    PedalButton prevButton { "<" }, nextButton { ">" }, saveButton { "SAVE" };
+    PedalButton setUpButton { "SET UP" }, setDownButton { "SET DOWN" };
+    juce::Slider expressionSlider;
+    std::unique_ptr<APVTS::SliderAttachment> expressionAtt;
+    juce::ToggleButton morphButton { "MORPH" };
+    std::unique_ptr<APVTS::ButtonAttachment> morphAtt;
+
     juce::ParameterAttachment bypassParam, holdParam, typeParam;
+
+    int shownProgram = -1;
+    juce::String shownName;
+    double flashUpUntil = 0.0, flashDownUntil = 0.0, flashSaveUntil = 0.0;
 
     bool altLayer = false;
     bool tapDown = false, holdFromTap = false;

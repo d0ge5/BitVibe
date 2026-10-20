@@ -4,9 +4,20 @@ using namespace juce;
 
 namespace
 {
-constexpr int kWidth = 480, kHeight = 700;
+// The pedal face and the global panel are laid out in their own coordinates; everything below the
+// header panel is shifted down by kFaceDy.
+constexpr int kFaceDy = 100;
+constexpr int kWidth = 480, kHeight = 700 + kFaceDy;
+const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 144 };
+
+// Header rows (window coordinates).
+const Rectangle<int> kPrevBounds { 24, 20, 30, 26 }, kNameBox { 60, 20, 266, 26 }, kNextBounds { 332, 20, 30, 26 },
+    kSaveBounds { 372, 20, 84, 26 };
+const Rectangle<int> kSetUpBounds { 24, 52, 62, 26 }, kExpressionBounds { 94, 52, 204, 26 },
+    kSetDownBounds { 306, 52, 72, 26 }, kMorphBounds { 386, 52, 70, 26 };
+const Rectangle<int> kCaptionBounds { 24, 82, 432, 12 };
 
 constexpr std::array<int, 3> kColX { 88, 240, 392 };
 constexpr std::array<int, 2> kRowY { 142, 288 };
@@ -57,6 +68,13 @@ PedalLookAndFeel::PedalLookAndFeel()
     setColour(PopupMenu::textColourId, kInk);
     setColour(PopupMenu::highlightedBackgroundColourId, Colour(0xff4a3410));
     setColour(PopupMenu::highlightedTextColourId, kInk);
+    setColour(Label::textColourId, kInk);
+    setColour(Label::textWhenEditingColourId, kInk);
+    setColour(Label::backgroundWhenEditingColourId, Colour(0xff0e0e10));
+    setColour(Label::outlineWhenEditingColourId, kAccent);
+    setColour(TextEditor::highlightColourId, Colour(0xff4a3410));
+    setColour(TextEditor::highlightedTextColourId, kInk);
+    setColour(CaretComponent::caretColourId, kAccent);
 }
 
 void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, int height, float sliderPos,
@@ -103,6 +121,44 @@ void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, in
     pointer.addRoundedRectangle(-1.8f, -R * 0.86f, 3.6f, R * 0.5f, 1.6f);
     g.setColour(enabled ? ink : ink.withAlpha(0.3f));
     g.fillPath(pointer, AffineTransform::rotation(angle).translated(c.x, c.y));
+}
+
+void PedalLookAndFeel::drawLinearSlider(Graphics& g, int x, int y, int width, int height, float sliderPos, float,
+                                        float, Slider::SliderStyle, Slider& slider)
+{
+    // Expression bar: a groove with a lit portion up to a small metal thumb. Dim while the morph is off.
+    const bool active = (bool) slider.getProperties().getWithDefault("active", true);
+    const auto area = Rectangle<float>((float) x, (float) y, (float) width, (float) height);
+    const float cy = area.getCentreY();
+    const float left = area.getX() + 8.0f, right = area.getRight() - 8.0f;
+    const float pos = jlimit(left, right, sliderPos);
+
+    const auto groove = Rectangle<float>(left, cy - 3.0f, right - left, 6.0f);
+    g.setColour(Colour(0xff0a0a0c));
+    g.fillRoundedRectangle(groove, 3.0f);
+    g.setColour(Colour(0xff34343a));
+    g.drawRoundedRectangle(groove, 3.0f, 1.0f);
+
+    g.setColour(active ? kAccent : Colour(0xff5a5a60));
+    g.fillRoundedRectangle(Rectangle<float>(left, cy - 3.0f, jmax(0.0f, pos - left), 6.0f), 3.0f);
+
+    for (int i = 0; i <= 4; ++i)
+    {
+        const float tx = left + (right - left) * (float) i / 4.0f;
+        g.setColour(kInkDim.withAlpha(0.5f));
+        g.drawLine(tx, cy + 8.0f, tx, cy + 11.0f, 1.0f);
+    }
+
+    const auto thumb = Rectangle<float>(14.0f, 20.0f).withCentre({ pos, cy });
+    g.setColour(Colours::black.withAlpha(0.5f));
+    g.fillRoundedRectangle(thumb.translated(0.0f, 2.0f), 4.0f);
+    g.setGradientFill(ColourGradient(Colour(0xffd8d8dc), thumb.getX(), thumb.getY(), Colour(0xff55555c),
+                                     thumb.getX(), thumb.getBottom(), false));
+    g.fillRoundedRectangle(thumb, 4.0f);
+    g.setColour(Colours::black.withAlpha(0.7f));
+    g.drawRoundedRectangle(thumb, 4.0f, 1.0f);
+    g.setColour(active ? kAccent : Colour(0xff2a2a2e));
+    g.fillRect(Rectangle<float>(2.0f, 12.0f).withCentre(thumb.getCentre()));
 }
 
 void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highlighted, bool)
@@ -309,6 +365,48 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     addAndMakeVisible(altButton);
     addAndMakeVisible(typeButton);
 
+    // preset bar: previous / next slot, the name (double-click to rename) and SAVE
+    presetLabel.setLookAndFeel(&laf);
+    presetLabel.setFont(bold(13.5f));
+    presetLabel.setJustificationType(Justification::centred);
+    presetLabel.setEditable(false, true, false);
+    presetLabel.onTextChange = [this]
+    {
+        proc.changeProgramName(proc.getCurrentProgram(), presetLabel.getText());
+        refreshPresetName();
+    };
+    prevButton.onClick = [this] { stepProgram(-1); };
+    nextButton.onClick = [this] { stepProgram(1); };
+    saveButton.onClick = [this]
+    {
+        proc.saveCurrentPreset();
+        flashSaveUntil = Time::getMillisecondCounterHiRes() + 500.0;
+    };
+    for (auto* b : { &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton })
+        addAndMakeVisible(*b);
+    addAndMakeVisible(presetLabel);
+
+    // expression morph strip: capture the two sets, sweep between them, switch the morph on
+    setUpButton.onClick = [this]
+    {
+        proc.captureToeUp();
+        flashUpUntil = Time::getMillisecondCounterHiRes() + 400.0;
+    };
+    setDownButton.onClick = [this]
+    {
+        proc.captureToeDown();
+        flashDownUntil = Time::getMillisecondCounterHiRes() + 400.0;
+    };
+    expressionSlider.setSliderStyle(Slider::LinearHorizontal);
+    expressionSlider.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
+    expressionSlider.setLookAndFeel(&laf);
+    expressionAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::expression, expressionSlider);
+    addAndMakeVisible(expressionSlider);
+    morphButton.setLookAndFeel(&laf);
+    morphAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::morph, morphButton);
+    addAndMakeVisible(morphButton);
+    refreshPresetName();
+
     setSize(kWidth, kHeight);
     buildBackground();
     startTimerHz(30);
@@ -326,6 +424,9 @@ BitVibeEditor::~BitVibeEditor()
         s->setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
+    morphButton.setLookAndFeel(nullptr);
+    expressionSlider.setLookAndFeel(nullptr);
+    presetLabel.setLookAndFeel(nullptr);
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
@@ -351,6 +452,26 @@ void BitVibeEditor::setAltLayer(bool on)
     }
     altButton.lit = on;
     altButton.repaint();
+    repaint();
+}
+
+void BitVibeEditor::stepProgram(int direction)
+{
+    const int count = proc.getNumPrograms();
+    proc.setCurrentProgram((proc.getCurrentProgram() + direction + count) % count);
+    refreshPresetName();
+}
+
+void BitVibeEditor::refreshPresetName()
+{
+    const int program = proc.getCurrentProgram();
+    const String name = proc.getProgramName(program);
+    if (program == shownProgram && name == shownName)
+        return;
+    shownProgram = program;
+    shownName = name;
+    if (!presetLabel.isBeingEdited())
+        presetLabel.setText(name, dontSendNotification);
     repaint();
 }
 
@@ -423,6 +544,18 @@ void BitVibeEditor::buildBackground()
 
     g.fillAll(Colour(0xff0d0d0f));
 
+    const auto header = kHeader.toFloat();
+    g.setColour(Colour(0xff17171a));
+    g.fillRoundedRectangle(header, 10.0f);
+    g.setColour(Colour(0xff2c2c31));
+    g.drawRoundedRectangle(header.reduced(0.5f), 10.0f, 1.0f);
+    g.setColour(Colour(0xff0e0e10));
+    g.fillRoundedRectangle(kNameBox.toFloat(), 4.0f);
+    g.setColour(Colour(0xff3c3c42));
+    g.drawRoundedRectangle(kNameBox.toFloat().reduced(0.5f), 4.0f, 1.0f);
+
+    g.addTransform(AffineTransform::translation(0.0f, (float) kFaceDy));
+
     // Enclosure: black powder coat with a fine metal flake.
     const auto face = kFace.toFloat();
     g.setGradientFill(ColourGradient(Colour(0xff2a2a2e), face.getX(), face.getY(), Colour(0xff121214), face.getRight(),
@@ -457,31 +590,67 @@ void BitVibeEditor::buildBackground()
 
 void BitVibeEditor::resized()
 {
+    // header: preset bar and morph strip
+    prevButton.setBounds(kPrevBounds);
+    nextButton.setBounds(kNextBounds);
+    saveButton.setBounds(kSaveBounds);
+    presetLabel.setBounds(kNameBox.reduced(40, 1));
+    setUpButton.setBounds(kSetUpBounds);
+    expressionSlider.setBounds(kExpressionBounds);
+    setDownButton.setBounds(kSetDownBounds);
+    morphButton.setBounds(kMorphBounds);
+
+    // pedal face and global panel (laid out in face coordinates, then moved below the header)
+    auto face = [](Rectangle<int> r) { return r.translated(0, kFaceDy); };
+
     for (int i = 0; i < kKnobs; ++i)
     {
-        knobs[(size_t) i].front.setBounds(knobBounds(i));
-        knobs[(size_t) i].step.setBounds(knobBounds(i));
+        knobs[(size_t) i].front.setBounds(face(knobBounds(i)));
+        knobs[(size_t) i].step.setBounds(face(knobBounds(i)));
     }
 
-    typeButton.setBounds(Rectangle<int>(78, 22).withCentre({ 88, 383 }));
-    altButton.setBounds(Rectangle<int>(78, 22).withCentre({ 392, 383 }));
-    bypassSwitch.setBounds(Rectangle<int>(84, 84).withCentre({ 88, 462 }));
-    tapSwitch.setBounds(Rectangle<int>(84, 84).withCentre({ 392, 462 }));
+    typeButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 88, 383 })));
+    altButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 392, 383 })));
+    bypassSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 88, 462 })));
+    tapSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 392, 462 })));
 
     // global panel: four knobs, then switches
     const std::array<Slider*, 4> small { &tempoSlider, &inSlider, &outSlider, &trigSlider };
     for (size_t i = 0; i < small.size(); ++i)
-        small[i]->setBounds(Rectangle<int>(52, 52).withCentre({ 69 + (int) i * 114, 585 }));
+        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ 69 + (int) i * 114, 585 })));
 
-    syncButton.setBounds(24, 654, 62, 24);
-    holdButton.setBounds(92, 654, 62, 24);
-    headroomBox.setBounds(170, 654, 124, 24);
-    stutterLenBox.setBounds(304, 654, 148, 24);
+    syncButton.setBounds(face({ 24, 654, 62, 24 }));
+    holdButton.setBounds(face({ 92, 654, 62, 24 }));
+    headroomBox.setBounds(face({ 170, 654, 124, 24 }));
+    stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
 }
 
 void BitVibeEditor::paint(Graphics& g)
 {
     g.drawImageAt(background, 0, 0);
+
+    // Header: slot number and modified mark beside the preset name, state line under the morph strip
+    {
+        const bool morphOn = rawValue(ids::morph) > 0.5f;
+        g.setColour(kInkDim);
+        g.setFont(bold(11.0f));
+        g.drawText(String(proc.getCurrentProgram() + 1).paddedLeft('0', 2),
+                   kNameBox.withWidth(40).translated(2, 0), Justification::centred);
+        if (proc.isCurrentPresetModified())
+        {
+            g.setColour(kAccent);
+            g.fillEllipse(Rectangle<float>(7.0f, 7.0f).withCentre({ (float) kNameBox.getRight() - 16.0f, (float) kNameBox.getCentreY() }));
+        }
+
+        g.setColour(morphOn ? kAccent : kInkDim);
+        g.setFont(plain(10.0f));
+        const String caption = morphOn ? "MORPH ON: THE SOUND FOLLOWS EXPRESSION " + String(roundToInt(rawValue(ids::expression) * 100.0f))
+                                             + "%, THE KNOBS ONLY FILL THE SETS"
+                                       : "MORPH OFF: THE KNOBS ARE HEARD";
+        g.drawText(caption, kCaptionBounds, Justification::centred);
+    }
+
+    g.addTransform(AffineTransform::translation(0.0f, (float) kFaceDy));
 
     // Title
     g.setColour(kInk);
@@ -492,6 +661,7 @@ void BitVibeEditor::paint(Graphics& g)
     g.drawText("UNOFFICIAL  -  INDEPENDENT PROJECT", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
 
     const int currentStep = proc.getEngine().getCurrentStep();
+    const bool morphOn = rawValue(ids::morph) > 0.5f;
 
     // Knob labels and readouts
     for (int i = 0; i < kKnobs; ++i)
@@ -504,7 +674,7 @@ void BitVibeEditor::paint(Graphics& g)
         const String label = altLayer ? "STEP " + String(i + 1) : String(knobs[(size_t) i].label);
         g.drawText(label, Rectangle<int>(112, 16).withCentre({ (int) c.x, (int) c.y - 62 }), Justification::centred);
 
-        g.setColour(ink.withAlpha(0.75f));
+        g.setColour(ink.withAlpha(morphOn ? 0.4f : 0.75f)); // with the morph on, the knob values are not what you hear
         g.setFont(plain(11.5f));
         g.drawText(readoutText(i), Rectangle<int>(120, 16).withCentre({ (int) c.x, (int) c.y + 56 }), Justification::centred);
 
@@ -582,6 +752,22 @@ void BitVibeEditor::timerCallback()
         holdParam.beginGesture();
         holdParam.setValueAsPartOfGesture(1.0f);
     }
+
+    refreshPresetName();
+    const double now = Time::getMillisecondCounterHiRes();
+    auto flash = [now](PedalButton& b, double until)
+    {
+        const bool on = now < until;
+        if (b.lit != on)
+        {
+            b.lit = on;
+            b.repaint();
+        }
+    };
+    flash(setUpButton, flashUpUntil);
+    flash(setDownButton, flashDownUntil);
+    flash(saveButton, flashSaveUntil);
+    expressionSlider.getProperties().set("active", rawValue(ids::morph) > 0.5f);
 
     const auto type = seqType();
     for (auto& k : knobs)
