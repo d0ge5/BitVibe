@@ -7,31 +7,33 @@
   </tr>
 </table>
 
-**Ottoclone** is a free bitcrusher / ladder-filter / stutter / 6-step-sequencer effect for guitar and
-synths, as a **VST3** plug-in (plus **Audio Unit** on macOS and a **Standalone** app). It recreates the
-behaviour of the Meris Ottobit Jr. pedal from its official manual and published reviews, written from
-scratch in C++ with [JUCE](https://juce.com).
+**Ottoclone** is a free, open-source bitcrusher / ladder-filter / stutter / 6-step-sequencer effect for
+guitar and synths: a **VST3** plug-in (plus **Audio Unit** on macOS and a **Standalone** app). It is written
+from scratch in C++ with [JUCE](https://juce.com) and is inspired by a hardware pedal (see
+[Credits](#credits-and-licence)). The aim is to put those ideas, plus some extras only a plug-in can offer,
+in the hands of more people for free.
 
 > **Status: early version (0.1.0), work in progress.** The sound engine is covered by automated tests
 > and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
 > macOS build has not been run on a real Mac yet. Bug reports are welcome.
 >
-> Ottoclone is an independent, unofficial project. It is **not affiliated with, endorsed by or
-> sponsored by Meris**; no Meris code, firmware or artwork is used.
+> Ottoclone is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
+> the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
-[Features](#features) · [Install](#install) · [Using it](#using-it) · [How close is it?](#how-close-is-it-to-the-pedal) · [Building](#building-from-source) · [Licence](#licence)
+[Features](#features) · [Install](#install) · [Using it](#using-it) · [Design notes](#design-notes) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
 
 ## Features
 
 - **Sample-rate reduction** from 48 kHz down to 48 Hz and **bit-depth reduction** from 24 bit to 1 bit
-  (with the noise gate the pedal engages below 8 bit).
+  (with a noise gate below 8 bit).
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds × 7 repeat counts, off and random) and a hold to freeze it.
 - **6-step sequencer** for pitch (±12 semitones), filter cutoff or sample rate, with per-step skip/mute,
   1× to 128× tempo multiplier and tap tempo from 23.4 to 6000 BPM (fast enough for ring-mod tones).
-- Stutter and sequencer are triggered by **pick-attack detection**, as on the pedal.
-- Stereo, no reported latency, light on CPU (under 1 % of one core in my measurements), tempo sync
-  to the host, and all 22 parameters are automatable.
+- Stutter and sequencer are triggered by **pick-attack detection**.
+- **Plug-in extras:** tempo sync to the host, all 22 parameters automatable, input and output gain,
+  adjustable trigger sensitivity and stutter length, and processing that stays in stereo. No reported
+  latency, and light on CPU (under 1 % of one core in my measurements).
 
 ## Install
 
@@ -70,8 +72,8 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/Ottoclone.vst3`,
 
 ## Using it
 
-The window follows the pedal's layout: six knobs, a bypass footswitch, a tap footswitch and a sequencer
-type switch.
+The window is laid out like a guitar pedal: six knobs, a bypass footswitch, a tap footswitch and a
+sequencer type switch.
 
 | Knob | What it does | Alt layer |
 | --- | --- | --- |
@@ -93,18 +95,21 @@ type switch.
 - The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Trigger** sensitivity for the
   attack detector, host tempo **Sync**, instrument/line **Headroom**, and the stutter snippet length.
 
-It starts in the pedal's factory state, with the pitch sequencer running (steps −7, −3, −12, +7, +4, 0
-semitones). Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or
-triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
+It starts with a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0 semitones).
+Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or triggers on
+noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
 
-## How close is it to the pedal?
+## Design notes
 
-**Taken directly from the official manual (v6):** all the ranges above, the 23-position stutter table, stutter
-hold, the 6-step sequencer with skip/mute, the pitch step set, filter and sample-rate steps as a percentage
-of the front-panel setting, the tempo range, the ×128 multiplier, the ladder-style filter, the sub-8-bit noise
+Ottoclone's behaviour is defined from the manufacturer's published documentation and reviews of the
+hardware, not from any of its code.
+
+**Based on that documentation:** the ranges above, the 23-position stutter table, stutter hold, the 6-step
+sequencer with skip/mute, the pitch step set, filter and sample-rate steps as a percentage of the
+front-panel setting, the tempo range, the ×128 multiplier, the ladder-style filter, the sub-8-bit noise
 gate, and the instrument/line headroom difference.
 
-**Guesses** (the manual does not say; easy to change in [`Source/dsp`](Source/dsp)):
+**Guesses** (the documentation does not say; easy to change in [`Source/dsp`](Source/dsp)):
 
 - The order of the effects: Stutter → Pitch → Sample rate → Bits → Filter → Mute.
 - A fixed, moderate filter resonance; exponential knob tapers for Sample and Filter, linear for Bits.
@@ -114,9 +119,10 @@ gate, and the instrument/line headroom difference.
   detected pick.
 - A generic fast/slow envelope pick detector and a grainy two-tap delay-line pitch shifter.
 
-**Not implemented yet:** the expression-pedal morph between two sets of settings, the 16 hardware preset
-slots with MIDI CC and SysEx (use your DAW's presets and automation instead), the pedal's mono-sum of a
-stereo input while stutter/sequencer are active (Ottoclone stays stereo), and the true/buffered bypass option.
+**Not implemented yet:** an expression-pedal morph between two sets of settings, 16 preset slots with
+MIDI CC and SysEx (use your DAW's presets and automation instead), and a true/buffered bypass option.
+Ottoclone also stays in stereo where the hardware reportedly sums to mono while the stutter or sequencer is
+active.
 
 ## Building from source
 
@@ -162,7 +168,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 130 checks: the manual's mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 130 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour and a randomized robustness test). It also
 passes under MSVC AddressSanitizer and runs on macOS in CI.
 
@@ -185,10 +191,10 @@ build.bat OttocloneSmokeTest OttocloneEditorSnapshot
 <summary>Project layout</summary>
 
 ```
-Source/dsp/Mapping.h      knob → value tables from the manual (shared by engine, GUI and tests)
+Source/dsp/Mapping.h      knob → value tables (shared by engine, GUI and tests)
 Source/dsp/Components.h   attack detector, pitch shifter, ladder filter, stutter buffer
 Source/dsp/Engine.h       the effect: signal chain, sequencer, tempo (no JUCE dependency)
-Source/Plugin*.{h,cpp}    JUCE processor (parameters, state) and the pedal-shaped editor
+Source/Plugin*.{h,cpp}    JUCE processor (parameters, state) and the pedal-style editor
 Tests/EngineTests.cpp     offline checks of the engine
 Tools/                    VST3 smoke-test host and editor-to-PNG renderer
 installer/windows         Inno Setup script and build wrapper
@@ -199,12 +205,13 @@ artifacts/                editor screenshots
 
 </details>
 
-## Licence
+## Credits and licence
+
+Ottoclone is inspired by the **Meris Ottobit Jr.** pedal. It is an independent project and is **not
+affiliated with, endorsed by or sponsored by Meris**. "Meris" and "Ottobit" are trademarks of their owner and
+are mentioned here only to credit that inspiration.
 
 Ottoclone is free software under the [GNU Affero General Public License v3.0](LICENSE). It uses
 [JUCE 8](https://juce.com) under JUCE's AGPLv3 option and the MIT-licensed VST 3 SDK; see
 [`NOTICE.md`](NOTICE.md). If you distribute a build, the AGPL requires you to make the corresponding source
-available to the people you give it to.
-
-"Meris" and "Ottobit" are trademarks of their owner and are used here only to say what Ottoclone is
-modelled on. VST is a trademark of Steinberg Media Technologies GmbH.
+available to the people you give it to. VST is a trademark of Steinberg Media Technologies GmbH.
