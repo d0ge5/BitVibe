@@ -1,118 +1,146 @@
 # Ottoclone
 
-A bitcrusher / ladder-filter / stutter / 6-step sequencer effect plug-in (VST3, plus Audio Unit and a
-Standalone app) that recreates the behaviour of the Meris Ottobit Jr. guitar pedal. It is built from
-the behaviour documented in the official manual (v6) and published reviews, and written from scratch:
-no Meris code, firmware or artwork is used.
+<table>
+  <tr>
+    <td align="center"><img src="artifacts/editor_front.png" width="340" alt="Ottoclone front panel"><br><sub>Front panel</sub></td>
+    <td align="center"><img src="artifacts/editor_alt_pitch.png" width="340" alt="Ottoclone Alt layer showing the six sequencer steps"><br><sub>Alt layer: the six sequencer steps</sub></td>
+  </tr>
+</table>
 
-Ottoclone is an independent, unofficial project, **not affiliated with, endorsed by or sponsored by
-Meris**. "Meris" and "Ottobit" are trademarks of their owner and are used here only to say what this
-is modelled on.
+**Ottoclone** is a free bitcrusher / ladder-filter / stutter / 6-step-sequencer effect for guitar and
+synths, as a **VST3** plug-in (plus **Audio Unit** on macOS and a **Standalone** app). It recreates the
+behaviour of the Meris Ottobit Jr. pedal from its official manual and published reviews, written from
+scratch in C++ with [JUCE](https://juce.com).
 
-## Installing
+> **Status: early version (0.1.0), work in progress.** The sound engine is covered by automated tests
+> and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
+> macOS build has not been run on a real Mac yet. Bug reports are welcome.
+>
+> Ottoclone is an independent, unofficial project. It is **not affiliated with, endorsed by or
+> sponsored by Meris**; no Meris code, firmware or artwork is used.
 
-Download the installer for your system:
+[Features](#features) · [Install](#install) · [Using it](#using-it) · [How close is it?](#how-close-is-it-to-the-pedal) · [Building](#building-from-source) · [Licence](#licence)
+
+## Features
+
+- **Sample-rate reduction** from 48 kHz down to 48 Hz and **bit-depth reduction** from 24 bit to 1 bit
+  (with the noise gate the pedal engages below 8 bit).
+- **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
+- **Stutter** with 23 positions (3 speeds × 7 repeat counts, off and random) and a hold to freeze it.
+- **6-step sequencer** for pitch (±12 semitones), filter cutoff or sample rate, with per-step skip/mute,
+  1× to 128× tempo multiplier and tap tempo from 23.4 to 6000 BPM (fast enough for ring-mod tones).
+- Stutter and sequencer are triggered by **pick-attack detection**, as on the pedal.
+- Stereo, no reported latency, light on CPU (under 1 % of one core in my measurements), tempo sync
+  to the host, and all 22 parameters are automatable.
+
+## Install
+
+Prebuilt installers will be attached to the [Releases](https://github.com/d0ge5/ottoclone/releases) page.
+**None have been published yet**; until then, build them yourself (see
+[Building from source](#building-from-source)).
 
 | System | Installer | What it installs |
 | --- | --- | --- |
-| Windows 10/11 (64-bit) | `Ottoclone-<version>-Windows-x64-Setup.exe` | VST3 in `C:\Program Files\Common Files\VST3`, optional Standalone app |
-| macOS 11+ (Apple Silicon and Intel) | `Ottoclone-<version>-macOS.pkg` | VST3, Audio Unit and optional Standalone app |
+| Windows 10/11, 64-bit | `Ottoclone-<version>-Windows-x64-Setup.exe` | VST3 plug-in, optional Standalone app |
+| macOS 11+, Apple Silicon or Intel | `Ottoclone-<version>-macOS.pkg` | VST3, Audio Unit, optional Standalone app |
 
-**Windows.** Run the setup. The installers are not code-signed, so SmartScreen may say "Windows
-protected your PC": choose *More info → Run anyway*. The installer asks for administrator rights to
-write to the shared VST3 folder; if you pick *Install for me only* it installs into
-`%LOCALAPPDATA%\Programs\Common\VST3` instead (most, but not all, hosts scan that folder). Uninstall
-from *Settings → Apps*.
+Neither installer is code-signed, so your system will warn you the first time.
 
-**macOS.** Open the `.pkg` (right-click → *Open* if macOS blocks it) and pick the formats you want.
-The build is not signed with an Apple Developer ID, so macOS may refuse the plug-in or app the first
-time: open *System Settings → Privacy & Security* and choose *Open Anyway*. To uninstall delete
-`/Library/Audio/Plug-Ins/VST3/Ottoclone.vst3`, `/Library/Audio/Plug-Ins/Components/Ottoclone.component`
-and `/Applications/Ottoclone.app`.
+**Windows**
 
-Then restart your DAW or rescan plug-ins; Ottoclone is listed under *Fx / Distortion*.
+1. Run the setup. If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
+2. Pick **Install for all users** (asks for an administrator password) or **Install for me only**.
+3. Accept the licence, choose the full install or the plug-in only, and finish.
+4. Open your DAW and rescan plug-ins. Ottoclone is listed under **Fx / Distortion**.
 
-## Controls
+No extra runtime is needed. "Install for me only" uses `%LOCALAPPDATA%\Programs\Common\VST3`, which some
+DAWs do not scan by default; if the plug-in is missing, add that folder to the DAW's plug-in paths.
+Uninstall from *Settings → Apps*.
 
-Front panel (same layout as the pedal):
+**macOS**
 
-| Knob | Range | Alt (second layer) |
+1. Open the `.pkg` (right-click → **Open** if macOS blocks it).
+2. On the *Customize* page tick the formats you want (VST3, Audio Unit, Standalone) and install; it asks
+   for your password because it installs for all users.
+3. Restart your DAW. Logic Pro uses the Audio Unit and may take a minute to validate it the first time.
+4. If macOS blocks the plug-in, open **System Settings → Privacy & Security** and choose **Open Anyway**.
+
+To uninstall, delete `/Library/Audio/Plug-Ins/VST3/Ottoclone.vst3`,
+`/Library/Audio/Plug-Ins/Components/Ottoclone.component` and `/Applications/Ottoclone.app`.
+
+## Using it
+
+The window follows the pedal's layout: six knobs, a bypass footswitch, a tap footswitch and a sequencer
+type switch.
+
+| Knob | What it does | Alt layer |
 | --- | --- | --- |
-| **Sample** | 48 Hz – 48 kHz sample-rate reduction (fully clockwise = off) | Step 1 |
-| **Filter** | 96 Hz – 24 kHz ladder low-pass (fully clockwise = bypassed) | Step 2 |
-| **Bits** | 24 bit down to 1 bit (fully clockwise = off); noise gate engages below 8 bit | Step 3 |
-| **Stutter** | 23 positions: off, then full / double / half speed x (1, 2, 3, 4, 6, 8, 16 repeats), then random | Step 4 |
-| **Sequencer** | Off, once, twice, 4x, 8x, continuous (number of passes through the sequence) | Step 5 |
-| **Seq Mult** | x1 … x128 (eight steps), multiplies the tap tempo | Step 6 |
+| **Sample** | Sample-rate reduction, 48 Hz – 48 kHz (fully clockwise = off) | Step 1 |
+| **Filter** | Ladder low-pass, 96 Hz – 24 kHz (fully clockwise = off) | Step 2 |
+| **Bits** | Bit depth, 24 → 1 bit (fully clockwise = off) | Step 3 |
+| **Stutter** | Off, then full / double / half speed × 1, 2, 3, 4, 6, 8 or 16 repeats, then random | Step 4 |
+| **Sequencer** | How many passes: off, once, twice, 4×, 8×, continuous | Step 5 |
+| **Seq Mult** | Sequencer speed as a multiple of the tempo, ×1 … ×128 | Step 6 |
 
-* **ALT** (click to toggle) swaps the six knobs to the six sequencer steps. Knob at minimum = **skip**
-  the step, at maximum = **mute** it.
-* **SEQ TYPE** cycles Pitch → Filter → Sample Rate (the two small LEDs show it; both off = Sample Rate).
-  * *Pitch*: every step is -12 … +12 semitones, centre = dry (27 choices incl. skip and mute).
-  * *Filter / Sample Rate*: every step is 0–100 % of the front-panel Filter / Sample value
-    (noon = 50 %), so the sequence always tracks the front-panel knob.
-* **TAP** sets the tempo (23.4 – 6000 BPM, so the sequencer can run in the audio band for ring-mod
-  tones). **Hold** TAP (or use the HOLD button / automate *Stutter Hold*) to freeze the stutter buffer —
-  you can press it before playing so the next note gets frozen.
-* **BYPASS** switches the effect in and out (also wired to the host's bypass).
-* The stutter and the sequencer are triggered by **pick-attack detection** on the input. If it misses
-  or false-triggers, adjust **TRIGGER** (sensitivity) in the global panel, and try feeding it the dry
-  signal first, as the manual recommends.
+- **ALT** swaps the knobs to the six sequencer steps (they turn orange). A step at minimum is
+  **skipped**, at maximum it is **muted**.
+- **SEQ TYPE** cycles what the sequencer controls: **Pitch** (each step −12 … +12 semitones, centre =
+  unshifted), **Filter** or **Sample Rate** (each step is 0–100 % of the front-panel value). The two small
+  LEDs show the type; both off means Sample Rate.
+- **TAP** sets the tempo. **Hold it** (or use the HOLD button) to freeze the stutter; you can press it
+  before playing so the next note is the one that gets frozen.
+- **BYPASS** switches the effect in and out. It is also wired to your host's bypass.
+- The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Trigger** sensitivity for the
+  attack detector, host tempo **Sync**, instrument/line **Headroom**, and the stutter snippet length.
 
-Global panel (extras that a plugin needs; the hardware keeps equivalents in its global-settings mode):
-tempo, input / output gain, trigger sensitivity, *Sync* to the host tempo, *Hold*, headroom
-(instrument vs line level) and the stutter snippet length (1/4, 1/8 or 1/16 note).
+It starts in the pedal's factory state, with the pitch sequencer running (steps −7, −3, −12, +7, +4, 0
+semitones). Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or
+triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
 
-The factory sound is Preset 1: pitch sequencer, continuous, steps -7, -3, -12, +7, +4, 0 semitones.
-Set **Sequencer** to *Off* to hear a clean signal.
+## How close is it to the pedal?
 
-## What follows the manual, and what is a guess
+**Taken directly from the official manual (v6):** all the ranges above, the 23-position stutter table, stutter
+hold, the 6-step sequencer with skip/mute, the pitch step set, filter and sample-rate steps as a percentage
+of the front-panel setting, the tempo range, the ×128 multiplier, the ladder-style filter, the sub-8-bit noise
+gate, and the instrument/line headroom difference.
 
-Taken directly from the manual / specs: all ranges above, the 23-position stutter table, hold
-behaviour, the 6-step sequencer with skip/mute, the pitch step set, the percentage-of-front-panel
-behaviour of the filter and sample-rate sequencers, tempo range, the x128 multiplier, the ladder-style
-filter, the <8-bit noise gate, and the line-level headroom difference.
+**Guesses** (the manual does not say; easy to change in [`Source/dsp`](Source/dsp)):
 
-**Assumed** (the manual does not say; all easy to change in `Source/dsp`):
+- The order of the effects: Stutter → Pitch → Sample rate → Bits → Filter → Mute.
+- A fixed, moderate filter resonance; exponential knob tapers for Sample and Filter, linear for Bits.
+- An "off" position below "once" on the Sequencer knob.
+- One step lasts one beat divided by the multiplier.
+- The stutter snippet is a note division of the tempo (default 1/8) that starts about 8 ms before the
+  detected pick.
+- A generic fast/slow envelope pick detector and a grainy two-tap delay-line pitch shifter.
 
-* Order of the blocks: Stutter → Pitch → Sample rate → Bits → Filter → Mute.
-* Filter resonance is fixed at a moderate value; knob tapers are exponential for Sample and Filter and
-  linear for Bits.
-* A sequencer knob position of "off" exists below "once".
-* A step lasts one beat divided by the multiplier.
-* Stutter snippet length is a note division of the tempo (default 1/8 note); the snippet starts ~8 ms
-  before the detected pick so the transient is included.
-* The pick detector is a generic fast/slow envelope comparator.
-* Pitch shifting is a crossfading two-tap delay-line shifter (grainy, which suits the sound).
-
-**Not implemented** (yet): the expression-pedal morph between two complete sets of settings, the 16
-hardware preset slots / MIDI CC / SysEx (use your DAW's presets and automation instead), the
-mono-sum of a stereo input when stutter/sequencer are active (this version stays in stereo), and the
-true/buffered bypass options.
+**Not implemented yet:** the expression-pedal morph between two sets of settings, the 16 hardware preset
+slots with MIDI CC and SysEx (use your DAW's presets and automation instead), the pedal's mono-sum of a
+stereo input while stutter/sequencer are active (Ottoclone stays stereo), and the true/buffered bypass option.
 
 ## Building from source
 
-Needs a C++20 toolchain and CMake. JUCE 8 is a git submodule in `third_party/JUCE`, pinned to 8.0.12.
+JUCE 8 is a git submodule pinned to 8.0.12, so clone with `--recursive`:
 
-```bat
+```sh
 git clone --recursive https://github.com/d0ge5/ottoclone.git
 cd ottoclone
-:: or, in an existing clone:  git submodule update --init
+# already cloned without it?  git submodule update --init
 ```
 
-**Windows** (Visual Studio 2026 C++ workload, CMake, Ninja):
+**Windows** needs the Visual Studio C++ workload, CMake and Ninja. `build.bat` expects Visual Studio at
+its default 2026 path; edit the `VCVARS` line at the top if yours is elsewhere.
 
 ```bat
-build.bat                      :: plugin (VST3 + Standalone) and the DSP tests
-build.bat ottobit_tests        :: just the DSP tests
-build\ottobit_tests.exe        :: run them
+build.bat                 :: plug-in (VST3 + Standalone) and the DSP tests
+build.bat ottobit_tests   :: just the DSP tests (skips compiling the plug-in)
+build\ottobit_tests.exe   :: run them
 ```
 
-The VST3 ends up in `build\Ottoclone_artefacts\Release\VST3\Ottoclone.vst3` and the Standalone app in
-`...\Release\Standalone\`.
+The VST3 is built to `build\Ottoclone_artefacts\Release\VST3\Ottoclone.vst3`.
 
-**macOS** (Xcode command line tools, CMake) builds a universal binary with VST3 + Audio Unit +
-Standalone:
+**macOS** needs the Xcode command line tools and CMake, and builds a universal binary with VST3,
+Audio Unit and Standalone:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -121,51 +149,62 @@ cmake --build build --parallel
 
 ### Making the installers
 
-* **Windows**: install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`),
+- **Windows:** install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`),
   run `build.bat`, then `installer\windows\build_installer.bat`. The result is
   `dist\Ottoclone-<version>-Windows-x64-Setup.exe`.
-* **macOS**: needs a Mac. Either run `installer/macos/build_pkg.sh build dist` after building, or run the
-  **Build installers** GitHub Actions workflow (Actions tab → *Run workflow*, or push a `v*` tag), which
-  builds the universal binaries on a macOS runner, runs the DSP tests, checks the Audio Unit with
-  `auval` and uploads `Ottoclone-<version>-macOS.pkg` as a workflow artifact.
-* The version number lives in the `VERSION` file.
-* Signing: the Windows installer and macOS package are unsigned by default. `build_pkg.sh` can sign and
-  notarize if you export Apple Developer credentials (see the comments at the top of the script; that
-  path has not been exercised yet).
+- **macOS:** needs a Mac. Either run `installer/macos/build_pkg.sh build dist` after building, or run the
+  **Build installers** workflow in the repository's *Actions* tab. It builds on a macOS runner, runs the tests,
+  validates the Audio Unit with `auval` and uploads `Ottoclone-<version>-macOS.pkg` as a workflow artifact.
+- The version number lives in the [`VERSION`](VERSION) file. Signing and notarization hooks exist in
+  `build_pkg.sh` (configured through environment variables) but have not been tried yet.
 
-### Verification tools
+<details>
+<summary>Tests and verification tools</summary>
+
+The DSP engine is plain C++ with no JUCE dependency and has its own test suite
+(`Tests/EngineTests.cpp`, 130 checks: the manual's mappings, bit-depth levels, sample-rate hold, filter
+response, attack detection, stutter timing, sequencer behaviour and a randomized robustness test). It also
+passes under MSVC AddressSanitizer and runs on macOS in CI.
+
+Two extra tools check the built plug-in itself:
 
 ```bat
 cmake -S . -B build -DOTTOBIT_BUILD_SMOKETEST=ON
 build.bat OttocloneSmokeTest OttocloneEditorSnapshot
 ```
 
-* `OttocloneSmokeTest <.vst3> <outdir>` loads the built VST3 through JUCE's plugin host, checks the
-  parameters, runs audio through several settings, tests bypass / state save-restore / odd block
-  sizes, and writes demo WAVs (a plucked string through the factory sound, bit-crush + filter,
-  stutter, filter sequence).
-* `OttocloneEditorSnapshot <outdir>` renders the editor (both layers) to PNG without opening a window.
+- `OttocloneSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
+  runs audio through several settings, tests bypass, state save/restore and odd block sizes, and writes demo
+  WAV files.
+- `OttocloneEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
+  is how the screenshots above were made).
 
-The DSP tests also pass under MSVC AddressSanitizer (`/fsanitize=address`).
+</details>
 
-## Layout
+<details>
+<summary>Project layout</summary>
 
 ```
 Source/dsp/Mapping.h      knob → value tables from the manual (shared by engine, GUI and tests)
 Source/dsp/Components.h   attack detector, pitch shifter, ladder filter, stutter buffer
-Source/dsp/Engine.h       the pedal: signal chain, sequencer, tempo (no JUCE dependency)
+Source/dsp/Engine.h       the effect: signal chain, sequencer, tempo (no JUCE dependency)
 Source/Plugin*.{h,cpp}    JUCE processor (parameters, state) and the pedal-shaped editor
-Tests/EngineTests.cpp     offline checks of everything above
+Tests/EngineTests.cpp     offline checks of the engine
 Tools/                    VST3 smoke-test host and editor-to-PNG renderer
 installer/windows         Inno Setup script and build wrapper
 installer/macos           .pkg build script, installer text, signing entitlements
 .github/workflows         macOS installer build
-artifacts/                editor screenshots (the demo WAVs are generated by the smoke test, not committed)
+artifacts/                editor screenshots
 ```
+
+</details>
 
 ## Licence
 
-Ottoclone is free software under the **GNU Affero General Public License v3.0** (`LICENSE`). It uses
-JUCE 8 under JUCE's AGPLv3 option and the MIT-licensed VST 3 SDK; see `NOTICE.md`. If you give anyone
-a build, you must also make the corresponding source available to them (this repository does that
-once it is public). VST is a trademark of Steinberg Media Technologies GmbH.
+Ottoclone is free software under the [GNU Affero General Public License v3.0](LICENSE). It uses
+[JUCE 8](https://juce.com) under JUCE's AGPLv3 option and the MIT-licensed VST 3 SDK; see
+[`NOTICE.md`](NOTICE.md). If you distribute a build, the AGPL requires you to make the corresponding source
+available to the people you give it to.
+
+"Meris" and "Ottobit" are trademarks of their owner and are used here only to say what Ottoclone is
+modelled on. VST is a trademark of Steinberg Media Technologies GmbH.
