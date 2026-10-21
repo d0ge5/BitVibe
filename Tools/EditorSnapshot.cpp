@@ -1,7 +1,9 @@
 // Instantiates the processor and editor directly (no plugin host), renders the GUI to PNG files so the
 // look can be checked without opening a DAW, and runs the processor-level checks that a host cannot
 // reach (capturing the expression-morph sets, renaming and saving presets, state round trips).
-//   BitVibeEditorSnapshot <output directory>
+//   BitVibeEditorSnapshot <output directory> [--load <audio file>]
+// --load also loads that file into the DRUMS tab the way the plug-in would (neural helper included when it
+// is installed) and prints what was found.
 // Exit code 0 means every check passed.
 
 #include "PluginEditor.h"
@@ -395,7 +397,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 34 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 34 and 0)");
+    check(controls == 36 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 36 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -403,7 +405,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     // What a tooltip looks like in the editor's own style: show one for the MIX knob.
     if (imageFile != nullptr)
     {
-        const Point<int> mixKnob(240, 685);
+        const Point<int> mixKnob(240, 721); // below the 36-pixel tab strip
         // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
         // topmost visible child under the point the same way hit-testing would.
         Component* under = nullptr;
@@ -425,6 +427,332 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     }
 }
 
+
+// ---- drum map -----------------------------------------------------------------------------------
+
+using bitvibe::Drum;
+using bitvibe::DrumAction;
+using bitvibe::DrumSettings;
+
+struct DrumRun
+{
+    std::vector<int64> restarts;   // samples where the sequence (re)started
+    int stepChanges = 0;           // times the step changed while running
+    bool stuttered = false;
+    AudioBuffer<float> out;
+};
+
+// Plays the beat over silence in 64-sample blocks and watches the sequencer.
+DrumRun runDrums(BitVibeProcessor& p, double seconds)
+{
+    constexpr int block = 64;
+    DrumRun r;
+    const int total = (int) (seconds * 48000.0);
+    r.out.setSize(2, total);
+    r.out.clear();
+    p.prepareToPlay(48000.0, 512);
+    MidiBuffer midi;
+    int previous = -1;
+    for (int pos = 0; pos < total; pos += block)
+    {
+        AudioBuffer<float> b(r.out.getArrayOfWritePointers(), 2, pos, jmin(block, total - pos));
+        p.processBlock(b, midi);
+        const int step = p.getEngine().getCurrentStep();
+        if (step == 0 && previous != 0)
+            r.restarts.push_back(pos);
+        if (step >= 0 && previous >= 0 && step != previous)
+            ++r.stepChanges;
+        r.stuttered = r.stuttered || p.getEngine().isStuttering();
+        previous = step;
+    }
+    return r;
+}
+
+// A processor with the demo beat loaded, playing silently, and a sequencer that plays once and is idle
+// again long before the next kick (100 ms steps, six of them).
+std::unique_ptr<BitVibeProcessor> drumProcessor()
+{
+    auto p = makeProcessor();
+    p->getDrumBeat().setAnalysisMode(DrumBeat::AnalysisMode::BuiltInOnly);
+    p->getDrumBeat().loadDemo();
+    p->getDrumBeat().waitUntilIdle(30000);
+    setValue(*p, ids::seqPlay, 1.0f);
+    setValue(*p, ids::seqMult, 0.0f);
+    setValue(*p, ids::tempo, 600.0f);
+    setValue(*p, ids::pickTriggers, 0.0f);
+    setValue(*p, ids::beatPlay, 1.0f);
+    setValue(*p, ids::beatLevel, DrumBeat::kBeatOffDb);
+    return p;
+}
+
+String describeHits(const DrumBeat::Model& m, Drum d)
+{
+    String s;
+    for (const auto& h : m.hits)
+        if (h.drum == d && h.confidence >= 0.1f)
+            s << String(h.time, 3) << "(" << String(h.levelDb, 1) << "dB," << String(h.confidence, 2) << (h.excluded ? ",x" : "") << ") ";
+    return s;
+}
+
+String describeRestarts(const std::vector<int64>& restarts)
+{
+    String s;
+    for (auto r : restarts)
+        s << String(r / 48000.0, 3) << " ";
+    return s;
+}
+
+std::vector<double> demoTimes(Drum d, float minGain = 0.0f)
+{
+    std::vector<double> t;
+    for (const auto& n : bitvibe::demo::renderDemoBeat().notes)
+        if (n.drum == d && n.gain >= minGain)
+            t.push_back(n.time);
+    std::sort(t.begin(), t.end());
+    return t;
+}
+
+// Every expected time has a restart within its block (plus 1 ms), and nothing else restarted.
+bool restartsMatch(const std::vector<int64>& restarts, const std::vector<double>& times)
+{
+    if (restarts.size() != times.size())
+        return false;
+    for (size_t i = 0; i < times.size(); ++i)
+    {
+        const double expected = times[i] * 48000.0;
+        if ((double) restarts[i] < expected - 48.0 - 64.0 || (double) restarts[i] > expected + 48.0 + 64.0)
+            return false;
+    }
+    return true;
+}
+
+double rmsOf(const AudioBuffer<float>& b)
+{
+    double acc = 0.0;
+    for (int c = 0; c < b.getNumChannels(); ++c)
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            acc += (double) b.getSample(c, i) * b.getSample(c, i);
+    return std::sqrt(acc / jmax(1, b.getNumChannels() * b.getNumSamples()));
+}
+
+void testDrumMap()
+{
+    std::puts("drum map checks");
+    {
+        auto p = makeProcessor();
+        check(p->getParameters().size() == 30, "30 parameters (" + String(p->getParameters().size()) + ")");
+        const auto m = p->getDrumBeat().getModel();
+        const auto s = p->getDrumBeat().getSettings();
+        check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
+                  && s[(size_t) Drum::Snare].action == DrumAction::Off,
+              "a fresh plug-in has no beat; kick restarts the sequence, the rest is off");
+        setValue(*p, ids::beatPlay, 1.0f);
+        check(isFinite(run(*p, makeInput(24000))), "PLAY with no beat loaded is harmless");
+    }
+
+    // The demo beat: analysed, and every kick restarts the sequence at its sample.
+    auto p = drumProcessor();
+    const auto model = p->getDrumBeat().getModel();
+    check(model.loaded && model.audioAvailable && model.isDemo && model.hits.size() >= 40,
+          "demo beat loaded: " + String((int) model.hits.size()) + " hits, " + String(model.durationSeconds, 2) + " s, "
+              + model.engine);
+    check(std::abs(model.tempoBpm - 100.0) < 1.0, "demo beat tempo " + String(model.tempoBpm, 2) + " BPM");
+    auto r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, demoTimes(Drum::Kick)),
+          "every kick restarts the sequence on time (" + String((int) r.restarts.size()) + " restarts)");
+    check(rmsOf(r.out) == 0.0, "Beat Level off: the beat is silent but still triggers");
+
+    // Min level: only snares measured at -3 dB or louder restart (the quiet snare of the first two bars is
+    // about 6 dB down; the second one is masked by a ringing tom, so the analysis' own levels decide).
+    p->getDrumBeat().setSettings(Drum::Kick, { DrumAction::Off, -12.0f, 0.3f });
+    p->getDrumBeat().setSettings(Drum::Snare, { DrumAction::RestartSequence, -3.0f, 0.3f });
+    std::vector<double> loudSnares;
+    for (const auto& h : model.hits)
+        if (bitvibe::hitFires(h, p->getDrumBeat().getSettings()[(size_t) Drum::Snare]) && h.drum == Drum::Snare)
+            loudSnares.push_back(h.time);
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, loudSnares) && loudSnares.size() < demoTimes(Drum::Snare).size(),
+          "snare at -3 dB: only the louder snares restart (" + String((int) r.restarts.size()) + " of "
+              + String((int) demoTimes(Drum::Snare).size()) + ")");
+    if (!restartsMatch(r.restarts, demoTimes(Drum::Snare, 0.6f)))
+        std::printf("    snares: %s\n    restarts: %s\n", describeHits(model, Drum::Snare).toRawUTF8(),
+                    describeRestarts(r.restarts).toRawUTF8());
+    p->getDrumBeat().setSettings(Drum::Snare, { DrumAction::RestartSequence, -12.0f, 0.3f });
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, demoTimes(Drum::Snare)), "snare at -12 dB: every snare restarts (" + String((int) r.restarts.size()) + ")");
+
+    // Stutter action.
+    setValue(*p, ids::stutter, 4.0f);
+    p->getDrumBeat().setSettings(Drum::Snare, { DrumAction::Stutter, -12.0f, 0.3f });
+    r = runDrums(*p, 2.0);
+    check(r.stuttered && r.restarts.empty(), "snare set to Stutter fires the stutter and leaves the sequence alone");
+    setValue(*p, ids::stutter, 0.0f);
+
+    // Steps follow the hi-hats: every hi-hat that fires moves the sequencer one step, nothing else does.
+    p->getDrumBeat().setSettings(Drum::Snare, { DrumAction::Off, -12.0f, 0.3f });
+    p->getDrumBeat().setSettings(Drum::HiHat, { DrumAction::NextStep, -48.0f, 0.3f });
+    setValue(*p, ids::seqPlay, 5.0f);
+    setValue(*p, ids::stepClock, 1.0f);
+    int firingHats = 0;
+    const auto settings = p->getDrumBeat().getSettings();
+    for (const auto& h : model.hits)
+        firingHats += h.time > 0.001 && bitvibe::hitFires(h, settings[(size_t) h.drum]) ? 1 : 0;
+    r = runDrums(*p, model.durationSeconds);
+    check(r.stepChanges == firingHats, "Step Clock = drum hits: " + String(r.stepChanges) + " step changes for " + String(firingHats)
+                                           + " firing hi-hats");
+    setValue(*p, ids::stepClock, 0.0f);
+    setValue(*p, ids::seqPlay, 1.0f);
+    p->getDrumBeat().setSettings(Drum::HiHat, { DrumAction::Off, -12.0f, 0.3f });
+    p->getDrumBeat().setSettings(Drum::Kick, { DrumAction::RestartSequence, -12.0f, 0.3f });
+
+    // Excluding a hit: the first kick no longer restarts.
+    int firstKick = -1;
+    for (int i = 0; i < (int) model.hits.size() && firstKick < 0; ++i)
+        if (model.hits[(size_t) i].drum == Drum::Kick && model.hits[(size_t) i].confidence >= 0.3f)
+            firstKick = i;
+    p->getDrumBeat().setHitExcluded(firstKick, true);
+    r = runDrums(*p, model.durationSeconds);
+    auto kicks = demoTimes(Drum::Kick);
+    kicks.erase(kicks.begin());
+    check(restartsMatch(r.restarts, kicks), "an excluded kick no longer restarts the sequence");
+    if (!restartsMatch(r.restarts, kicks))
+        std::printf("    kicks: %s\n    restarts: %s\n", describeHits(p->getDrumBeat().getModel(), Drum::Kick).toRawUTF8(),
+                    describeRestarts(r.restarts).toRawUTF8());
+
+    // The beat is heard at its level, after the effect; bypass silences it.
+    setValue(*p, ids::beatLevel, 0.0f);
+    r = runDrums(*p, 2.0);
+    check(rmsOf(r.out) > 0.02, "Beat Level 0 dB: the beat is heard (rms " + String(rmsOf(r.out), 3) + ")");
+    setValue(*p, ids::bypass, 1.0f);
+    r = runDrums(*p, 2.0);
+    check(rmsOf(r.out) == 0.0 && r.restarts.empty(), "bypass silences the beat and its triggers");
+    setValue(*p, ids::bypass, 0.0f);
+
+    // State round trip: settings, hits and edits come back, and the audio is rebuilt.
+    p->getDrumBeat().setSettings(Drum::Cymbal, { DrumAction::RestartAndStutter, -20.0f, 0.55f });
+    MemoryBlock state;
+    p->getStateInformation(state);
+    auto q = makeProcessor();
+    q->setStateInformation(state.getData(), (int) state.getSize());
+    q->getDrumBeat().waitUntilIdle(30000);
+    const auto restored = q->getDrumBeat().getModel();
+    const auto original = p->getDrumBeat().getModel();
+    bool sameHits = restored.hits.size() == original.hits.size();
+    for (size_t i = 0; sameHits && i < restored.hits.size(); ++i)
+    {
+        const auto& a = restored.hits[i];
+        const auto& b = original.hits[i];
+        sameHits = std::abs(a.time - b.time) < 1.0e-4 && a.drum == b.drum && a.excluded == b.excluded
+                   && std::abs(a.levelDb - b.levelDb) < 0.01f && std::abs(a.confidence - b.confidence) < 0.001f;
+        if (!sameHits)
+            std::printf("    hit %d differs: %.5f %d %.3f %.4f %d vs %.5f %d %.3f %.4f %d\n", (int) i, a.time, (int) a.drum,
+                        (double) a.levelDb, (double) a.confidence, (int) a.excluded, b.time, (int) b.drum, (double) b.levelDb,
+                        (double) b.confidence, (int) b.excluded);
+    }
+    check(sameHits && restored.loaded && restored.audioAvailable && restored.isDemo,
+          "hits, edits and the demo audio survive the state (" + String((int) restored.hits.size()) + " vs "
+              + String((int) p->getDrumBeat().getModel().hits.size()) + " hits, loaded " + String((int) restored.loaded)
+              + ", audio " + String((int) restored.audioAvailable) + ", demo " + String((int) restored.isDemo) + ")");
+    check(q->getDrumBeat().getSettings() == p->getDrumBeat().getSettings(), "per-drum settings survive the state");
+
+    // A state from before the drum map: defaults, no beat.
+    {
+        auto old = makeProcessor();
+        old->getDrumBeat().loadDemo();
+        old->getDrumBeat().waitUntilIdle(30000);
+        MemoryBlock oldState;
+        if (auto xml = makeProcessor()->apvts.copyState().createXml())
+            AudioProcessor::copyXmlToBinary(*xml, oldState);
+        old->setStateInformation(oldState.getData(), (int) oldState.getSize());
+        old->getDrumBeat().waitUntilIdle(30000);
+        check(!old->getDrumBeat().getModel().loaded
+                  && old->getDrumBeat().getSettings()[(size_t) Drum::Kick].action == DrumAction::RestartSequence,
+              "a state without a drum map clears the beat and resets the settings");
+    }
+
+    // A real file: the demo beat written as a WAV and loaded through the decoder.
+    const File wav = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_drum_test.wav");
+    {
+        const auto demoBeat = bitvibe::demo::renderDemoBeat(44100.0);
+        AudioBuffer<float> b(1, (int) demoBeat.audio.size());
+        b.copyFrom(0, 0, demoBeat.audio.data(), b.getNumSamples());
+        wav.deleteFile();
+        WavAudioFormat format;
+        if (auto stream = std::unique_ptr<FileOutputStream>(wav.createOutputStream()))
+            if (auto writer = std::unique_ptr<AudioFormatWriter>(format.createWriterFor(stream.get(), 44100.0, 1, 24, {}, 0)))
+            {
+                stream.release();
+                writer->writeFromAudioSampleBuffer(b, 0, b.getNumSamples());
+            }
+    }
+    auto f = drumProcessor();
+    f->getDrumBeat().loadFile(wav);
+    f->getDrumBeat().waitUntilIdle(30000);
+    const auto fromFile = f->getDrumBeat().getModel();
+    check(fromFile.loaded && fromFile.audioAvailable && !fromFile.isDemo && fromFile.name == "bitvibe_drum_test"
+              && fromFile.hits.size() >= 40,
+          "a 44.1 kHz WAV loads and is analysed (" + String((int) fromFile.hits.size()) + " hits): " + f->getDrumBeat().getStatus());
+    r = runDrums(*f, fromFile.durationSeconds);
+    check(restartsMatch(r.restarts, demoTimes(Drum::Kick)), "its kicks restart the sequence on time at 48 kHz playback");
+
+    // With the neural helper installed (optional), files go through it.
+    if (DrumBeat::isNeuralHelperInstalled())
+    {
+        auto n = drumProcessor();
+        n->getDrumBeat().setAnalysisMode(DrumBeat::AnalysisMode::Auto);
+        n->getDrumBeat().loadFile(wav);
+        n->getDrumBeat().waitUntilIdle(120000);
+        const auto neural = n->getDrumBeat().getModel();
+        check(neural.loaded && neural.engine.contains("neural") && neural.hits.size() >= 30,
+              "neural helper: " + n->getDrumBeat().getStatus());
+        r = runDrums(*n, neural.durationSeconds);
+        check(restartsMatch(r.restarts, demoTimes(Drum::Kick)), "neural helper: its kicks restart the sequence on time");
+    }
+    else
+    {
+        std::puts("  (neural helper not installed: its checks are skipped)");
+    }
+
+    // The file disappears: the saved hits still trigger, the beat is silent, and the status says why.
+    MemoryBlock withFile;
+    f->getStateInformation(withFile);
+    wav.deleteFile();
+    auto g = drumProcessor();
+    g->setStateInformation(withFile.getData(), (int) withFile.getSize());
+    g->getDrumBeat().waitUntilIdle(30000);
+    setValue(*g, ids::beatPlay, 1.0f);
+    setValue(*g, ids::beatLevel, 0.0f);
+    const auto missing = g->getDrumBeat().getModel();
+    r = runDrums(*g, fromFile.durationSeconds);
+    check(missing.loaded && !missing.audioAvailable && restartsMatch(r.restarts, demoTimes(Drum::Kick)) && rmsOf(r.out) == 0.0,
+          "missing file: the hits still trigger and the beat is silent - " + g->getDrumBeat().getStatus());
+
+    // A file that is not audio.
+    const File junk = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_not_audio.wav");
+    junk.replaceWithText("not a wave file");
+    auto j = makeProcessor();
+    j->getDrumBeat().loadFile(junk);
+    j->getDrumBeat().waitUntilIdle(30000);
+    check(!j->getDrumBeat().getModel().loaded && j->getDrumBeat().getStatus().startsWith("Cannot read"),
+          "a file that is not audio is refused: " + j->getDrumBeat().getStatus());
+    junk.deleteFile();
+}
+
+// The DRUMS tab with the demo beat playing, part-way through the loop.
+void saveDrumsTab(const File& file)
+{
+    auto p = drumProcessor();
+    auto& beat = p->getDrumBeat();
+    beat.setSettings(Drum::Kick, { DrumAction::RestartSequence, -12.0f, 0.3f });
+    beat.setSettings(Drum::Snare, { DrumAction::RestartAndStutter, -3.0f, 0.3f });
+    beat.setSettings(Drum::HiHat, { DrumAction::NextStep, -12.0f, 0.3f });
+    setValue(*p, ids::beatLevel, -6.0f);
+    setValue(*p, ids::stutter, 4.0f);
+    runDrums(*p, 2.47); // just after the third kick
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ed->showDrums(true);
+    save(*ed, file);
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -487,8 +815,27 @@ int main(int argc, char** argv)
     }
     std::puts("processor + editor lifecycle completed");
 
+    saveDrumsTab(outDir.getChildFile("editor_drums.png"));
+
+    if (argc > 3 && String(argv[2]) == "--load")
+    {
+        auto p = makeProcessor();
+        p->getDrumBeat().loadFile(File::getCurrentWorkingDirectory().getChildFile(argv[3]));
+        p->getDrumBeat().waitUntilIdle(300000);
+        const auto m = p->getDrumBeat().getModel();
+        std::printf("loaded %s: %s\n", argv[3], p->getDrumBeat().getStatus().toRawUTF8());
+        for (int d = 0; d < bitvibe::kNumDrums; ++d)
+        {
+            int count = 0;
+            for (const auto& h : m.hits)
+                count += h.drum == (Drum) d && h.confidence >= 0.3f ? 1 : 0;
+            std::printf("  %-7s %d hits at confidence 0.3 or more\n", bitvibe::drumName((Drum) d), count);
+        }
+    }
+
     testPresetsAndMorph();
     testMixAndTriggerOnly();
+    testDrumMap();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

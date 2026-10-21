@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DrumBeat.h"
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
@@ -28,6 +29,10 @@ inline constexpr const char* expression = "expression";
 inline constexpr const char* morph = "morph";
 inline constexpr const char* mix = "mix";
 inline constexpr const char* fxTriggers = "fxTriggers";
+inline constexpr const char* beatPlay = "beatPlay";
+inline constexpr const char* beatLevel = "beatLevel";
+inline constexpr const char* pickTriggers = "pickTriggers";
+inline constexpr const char* stepClock = "stepClock";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 } // namespace ids
@@ -83,6 +88,9 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     bitvibe::Engine& getEngine() { return engine; }
 
+    // The drum beat of the DRUMS tab (its hits can trigger the sequencer and the stutter).
+    DrumBeat& getDrumBeat() { return drumBeat; }
+
     // Tempo actually in use (the host's when sync is on); for display only.
     float getEffectiveBpm() const { return effectiveBpm.load(std::memory_order_relaxed); }
 
@@ -117,6 +125,8 @@ private:
     void resetToFactoryBank();
 
     bitvibe::Engine engine;
+    DrumBeat drumBeat;
+    std::array<bitvibe::TriggerEvent, 256> triggerEvents {};
 
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::atomic<float>* pSample = nullptr;
@@ -139,6 +149,10 @@ private:
     std::atomic<float>* pMorph = nullptr;
     std::atomic<float>* pMix = nullptr;
     std::atomic<float>* pFxTriggers = nullptr;
+    std::atomic<float>* pBeatPlay = nullptr;
+    std::atomic<float>* pBeatLevel = nullptr;
+    std::atomic<float>* pPickTriggers = nullptr;
+    std::atomic<float>* pStepClock = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.

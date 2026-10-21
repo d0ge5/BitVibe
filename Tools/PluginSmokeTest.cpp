@@ -150,10 +150,12 @@ int main(int argc, char** argv)
     plugin->setPlayConfigDetails(2, 2, kFs, kBlock);
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
-    // 24 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 27 && findParam(*plugin, "Program") != nullptr
-              && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr,
-          "exposes " + String(plugin->getParameters().size()) + " parameters (26 + Program selector, incl. Mix and FX Only On Triggers)");
+    // 30 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
+    check(plugin->getParameters().size() == 31 && findParam(*plugin, "Program") != nullptr
+              && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
+              && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
+              && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr,
+          "exposes " + String(plugin->getParameters().size()) + " parameters (30 + Program selector, incl. the drum-map ones)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 
@@ -401,7 +403,62 @@ int main(int argc, char** argv)
         plugin->reset();
     }
 
-    // 9. (optional) Editor through the VST3 view
+    // 9. Drum map parameters through the host (loading and analysing beats is checked by BitVibeEditorSnapshot,
+    //    which drives the processor directly).
+    {
+        auto maxDiff = [](const AudioBuffer<float>& a, const AudioBuffer<float>& b)
+        {
+            double d = 0;
+            for (int c = 0; c < a.getNumChannels(); ++c)
+                for (int i = 0; i < a.getNumSamples(); ++i)
+                    d = jmax(d, (double) std::abs(a.getSample(c, i) - b.getSample(c, i)));
+            return d;
+        };
+        auto text = [&](const char* name)
+        {
+            auto* prm = findParam(*plugin, name);
+            return prm != nullptr ? prm->getText(prm->getValue(), 32) : String("?");
+        };
+
+        // A sequencer that only runs when something triggers it, and nothing else on.
+        plugin->setCurrentProgram(1); // "Clean"
+        setByText(*plugin, "Sequencer Play", "Once");
+        plugin->reset();
+        const auto picked = render(*plugin, pluck);
+        check(maxDiff(picked, pluck) > 0.01, "Pick Triggers on: the pluck starts the sequence (diff " + String(maxDiff(picked, pluck), 3) + ")");
+        setByText(*plugin, "Pick Triggers", "Off");
+        plugin->reset();
+        const auto unpicked = render(*plugin, pluck);
+        check(maxDiff(unpicked, pluck) < 1.0e-4, "Pick Triggers off: nothing triggers, the signal is clean (diff "
+                                                      + String(maxDiff(unpicked, pluck), 6) + ")");
+
+        // Beat Play with no beat loaded changes nothing.
+        setByText(*plugin, "Pick Triggers", "On");
+        setByText(*plugin, "Beat Play", "On");
+        setNormalised(*plugin, "Beat Level", 1.0f);
+        plugin->reset();
+        check(maxDiff(render(*plugin, pluck), picked) < 1.0e-6, "Beat Play with no beat loaded changes nothing");
+        setNormalised(*plugin, "Beat Level", 0.0f);
+        check(text("Beat Level") == "Off", "Beat Level fully down reads 'Off' (" + text("Beat Level") + ")");
+        setByText(*plugin, "Step Clock", "Drum hits");
+        check(text("Step Clock") == "Drum hits", "Step Clock can follow the drum hits");
+
+        // The drum map state round-trips through the host (settings stay at their defaults here).
+        MemoryBlock drumState;
+        plugin->getStateInformation(drumState);
+        setByText(*plugin, "Step Clock", "Tempo");
+        setByText(*plugin, "Beat Play", "Off");
+        plugin->setStateInformation(drumState.getData(), (int) drumState.getSize());
+        check(text("Step Clock") == "Drum hits" && text("Beat Play") == "On", "drum map parameters survive the host state round trip");
+
+        setByText(*plugin, "Step Clock", "Tempo");
+        setByText(*plugin, "Beat Play", "Off");
+        setNormalised(*plugin, "Beat Level", findParam(*plugin, "Beat Level")->getDefaultValue());
+        plugin->setCurrentProgram(0);
+        plugin->reset();
+    }
+
+    // 10. (optional) Editor through the VST3 view
     const bool wantEditor = argc > 3 && String(argv[3]) == "--editor";
     plugin->reset();
     std::unique_ptr<AudioProcessorEditor> editor(wantEditor ? plugin->createEditorIfNeeded() : nullptr);

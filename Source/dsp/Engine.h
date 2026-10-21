@@ -18,6 +18,22 @@
 
 namespace bitvibe
 {
+// Triggers that come from outside the input audio (the drum map). Pick attacks detected on the input
+// are the other source; a pick attack does RestartAndStutter.
+enum class TriggerAction
+{
+    RestartSequence,   // start the sequence again from its first step
+    NextStep,          // move to the next step (starts the sequence if it is not running)
+    Stutter,           // fire the stutter as set on the Stutter knob
+    RestartAndStutter, // both, like a pick attack
+};
+
+struct TriggerEvent
+{
+    int offset = 0; // sample within the block
+    TriggerAction action = TriggerAction::RestartSequence;
+};
+
 struct Params
 {
     // Front panel. Knobs are normalised 0..1; the discrete ones are integer positions.
@@ -54,6 +70,11 @@ struct Params
     // sequencer is running (a sequencer set to "continuous" is always running); otherwise the
     // signal passes that stage untouched.
     bool fxOnlyOnTriggers = false;
+
+    // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
+    bool pickTriggers = true;
+    // Steps move only on NextStep trigger events instead of with the tempo.
+    bool stepsOnHits = false;
 };
 
 class Engine
@@ -117,17 +138,23 @@ public:
         fxInit = false;
     }
 
-    // Processes in place. io points at numChannels channel buffers (1 or 2).
-    void process(float* const* io, int numChannels, int numSamples, const Params& p)
+    // Processes in place. io points at numChannels channel buffers (1 or 2). events (sorted by offset)
+    // are applied at their sample; offsets before the block count as 0, those after it run at its end.
+    void process(float* const* io, int numChannels, int numSamples, const Params& p,
+                 const TriggerEvent* events = nullptr, int numEvents = 0)
     {
         const int nCh = std::clamp(numChannels, 0, kMaxChannels);
         if (nCh == 0 || numSamples <= 0)
             return;
 
         beginBlock(p);
+        int nextEvent = 0;
 
         for (int n = 0; n < numSamples; ++n)
         {
+            while (nextEvent < numEvents && events[nextEvent].offset <= n)
+                applyTrigger(events[nextEvent++].action);
+
             // ---- input stage -------------------------------------------------------------
             const float inGain = inGainSm.next(inGainTarget);
             std::array<float, kMaxChannels> dry {}, x {};
@@ -139,7 +166,7 @@ public:
             const float mono = nCh == 2 ? 0.5f * (x[0] + x[1]) : x[0];
 
             // ---- control: attack, sequencer ---------------------------------------------
-            if (detector.process(mono))
+            if (detector.process(mono) && blk.pickTriggers)
                 onAttack();
             advanceSequencer();
 
@@ -253,6 +280,9 @@ public:
                 beatPhase -= std::floor(beatPhase);
         }
 
+        while (nextEvent < numEvents)
+            applyTrigger(events[nextEvent++].action);
+
         beatPhaseOut.store((float) beatPhase, std::memory_order_relaxed);
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
@@ -279,6 +309,7 @@ private:
         mapping::StutterMode stutter;
         bool bypass = false;
         bool fxOnlyOnTriggers = false;
+        bool pickTriggers = true, stepsOnHits = false;
         float mix = 1.0f;
         int stutterLength = 0;
     };
@@ -290,6 +321,8 @@ private:
         blk.bits = p.bits;
         blk.bypass = p.bypass;
         blk.fxOnlyOnTriggers = p.fxOnlyOnTriggers;
+        blk.pickTriggers = p.pickTriggers;
+        blk.stepsOnHits = p.stepsOnHits;
         blk.mix = std::clamp(p.mix, 0.0f, 1.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
 
@@ -358,7 +391,23 @@ private:
         holdNow = p.stutterHold;
     }
 
-    void onAttack()
+    void onAttack() { applyTrigger(TriggerAction::RestartAndStutter); }
+
+    void applyTrigger(TriggerAction action)
+    {
+        switch (action)
+        {
+            case TriggerAction::RestartSequence: restartSequence(); break;
+            case TriggerAction::NextStep: nextStep(); break;
+            case TriggerAction::Stutter: fireStutter(); break;
+            case TriggerAction::RestartAndStutter:
+                fireStutter();
+                restartSequence();
+                break;
+        }
+    }
+
+    void fireStutter()
     {
         if (!blk.stutter.off && !channels[0].stutter.isHeld())
         {
@@ -377,9 +426,26 @@ private:
             for (int c = 0; c < kMaxChannels; ++c)
                 channels[(size_t) c].stutter.trigger(blk.stutterLength, preRoll, speed, repeats, reversed, holdNow);
         }
+    }
 
+    void restartSequence()
+    {
         if (seqRepeats != 0 && numActive > 0)
             startSequence();
+    }
+
+    // One step on: starts the sequence when it is idle, otherwise moves on and restarts the step timer.
+    void nextStep()
+    {
+        if (seqRepeats == 0 || numActive == 0)
+            return;
+        if (!seqRunning)
+        {
+            startSequence();
+            return;
+        }
+        seqPhase = 0.0;
+        stepForward();
     }
 
     void startSequence()
@@ -390,25 +456,33 @@ private:
         seqPhase = 0.0;
     }
 
+    // Moves to the next active step; counts passes and stops after the last one. False when stopped.
+    bool stepForward()
+    {
+        if (++seqIdx >= numActive)
+        {
+            seqIdx = 0;
+            ++seqCycles;
+            if (seqRepeats > 0 && seqCycles >= seqRepeats)
+            {
+                seqRunning = false;
+                return false;
+            }
+        }
+        return true;
+    }
+
     void advanceSequencer()
     {
-        if (!seqRunning)
+        if (!seqRunning || blk.stepsOnHits)
             return;
 
         seqPhase += 1.0;
         for (int guard = 0; seqPhase >= stepLength && guard < 8; ++guard)
         {
             seqPhase -= stepLength;
-            if (++seqIdx >= numActive)
-            {
-                seqIdx = 0;
-                ++seqCycles;
-                if (seqRepeats > 0 && seqCycles >= seqRepeats)
-                {
-                    seqRunning = false;
-                    break;
-                }
-            }
+            if (!stepForward())
+                break;
         }
     }
 

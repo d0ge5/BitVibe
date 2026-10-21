@@ -31,6 +31,10 @@ in the hands of more people for free.
 - **6-step sequencer** for pitch (±12 semitones), filter cutoff or sample rate, with per-step skip/mute,
   1× to 128× tempo multiplier and tap tempo from 23.4 to 6000 BPM (fast enough for ring-mod tones).
 - Stutter and sequencer are triggered by **pick-attack detection**.
+- **Drum map** (DRUMS tab): load a drum loop (WAV or MP3), BitVibe finds its kick, snare, hi-hat, cymbal and
+  tom hits, and each drum can restart the sequence, step it or fire the stutter when it hits hard enough. A
+  live feed shows the hits and what they trigger. An optional neural transcriber (ADTOF) gives the best
+  accuracy.
 - **Expression morph:** store two complete sets of knobs (including the six step knobs), "toe up" and
   "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
 - **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
@@ -38,7 +42,7 @@ in the hands of more people for free.
 - **Mix knob** to blend your clean input with the effect, and an option to apply the sample-rate, bit and
   filter effects **only while the stutter or sequencer is playing**, so your playing stays clean in between.
 - **Hover tips:** rest the mouse on any control for a short, plain-language description of what it does.
-- **Plug-in extras:** tempo sync to the host, all 26 parameters automatable, input and output gain,
+- **Plug-in extras:** tempo sync to the host, all 30 parameters automatable, input and output gain,
   adjustable trigger sensitivity and stutter length, and processing that stays in stereo. No reported
   latency, and light on CPU (under 1 % of one core in my measurements).
 
@@ -79,8 +83,9 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 ## Using it
 
-The window is laid out like a guitar pedal: six knobs, a bypass footswitch, a tap footswitch and a
-sequencer type switch, with a preset and expression-morph strip on top.
+The window has two tabs. **PEDAL** is laid out like a guitar pedal: six knobs, a bypass footswitch, a tap
+footswitch and a sequencer type switch, with a preset and expression-morph strip on top. **DRUMS** holds the
+[drum map](#drum-map-drums-tab).
 
 | Knob | What it does | Alt layer |
 | --- | --- | --- |
@@ -166,6 +171,79 @@ position, sequencer passes, multiplier and type - jump from the toe-up to the to
 midpoint (50 %). A pitch step swept between two values passes through every semitone zone in between (and
 through *skip* / *mute* if a set puts that step at the very end of the knob).
 
+### Drum map (DRUMS tab)
+
+<img src="artifacts/editor_drums.png" align="right" width="300" alt="The DRUMS tab with the demo beat playing">
+
+The **DRUMS** tab lets a drum beat play the sequencer and the stutter, instead of (or as well as) your
+picking. BitVibe listens to the beat, finds the **kick, snare, hi-hat, cymbal and tom** hits, and you decide
+what each drum does when it hits hard enough.
+
+1. **Load a beat.** Drag a WAV, MP3, AIFF, FLAC or OGG file onto the box at the top, use **LOAD...**, pick
+   one from the **library** (the files in `Documents/BitVibe/Beats`, and in the [`beats/`](beats) folder for
+   a build made from this source tree), or press **DEMO** for a built-in synthetic beat. BitVibe analyses it
+   in the background in a few seconds and shows how many hits it found and the beat's tempo. MP3 is read
+   with your operating system's own decoder. Files longer than five minutes are cut.
+2. **Play it.** **PLAY** loops the beat from the top at its own speed (it does not follow your DAW's
+   timeline). **BEAT LEVEL** sets how loud you hear it; it is mixed in after the effect, so the drums are
+   never crushed. Fully down the beat is silent but still triggers. **USE** sets BitVibe's tempo to the
+   beat's; **/2** and **x2** fix a tempo detected at half or double speed.
+3. **Map the drums.** For each drum choose what a hit does: **Restart sequence**, **Next step**,
+   **Stutter**, or **Restart + stutter** (what a pick does). **MIN LEVEL** is how loud a hit must be, in dB
+   below the loudest hit of that drum in the beat, and **DETECT** how sure the analysis must be that it
+   is that drum. By default the kick restarts the sequence and the other drums do nothing.
+
+- **PICK TRIGGERS** off: only the drum hits trigger, your picking no longer does.
+- **STEPS MOVE WITH** *Drum hits*: the sequencer only steps on hits set to **Next step**, so the drums
+  clock the sequence (with *Tempo*, a Next step hit jumps one step and the tempo carries on from there).
+- The **live feed** draws every hit as a bar as tall as it is loud: bright bars fire, dim ones are below the
+  dashed Min level line or belong to a drum that is off, crossed ones are excluded. Hits flash as they fire,
+  and the six lights show the sequencer's step. **Click** a hit to exclude it (or include it again);
+  **right-click** it to move it to another drum or delete it. RE-ANALYSE starts again and discards these edits.
+- The beat file, its hits (with your edits) and the drum settings are saved with your project. If the file
+  has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
+  belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
+  triggers.
+
+#### How accurate is the analysis?
+
+There are two analysers. The **built-in** one always works. It is a classic signal-processing transcriber:
+onset detection, then a non-negative matrix factorisation of each hit's spectrum into five drum templates
+that adapt to the kit. The optional **neural helper** runs [ADTOF](https://github.com/MZehren/ADTOF), a
+drum-transcription network trained on a large set of real recordings and one of the most accurate open
+models, especially for cymbals. Measured with [`Tools/DrumEval.cpp`](Tools/DrumEval.cpp) (F-measure, 50 ms
+tolerance, at the default DETECT setting of 0.30; 1.00 = every hit found and nothing extra):
+
+| Drum | Built-in, MDB Drums | Neural, MDB Drums | Built-in, IDMT loops | Neural, IDMT loops |
+| --- | --- | --- | --- | --- |
+| Kick | 0.95 | 0.96 | 0.94 | 0.99 |
+| Snare | 0.75 | 0.81 | 0.83 | 0.87 |
+| Hi-hat | 0.80 | 0.87 | 0.92 | 0.95 |
+| Cymbal | 0.48 | 0.86 | - | - |
+| Tom | 0.24 | 0.22 | - | - |
+| All hits | 0.77 | 0.84 | 0.81 | 0.93 |
+
+MDB Drums is real acoustic drumming in many styles, IDMT-SMT-Drums is drum loops (acoustic, sampled and
+electronic) with kick, snare and hi-hat only. Neither dataset is part of BitVibe. The built-in analysis is
+solid on kick, snare and hi-hat but weak on cymbals (a crash is often taken for a hi-hat); for cymbals, busy
+or quiet playing, use the neural helper, or tidy the hits by hand in the feed. Toms are rare in these
+recordings (90 of almost 8000 hits) and both analysers report too many of them at the default setting: if
+you map toms, raise their DETECT (around 0.6 worked best for the neural helper).
+
+**Setting up the neural helper (optional).** It needs Python 3.9 or newer (tested with Python 3.14 on
+Windows) and downloads about 350 MB (PyTorch, librosa and ADTOF) into its own folder:
+
+- Windows: run [`Tools\drums\setup_neural.bat`](Tools/drums/setup_neural.bat). It installs into
+  `%LOCALAPPDATA%\BitVibe\neural`.
+- macOS: run `sh Tools/drums/setup_neural.sh`. It installs into
+  `~/Library/Application Support/BitVibe/neural` (not tried on a Mac yet).
+
+Afterwards the line under the beat box says *Installed*, and new beats (and RE-ANALYSE) use ADTOF; the
+**NEURAL HELPER** button switches back to the built-in analysis. On a desktop CPU it needs a few seconds to
+start and about 1.5 seconds per minute of audio. ADTOF's licence (CC BY-NC-SA 4.0) does not allow commercial use, and it is not part of
+BitVibe: the setup script downloads it to your computer and BitVibe runs it as a separate program (see
+[`NOTICE.md`](NOTICE.md)). To remove it, delete that folder.
+
 ## Design notes
 
 BitVibe's behaviour is defined from the manufacturer's published documentation and reviews of the
@@ -187,6 +265,9 @@ gate, and the instrument/line headroom difference.
 - A generic fast/slow envelope pick detector and a grainy two-tap delay-line pitch shifter.
 - The morph blend law: linear in knob position, with every discrete knob switching at 50 %.
 - What a preset slot contains (see [Presets](#presets)) and the factory sounds in slots 2 to 12.
+
+**Plug-in additions** (not in the hardware): the drum map and its analysis, the mix, the trigger-only option,
+presets with names, and the hover tips.
 
 **Not implemented yet:** MIDI CC and SysEx control of the presets (use your DAW's program list and
 automation instead), and a true/buffered bypass option.
@@ -237,9 +318,17 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 203 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 272 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
-morph blend, the factory presets, the dry/wet mix and the effects-only-on-triggers behaviour over time). It also passes under MSVC AddressSanitizer and runs on macOS in CI.
+morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
+trigger events, the drum-map scheduler, tempo estimation, the FFT and the drum analysis of the demo beat). It
+also passes under MSVC AddressSanitizer and runs on macOS in CI.
+
+`bitvibe_drum_eval mdb|idmt <audio dir> <annotation dir>` scores the built-in drum analysis against the
+[MDB Drums](https://github.com/CarlSouthall/MDBDrums) or
+[IDMT-SMT-Drums](https://zenodo.org/records/7544164) datasets (download them yourself): precision, recall
+and F-measure per drum, the best threshold, timing offsets, and `--from-json` to score the neural helper's
+output (`Tools/drums/transcribe_folder.py` produces it).
 
 Two extra tools check the built plug-in itself:
 
@@ -250,13 +339,15 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 
 - `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
   runs audio through several settings, tests bypass, state save/restore and odd block sizes, recalls
-  presets through the host's program list, checks the mix and the trigger-only option, sweeps the expression
-  morph and round-trips the state, and writes demo WAV files.
+  presets through the host's program list, checks the mix, the trigger-only option and the drum-map
+  parameters, sweeps the expression morph and round-trips the state, and writes demo WAV files.
 - `BitVibeEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
   is how the screenshots above were made). It also runs processor-level checks that a host cannot reach:
   capturing the morph sets, renaming and saving presets, state round trips (including old and damaged
-  state), the exact mix maths and that every control has a hover description; its exit code is non-zero if
-  one fails.
+  state), the exact mix maths, that every control has a hover description, and the drum map: loading the
+  demo beat and a WAV file, every mapped hit triggering on its sample, levels, exclusions, steps on hits,
+  the beat's audio and bypass, state with a missing file, and a file that is not audio. Its exit code is
+  non-zero if one fails.
 
 </details>
 
@@ -269,9 +360,16 @@ Source/dsp/Components.h   attack detector, pitch shifter, ladder filter, stutter
 Source/dsp/Engine.h       the effect: signal chain, sequencer, tempo (no JUCE dependency)
 Source/dsp/Morph.h        expression-morph knob sets and the blend maths (no JUCE dependency)
 Source/dsp/Presets.h      the 16 factory preset slots (no JUCE dependency)
+Source/dsp/DrumMap.h      drum hits, per-drum settings, the trigger scheduler, tempo estimate
+Source/dsp/DrumAnalysis.h the built-in drum analysis (with Fft.h; no JUCE dependency)
+Source/dsp/DemoBeat.h     the synthetic demo beat
 Source/Plugin*.{h,cpp}    JUCE processor (parameters, presets, state) and the pedal-style editor
+Source/DrumBeat.*         loading, analysing and playing the drum beat
+Source/DrumPage.*         the DRUMS tab
 Tests/EngineTests.cpp     offline checks of the engine
-Tools/                    VST3 smoke-test host and editor-to-PNG renderer
+Tools/                    VST3 smoke-test host, editor-to-PNG renderer, drum-analysis scorer
+Tools/drums/              the optional neural helper and its setup scripts
+beats/                    your own beats for the library (ignored by git)
 installer/windows         Inno Setup script and build wrapper
 installer/macos           .pkg build script, installer text, signing entitlements
 .github/workflows         macOS installer build

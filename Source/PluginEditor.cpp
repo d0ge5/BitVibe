@@ -1,13 +1,16 @@
 #include "PluginEditor.h"
 
+#include "DrumPage.h"
+
 using namespace juce;
 
 namespace
 {
 // The pedal face and the global panel are laid out in their own coordinates; everything below the
-// header panel is shifted down by kFaceDy.
+// header panel is shifted down by kFaceDy. The whole pedal page sits below the tab strip (kTabsH).
+constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
-constexpr int kWidth = 480, kHeight = 736 + kFaceDy;
+constexpr int kWidth = 480, kHeight = kTabsH + 736 + kFaceDy;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
@@ -26,13 +29,13 @@ constexpr int kKnobSize = 88;
 // The five global knobs share one row: centre of the first and the spacing (face coordinates).
 constexpr int kGlobalKnobX0 = 58, kGlobalKnobDx = 91;
 
-const Colour kInk { 0xfff2f0e6 };       // engraved text
-const Colour kInkDim { 0xff9a988f };
-const Colour kAccent { 0xffffa31a };    // Alt layer / lit LEDs
-const Colour kRed { 0xffff3b30 };
+const Colour kInk = pedalstyle::ink;
+const Colour kInkDim = pedalstyle::inkDim;
+const Colour kAccent = pedalstyle::accent;
+const Colour kRed = pedalstyle::red;
 
-Font bold(float h) { return Font(FontOptions(h, Font::bold)); }
-Font plain(float h) { return Font(FontOptions(h, Font::plain)); }
+using pedalstyle::bold;
+using pedalstyle::plain;
 
 void drawLed(Graphics& g, Point<float> c, float r, Colour col, bool on)
 {
@@ -416,6 +419,26 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     refreshPresetName();
     setTooltips();
 
+    pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
+                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel,
+                        &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
+    for (auto& k : knobs)
+    {
+        pedalComponents.push_back(&k.front);
+        pedalComponents.push_back(&k.step);
+    }
+
+    // tabs
+    pedalTab.onClick = [this] { showDrums(false); };
+    drumsTab.onClick = [this] { showDrums(true); };
+    pedalTab.setTooltip("PEDAL: the knobs, footswitches, presets and the expression morph.");
+    drumsTab.setTooltip("DRUMS: load a drum beat and let its kick, snare, hi-hat, cymbal and tom hits trigger the sequencer and the stutter.");
+    pedalTab.lit = true;
+    addAndMakeVisible(pedalTab);
+    addAndMakeVisible(drumsTab);
+    drumPage = std::make_unique<DrumPage>(proc, laf);
+    addChildComponent(*drumPage);
+
     setSize(kWidth, kHeight);
     buildBackground();
     startTimerHz(30);
@@ -462,6 +485,21 @@ void BitVibeEditor::setAltLayer(bool on)
     }
     altButton.lit = on;
     altButton.repaint();
+    repaint();
+}
+
+void BitVibeEditor::showDrums(bool on)
+{
+    drumsShown = on;
+    for (auto* c : pedalComponents)
+        c->setVisible(!on);
+    if (!on)
+        setAltLayer(altLayer); // puts the right layer of knobs back
+    drumPage->setVisible(on);
+    pedalTab.lit = !on;
+    drumsTab.lit = on;
+    pedalTab.repaint();
+    drumsTab.repaint();
     repaint();
 }
 
@@ -613,6 +651,10 @@ void BitVibeEditor::buildBackground()
     Graphics g(background);
 
     g.fillAll(Colour(0xff0d0d0f));
+    g.setColour(kInkDim);
+    g.setFont(bold(12.0f));
+    g.drawText("BITVIBE", Rectangle<int>(kWidth - 140, 8, 128, 24), Justification::centredRight);
+    g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     const auto header = kHeader.toFloat();
     g.setColour(Colour(0xff17171a));
@@ -694,11 +736,22 @@ void BitVibeEditor::resized()
     headroomBox.setBounds(face({ 170, 654, 124, 24 }));
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
+
+    // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
+    for (auto* c : pedalComponents)
+        c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
+
+    pedalTab.setBounds(12, 8, 96, 24);
+    drumsTab.setBounds(114, 8, 96, 24);
+    drumPage->setBounds(0, kTabsH, kWidth, kHeight - kTabsH);
 }
 
 void BitVibeEditor::paint(Graphics& g)
 {
     g.drawImageAt(background, 0, 0);
+    if (drumsShown)
+        return; // the DRUMS page paints everything below the tabs
+    g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     // Header: slot number and modified mark beside the preset name, state line under the morph strip
     {
@@ -850,5 +903,6 @@ void BitVibeEditor::timerCallback()
         if ((int) k.step.getProperties().getWithDefault("ticks", 11) != ticks)
             k.step.getProperties().set("ticks", ticks);
     }
-    repaint();
+    if (!drumsShown)
+        repaint();
 }

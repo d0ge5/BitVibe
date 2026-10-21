@@ -95,6 +95,18 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "% effect"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
+
+    // ---- drum beat (DRUMS tab) -----------------------------------------------------------
+    // Also rig settings, not stored in preset slots.
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        id(ids::beatLevel), "Beat Level", NormalisableRange<float>(DrumBeat::kBeatOffDb, 6.0f, 0.1f), -6.0f,
+        AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return v <= DrumBeat::kBeatOffDb ? String("Off") : String(v, 1) + " dB"; })
+            .withValueFromStringFunction([](const String& t)
+                                         { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
     return layout;
 }
 
@@ -185,6 +197,10 @@ BitVibeProcessor::BitVibeProcessor()
     pMorph = raw(ids::morph);
     pMix = raw(ids::mix);
     pFxTriggers = raw(ids::fxTriggers);
+    pBeatPlay = raw(ids::beatPlay);
+    pBeatLevel = raw(ids::beatLevel);
+    pPickTriggers = raw(ids::pickTriggers);
+    pStepClock = raw(ids::stepClock);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
 
@@ -199,6 +215,8 @@ BitVibeProcessor::BitVibeProcessor()
 void BitVibeProcessor::prepareToPlay(double sampleRate, int)
 {
     engine.prepare(sampleRate);
+    drumBeat.setDeviceSampleRate(sampleRate);
+    drumBeat.restartPlayback();
 }
 
 bool BitVibeProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -265,6 +283,8 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.mix = pMix->load();
     p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
+    p.pickTriggers = pPickTriggers->load() > 0.5f;
+    p.stepsOnHits = roundToInt(pStepClock->load()) == 1;
     return p;
 }
 
@@ -275,7 +295,16 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
     for (int c = numChannels; c < buffer.getNumChannels(); ++c)
         buffer.clear(c, 0, buffer.getNumSamples());
 
-    engine.process(buffer.getArrayOfWritePointers(), numChannels, buffer.getNumSamples(), readParams());
+    // The drum beat: its hits trigger the sequencer / stutter, and its audio is mixed in after the effect
+    // (the drums are never crushed). Bypass silences both, so it stays transparent.
+    const int numSamples = buffer.getNumSamples();
+    const auto params = readParams();
+    const int numEvents = drumBeat.beginBlock(numSamples, pBeatPlay->load() > 0.5f, !params.bypass, triggerEvents.data(),
+                                              (int) triggerEvents.size());
+    engine.process(buffer.getArrayOfWritePointers(), numChannels, numSamples, params, triggerEvents.data(), numEvents);
+    if (!params.bypass)
+        drumBeat.addAudio(buffer, numChannels, numSamples, pBeatLevel->load());
+    drumBeat.endBlock(numSamples);
 }
 
 void BitVibeProcessor::tapTempo()
@@ -533,6 +562,7 @@ void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
             bank.appendChild(slotToTree(slot), nullptr);
     }
     state.appendChild(bank, nullptr);
+    state.appendChild(drumBeat.toState(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -547,9 +577,11 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto state = ValueTree::fromXml(*xml);
     const auto morphNode = state.getChildWithName("MORPH");
     const auto bank = state.getChildWithName("PRESETS");
+    const auto drums = state.getChildWithName("DRUMS");
     const int program = jlimit(0, bitvibe::kNumPresets - 1, (int) state.getProperty("program", 0));
     state.removeChild(morphNode, nullptr); // keep the parameter tree free of the extra nodes
     state.removeChild(bank, nullptr);
+    state.removeChild(drums, nullptr);
     state.removeProperty("program", nullptr);
     apvts.replaceState(state);
 
@@ -558,6 +590,7 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
         toeUp = knobsFromTree(morphNode.getChildWithName("UP"), bitvibe::KnobSet {});
         toeDown = knobsFromTree(morphNode.getChildWithName("DOWN"), bitvibe::KnobSet {});
     }
+    drumBeat.fromState(drums); // a state from before the drum map resets it
 
     const ScopedLock lock(presetLock);
     for (int i = 0; i < bitvibe::kNumPresets; ++i)

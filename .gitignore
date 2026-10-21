@@ -11,3 +11,10 @@ artifacts/*.wav
 
 # Installer outputs
 dist/
+
+# Your own drum beats for the DRUMS tab (see beats/README.md)
+beats/*
+!beats/README.md
+
+# Python bytecode from the neural-helper tools
+__pycache__/

@@ -4,6 +4,21 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+class DrumPage;
+
+// Colours and fonts shared by the pedal page and the DRUMS page.
+namespace pedalstyle
+{
+inline const juce::Colour ink { 0xfff2f0e6 };    // engraved text
+inline const juce::Colour inkDim { 0xff9a988f };
+inline const juce::Colour accent { 0xffffa31a }; // Alt layer / lit LEDs
+inline const juce::Colour red { 0xffff3b30 };
+inline const juce::Colour panel { 0xff17171a };
+inline const juce::Colour panelEdge { 0xff2c2c31 };
+inline juce::Font bold(float h) { return juce::Font(juce::FontOptions(h, juce::Font::bold)); }
+inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(h, juce::Font::plain)); }
+} // namespace pedalstyle
+
 // Dark, brushed look shared by every control in the editor.
 class PedalLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -43,6 +58,11 @@ public:
 
     std::function<void()> onClick;
     bool lit = false;
+    void setText(juce::String newText)
+    {
+        text = std::move(newText);
+        repaint();
+    }
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -64,6 +84,9 @@ public:
 
     // Swaps the six front-panel knobs for the six sequencer-step knobs (the pedal's Alt layer).
     void setAltLayer(bool on);
+
+    // Shows the DRUMS tab (true) or the pedal (false).
+    void showDrums(bool on);
 
 private:
     static constexpr int kKnobs = 6;
@@ -121,6 +144,12 @@ private:
     int shownProgram = -1;
     juce::String shownName;
     double flashUpUntil = 0.0, flashDownUntil = 0.0, flashSaveUntil = 0.0;
+
+    // tabs: the pedal and the DRUMS page
+    PedalButton pedalTab { "PEDAL" }, drumsTab { "DRUMS" };
+    std::unique_ptr<DrumPage> drumPage;
+    std::vector<juce::Component*> pedalComponents; // hidden while the DRUMS page is shown
+    bool drumsShown = false;
 
     juce::TooltipWindow tooltipWindow { this, 600 }; // shows setTooltip() text after a short hover
     int tooltipSeqType = -1;

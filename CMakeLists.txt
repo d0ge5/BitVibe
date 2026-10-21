@@ -38,6 +38,15 @@ if(BITVIBE_BUILD_TESTS)
         target_compile_options(bitvibe_tests PRIVATE -Wall -Wextra)
     endif()
     add_test(NAME dsp COMMAND bitvibe_tests)
+
+    # Development tool: scores the built-in drum analysis against annotated recordings.
+    add_executable(bitvibe_drum_eval Tools/DrumEval.cpp)
+    target_link_libraries(bitvibe_drum_eval PRIVATE bitvibe_dsp)
+    if(MSVC)
+        target_compile_options(bitvibe_drum_eval PRIVATE /W4 /fp:precise)
+    else()
+        target_compile_options(bitvibe_drum_eval PRIVATE -Wall -Wextra)
+    endif()
 endif()
 
 if(BITVIBE_BUILD_PLUGIN)
@@ -69,9 +78,16 @@ if(BITVIBE_BUILD_PLUGIN)
 
     target_sources(BitVibe PRIVATE
         Source/PluginProcessor.cpp
-        Source/PluginEditor.cpp)
+        Source/PluginEditor.cpp
+        Source/DrumPage.cpp
+        Source/DrumBeat.cpp)
+
+    # The DRUMS tab lists the audio files in this folder (local builds only; installed copies use
+    # Documents/BitVibe/Beats).
+    set(BITVIBE_BEATS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/beats")
 
     target_compile_definitions(BitVibe PUBLIC
+        BITVIBE_BEATS_DIR="${BITVIBE_BEATS_DIR}"
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
@@ -107,9 +123,12 @@ if(BITVIBE_BUILD_PLUGIN)
         target_sources(BitVibeEditorSnapshot PRIVATE
             Tools/EditorSnapshot.cpp
             Source/PluginProcessor.cpp
-            Source/PluginEditor.cpp)
+            Source/PluginEditor.cpp
+            Source/DrumPage.cpp
+            Source/DrumBeat.cpp)
         target_include_directories(BitVibeEditorSnapshot PRIVATE Source)
         target_compile_definitions(BitVibeEditorSnapshot PRIVATE
+            BITVIBE_BEATS_DIR="${BITVIBE_BEATS_DIR}"
             JucePlugin_Name="BitVibe"
             JUCE_USE_CURL=0
             JUCE_WEB_BROWSER=0)

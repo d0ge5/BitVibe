@@ -1,6 +1,9 @@
 // Offline checks of the BitVibe engine against the behaviour described in the published documentation.
 // Plain C++, no framework: build target `bitvibe_tests`, exit code 0 means everything passed.
 
+#include "DrumAnalysis.h"
+#include "DemoBeat.h"
+#include "DrumMap.h"
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
@@ -11,6 +14,8 @@
 #include <functional>
 #include <random>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace bitvibe;
@@ -19,6 +24,7 @@ namespace
 {
 constexpr double kFs = 48000.0;
 int gChecks = 0, gFailures = 0;
+bool gVerbose = false; // --verbose: print details of the drum-analysis test
 
 #define CHECK(cond, ...)                                                    \
     do                                                                      \
@@ -889,8 +895,477 @@ void testEffectsOnTriggers()
     CHECK(rmsDiff(toggled, in, 0.7, 1.0) > kAudible, "option switched off: the effect comes back");
 }
 
-int main()
+// ---------------------------------------------------------------------------------------------
+// Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
+
+// Runs an engine sample by sample (so the step can be read after every sample) and returns the step
+// shown after each one. events[k] is applied at absolute sample eventsAt[k].
+std::vector<int> stepTrace(const Params& p, const Signal& in, const std::vector<std::pair<size_t, TriggerAction>>& events)
 {
+    Engine e;
+    e.prepare(kFs);
+    Signal buf = in;
+    std::vector<int> steps(in.size(), -1);
+    size_t next = 0;
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        TriggerEvent ev[4];
+        int n = 0;
+        while (next < events.size() && events[next].first == i && n < 4)
+            ev[n++] = { 0, events[next++].second };
+        float* ch = buf.data() + i;
+        e.process(&ch, 1, 1, p, ev, n);
+        steps[i] = e.getCurrentStep();
+    }
+    return steps;
+}
+
+size_t firstIndexOf(const std::vector<int>& v, int value, size_t from = 0)
+{
+    for (size_t i = from; i < v.size(); ++i)
+        if (v[i] == value)
+            return i;
+    return v.size();
+}
+
+void testTriggerEvents()
+{
+    std::puts("trigger events: restart, next step, stutter, pick triggers off, steps on hits");
+    const Signal silence(48000, 0.0f);
+
+    Params once;
+    once.seqPlay = 1;     // play once, so nothing runs until something triggers it
+    once.seqMult = 0;
+    once.tempoBpm = 600.0f; // 100 ms = 4800 samples per step
+    once.steps.fill(mapping::pitchStepKnob(0));
+
+    // Restart: the sequence starts exactly at the event and steps on with the tempo from there.
+    auto trace = stepTrace(once, silence, { { 2000, TriggerAction::RestartSequence } });
+    CHECK(trace[1999] == -1 && trace[2000] == 0, "restart starts the sequence at its sample (%d %d)", trace[1999], trace[2000]);
+    const size_t toStep1 = firstIndexOf(trace, 1);
+    CHECK(toStep1 == 2000 + 4799, "step 2 begins one step length after the restart (sample %zu)", toStep1);
+
+    // Next step while idle starts the sequence; while running it moves on and restarts the step timer.
+    trace = stepTrace(once, silence, { { 1000, TriggerAction::NextStep }, { 3000, TriggerAction::NextStep } });
+    CHECK(trace[1000] == 0 && trace[2999] == 0 && trace[3000] == 1, "next step: start, then one step on (%d %d %d)",
+          trace[1000], trace[2999], trace[3000]);
+    CHECK(firstIndexOf(trace, 2) == 3000 + 4799, "next step restarts the step timer (step 3 at %zu)", firstIndexOf(trace, 2));
+
+    // Steps on hits: the tempo no longer moves the sequence, only NextStep events do.
+    Params hits = once;
+    hits.seqPlay = 5;
+    hits.stepsOnHits = true;
+    trace = stepTrace(hits, silence, { { 10000, TriggerAction::NextStep }, { 30000, TriggerAction::NextStep } });
+    CHECK(trace[9999] == 0 && trace[10000] == 1 && trace[29999] == 1 && trace[30000] == 2 && trace.back() == 2,
+          "steps on hits: steps move only on events (%d %d %d %d %d)", trace[9999], trace[10000], trace[29999],
+          trace[30000], trace.back());
+    std::vector<std::pair<size_t, TriggerAction>> six;
+    for (size_t k = 0; k < 6; ++k)
+        six.push_back({ 1000 + k * 1000, TriggerAction::NextStep });
+    trace = stepTrace(hits, silence, six);
+    CHECK(trace[5999] == 5 && trace[6000] == 0, "steps on hits: wraps after the sixth step (%d %d)", trace[5999], trace[6000]);
+    Params hitsOnce = hits;
+    hitsOnce.seqPlay = 1;
+    std::vector<std::pair<size_t, TriggerAction>> seven = six;
+    seven.insert(seven.begin(), std::make_pair((size_t) 500, TriggerAction::NextStep)); // starts it, then six more steps
+    trace = stepTrace(hitsOnce, silence, seven);
+    CHECK(trace[5999] == 5 && trace[6000] == -1, "steps on hits, play once: stops after one pass (%d %d)", trace[5999], trace[6000]);
+
+    // Sequencer off: trigger events do nothing to it.
+    Params off = once;
+    off.seqPlay = 0;
+    trace = stepTrace(off, silence, { { 100, TriggerAction::RestartSequence }, { 200, TriggerAction::NextStep } });
+    CHECK(firstIndexOf(trace, 0) == trace.size(), "sequencer off ignores trigger events");
+
+    // Pick triggers off: a pick on the input no longer starts the sequence; events still do.
+    const Signal pick = singleBurst(0.5);
+    trace = stepTrace(once, pick, {});
+    CHECK(firstIndexOf(trace, 0) < (size_t) (0.13 * kFs), "a pick starts the sequence by default");
+    Params noPick = once;
+    noPick.pickTriggers = false;
+    trace = stepTrace(noPick, pick, {});
+    CHECK(firstIndexOf(trace, 0) == trace.size(), "pick triggers off: the pick is ignored");
+    trace = stepTrace(noPick, pick, { { 20000, TriggerAction::RestartSequence } });
+    CHECK(firstIndexOf(trace, 0) == 20000, "pick triggers off: events still start the sequence");
+
+    // Stutter events fire the stutter only; restart events never do.
+    Params stut = once;
+    stut.seqPlay = 0;
+    stut.stutter = 4;           // full speed, four repeats
+    stut.pickTriggers = false;  // the tone's own onset must not fire it
+    const Signal tone = sine(220.0, 1.0, 0.3f);
+    auto stutters = [&](const Params& p, TriggerAction a)
+    {
+        Engine e;
+        e.prepare(kFs);
+        Signal buf = tone;
+        bool seen = false;
+        for (size_t pos = 0; pos < buf.size(); pos += 480)
+        {
+            const TriggerEvent ev { 100, a };
+            float* ch = buf.data() + pos;
+            e.process(&ch, 1, 480, p, pos == 9600 ? &ev : nullptr, pos == 9600 ? 1 : 0);
+            seen = seen || e.isStuttering();
+        }
+        return seen;
+    };
+    CHECK(stutters(stut, TriggerAction::Stutter), "a stutter event fires the stutter");
+    CHECK(stutters(stut, TriggerAction::RestartAndStutter), "restart + stutter fires the stutter");
+    CHECK(!stutters(stut, TriggerAction::RestartSequence), "a restart event does not stutter");
+
+    // Events at the block edges: offset 0, the last sample, and past the end (applied at the end).
+    for (int offset : { 0, 255, 400 })
+    {
+        Engine e;
+        e.prepare(kFs);
+        Signal buf(256, 0.0f);
+        float* ch = buf.data();
+        const TriggerEvent ev { offset, TriggerAction::RestartSequence };
+        e.process(&ch, 1, 256, once, &ev, 1);
+        CHECK(e.getCurrentStep() == 0, "event at offset %d runs within the block", offset);
+    }
+
+    // No events and pick triggers on: exactly the behaviour without the drum map.
+    const Signal burst = singleBurst(1.0);
+    Params def = once;
+    def.stutter = 3;
+    Engine a, b;
+    a.prepare(kFs);
+    b.prepare(kFs);
+    Signal outA = burst, outB = burst;
+    for (size_t pos = 0; pos < burst.size(); pos += 256)
+    {
+        const int n = (int) std::min<size_t>(256, burst.size() - pos);
+        float* ca = outA.data() + pos;
+        float* cb = outB.data() + pos;
+        a.process(&ca, 1, n, def);
+        b.process(&cb, 1, n, def, nullptr, 0);
+    }
+    CHECK(maxAbsDiff(outA, outB) == 0.0, "no events changes nothing");
+}
+
+DrumHit makeHit(double t, Drum d, float level = 0.0f, float confidence = 1.0f)
+{
+    DrumHit h;
+    h.time = t;
+    h.drum = d;
+    h.levelDb = level;
+    h.confidence = confidence;
+    return h;
+}
+
+void testDrumScheduler()
+{
+    std::puts("drum map: levels, thresholds and the loop scheduler");
+
+    // normaliseLevels: relative to the loudest hit of each drum, sorted by time.
+    std::vector<DrumHit> raw { makeHit(0.5, Drum::Snare, -10.0f), makeHit(0.1, Drum::Kick, -3.0f),
+                               makeHit(0.3, Drum::Kick, -9.0f), makeHit(0.7, Drum::Snare, -4.0f),
+                               makeHit(0.9, Drum::HiHat, -80.0f, 2.0f) };
+    normaliseLevels(raw);
+    CHECK(raw[0].time == 0.1 && raw[0].levelDb == 0.0f && raw[1].levelDb == -6.0f, "kick levels %g %g",
+          (double) raw[0].levelDb, (double) raw[1].levelDb);
+    CHECK(raw[2].levelDb == -6.0f && raw[3].levelDb == 0.0f, "snare levels %g %g", (double) raw[2].levelDb, (double) raw[3].levelDb);
+    CHECK(raw[4].levelDb == 0.0f && raw[4].confidence == 1.0f, "a lone hit is its drum's loudest; confidence clamped");
+
+    // Thresholds.
+    DrumSettings s;
+    s.action = DrumAction::RestartSequence;
+    s.minLevelDb = -6.0f;
+    s.minConfidence = 0.5f;
+    CHECK(hitFires(makeHit(0, Drum::Kick, -6.0f, 0.5f), s), "a hit exactly at both thresholds fires");
+    CHECK(!hitFires(makeHit(0, Drum::Kick, -6.1f, 0.9f), s), "a quieter hit does not fire");
+    CHECK(!hitFires(makeHit(0, Drum::Kick, 0.0f, 0.49f), s), "a less certain hit does not fire");
+    DrumHit excluded = makeHit(0, Drum::Kick);
+    excluded.excluded = true;
+    CHECK(!hitFires(excluded, s) && hitDetected(excluded, s), "an excluded hit is shown but never fires");
+    s.action = DrumAction::Off;
+    CHECK(!hitFires(makeHit(0, Drum::Kick), s), "a drum set to Off never fires");
+
+    // The scheduler over three loops, with block sizes from 1 sample to more than a loop.
+    constexpr int64_t loop = 10000;
+    const std::vector<DrumHit> hits { makeHit(0, Drum::Kick, 0.0f),      makeHit(0, Drum::Snare, -20.0f),
+                                      makeHit(0, Drum::Snare, 0.0f),     makeHit(0, Drum::HiHat, 0.0f),
+                                      makeHit(0, Drum::Kick, -3.0f, 0.2f), makeHit(0, Drum::Cymbal, -1.0f) };
+    const std::vector<int64_t> at { 0, 1000, 1000, 5000, 7000, 9999 };
+    DrumSettingsArray settings {};
+    settings[(size_t) Drum::Kick] = { DrumAction::RestartSequence, -12.0f, 0.3f };
+    settings[(size_t) Drum::Snare] = { DrumAction::Stutter, -12.0f, 0.3f };
+    settings[(size_t) Drum::Cymbal] = { DrumAction::NextStep, -12.0f, 0.3f };
+    // hi-hat stays Off. Should fire: 0 (kick), 2 (loud snare), 5 (cymbal). Not: 1 (quiet), 3 (off), 4 (unsure).
+    const std::vector<int> shouldFire { 0, 2, 5 };
+
+    for (int block : { 1, 7, 64, 333, 4096, 25000 })
+    {
+        std::vector<std::pair<int, int64_t>> fired; // hit, absolute sample
+        bool eventsOk = true;
+        int64_t position = 0, absolute = 0;
+        while (absolute < 3 * loop)
+        {
+            const int n = (int) std::min<int64_t>(block, 3 * loop - absolute);
+            TriggerEvent events[16];
+            std::vector<std::pair<int, int>> calls;
+            const int count = DrumScheduler::collect(hits.data(), at.data(), (int) hits.size(), loop, position, n,
+                                                     settings, events, 16,
+                                                     [&](int hit, int offset) { calls.push_back({ hit, offset }); });
+            eventsOk = eventsOk && count == (int) calls.size();
+            for (int k = 0; k < count; ++k)
+            {
+                const auto& h = hits[(size_t) calls[(size_t) k].first];
+                eventsOk = eventsOk && events[k].offset == calls[(size_t) k].second && events[k].offset >= 0 &&
+                           events[k].offset < n && (k == 0 || events[k].offset >= events[k - 1].offset) &&
+                           events[k].action == toTriggerAction(settings[(size_t) h.drum].action);
+            }
+            for (const auto& c : calls)
+                fired.push_back({ c.first, absolute + c.second });
+            absolute += n;
+            position = (position + n) % loop;
+        }
+        std::vector<std::pair<int, int64_t>> expected;
+        for (int64_t l = 0; l < 3; ++l)
+            for (int h : shouldFire)
+                expected.push_back({ h, l * loop + at[(size_t) h] });
+        CHECK(fired == expected, "block %d: %d hits fired, expected %d at their exact samples", block, (int) fired.size(),
+              (int) expected.size());
+        CHECK(eventsOk, "block %d: events match the fired hits, in order, with the right actions", block);
+    }
+
+    // A full event buffer still reports every fired hit.
+    int calls = 0;
+    TriggerEvent one[1];
+    const int written = DrumScheduler::collect(hits.data(), at.data(), (int) hits.size(), loop, 0, 2000, settings, one, 1,
+                                               [&](int, int) { ++calls; });
+    CHECK(written == 1 && calls == 2, "full event buffer: %d written, %d reported", written, calls);
+
+    // Nothing to do: no hits, empty block, zero-length loop.
+    TriggerEvent buf[4];
+    CHECK(DrumScheduler::collect(hits.data(), at.data(), 0, loop, 0, 512, settings, buf, 4) == 0 &&
+              DrumScheduler::collect(hits.data(), at.data(), (int) hits.size(), loop, 0, 0, settings, buf, 4) == 0 &&
+              DrumScheduler::collect(hits.data(), at.data(), (int) hits.size(), 0, 0, 512, settings, buf, 4) == 0,
+          "degenerate inputs produce no events");
+
+    // Drum ids round-trip.
+    bool idsOk = true;
+    for (int i = 0; i < kNumDrums; ++i)
+    {
+        Drum d = Drum::Kick;
+        idsOk = idsOk && drumFromId(drumId((Drum) i), d) && d == (Drum) i;
+    }
+    Drum unused = Drum::Kick;
+    CHECK(idsOk && !drumFromId("cowbell", unused), "drum ids round-trip");
+}
+
+void testTempoEstimate()
+{
+    std::puts("drum map: tempo of a loop from its hits");
+    auto groove = [](double bpm, int bars, double jitterMs, bool halfTimeFeel)
+    {
+        std::vector<DrumHit> h;
+        const double beat = 60.0 / bpm;
+        Rng rng(11);
+        auto j = [&] { return rng.next() * jitterMs * 0.001; };
+        for (int b = 0; b < bars * 4; ++b)
+        {
+            const double t = b * beat;
+            if (b % 4 == 0 || (!halfTimeFeel && b % 4 == 2))
+                h.push_back(makeHit(t + j(), Drum::Kick, -1.0f));
+            if (halfTimeFeel ? b % 4 == 2 : b % 2 == 1)
+                h.push_back(makeHit(t + j(), Drum::Snare, 0.0f));
+            h.push_back(makeHit(t + j() + (t == 0 ? 0.001 : 0.0), Drum::HiHat, -4.0f));
+            h.push_back(makeHit(t + beat / 2 + j(), Drum::HiHat, -10.0f));
+        }
+        return std::make_pair(h, bars * 4 * beat);
+    };
+    for (auto [bpm, bars, jitter, half] : { std::tuple { 97.0, 2, 0.0, false }, std::tuple { 140.0, 4, 6.0, false },
+                                            std::tuple { 72.0, 2, 4.0, false }, std::tuple { 174.0, 8, 3.0, true },
+                                            std::tuple { 120.0, 1, 0.0, false } })
+    {
+        auto [h, duration] = groove(bpm, bars, jitter, half);
+        std::sort(h.begin(), h.end(), [](const DrumHit& a, const DrumHit& b) { return a.time < b.time; });
+        const double est = estimateTempo(h, duration);
+        // A half-time groove is honestly ambiguous (174 is often counted as 87): either octave is fine
+        // there, and the DRUMS tab has x2 / /2 buttons for it.
+        const bool ok = std::abs(est - bpm) < 0.5 || (half && std::abs(est - bpm / 2.0) < 0.5);
+        CHECK(ok, "%g BPM, %d bars, %g ms jitter: estimated %g", bpm, bars, jitter, est);
+    }
+    CHECK(estimateTempo({}, 4.0) == 0.0 && estimateTempo({ makeHit(0.1, Drum::Kick) }, 4.0) == 0.0,
+          "too few hits gives no tempo");
+}
+
+void testFft()
+{
+    std::puts("fft: matches a direct DFT");
+    for (size_t n : { (size_t) 8, (size_t) 64, (size_t) 2048 })
+    {
+        Fft fft(n);
+        Rng rng(5);
+        std::vector<std::complex<double>> x(n), X;
+        for (auto& v : x)
+            v = { rng.next(), rng.next() };
+        X = x;
+        fft.forward(X);
+        double worst = 0.0;
+        for (size_t k = 0; k < n; k += std::max<size_t>(1, n / 16))
+        {
+            std::complex<double> acc;
+            for (size_t i = 0; i < n; ++i)
+                acc += x[i] * std::polar(1.0, -2.0 * 3.14159265358979323846 * (double) (k * i % n) / (double) n);
+            worst = std::max(worst, std::abs(acc - X[k]));
+        }
+        CHECK(worst < 1.0e-9 * (double) n, "size %zu: max error %g", n, worst);
+    }
+}
+
+void testDrumAnalysis()
+{
+    std::puts("drum analysis: the synthetic demo beat is transcribed, timed and levelled");
+    constexpr double bpm = 100.0, beat = 60.0 / bpm, start = 0.05;
+    const demo::Beat demoBeat = demo::renderDemoBeat(kFs, bpm, 4);
+    const Signal& audio = demoBeat.audio;
+    std::array<std::vector<double>, kNumDrums> truth;
+    for (const auto& n : demoBeat.notes)
+        truth[(size_t) n.drum].push_back(n.time);
+    for (auto& v : truth)
+        std::sort(v.begin(), v.end());
+
+    const auto result = drums::analyse(audio.data(), audio.size(), kFs);
+    if (gVerbose)
+        for (int d = 0; d < kNumDrums; ++d)
+        {
+            std::printf("  %s truth:", drumId((Drum) d));
+            for (double t : truth[(size_t) d])
+                std::printf(" %.3f", t);
+            std::printf("\n  %s found:", drumId((Drum) d));
+            for (const auto& h : result.hits)
+                if ((int) h.drum == d && h.confidence >= 0.1f)
+                    std::printf(" %.3f(%.2f,%.0f)", h.time, (double) h.confidence, (double) h.levelDb);
+            std::printf("\n");
+        }
+    CHECK(std::abs(result.durationSeconds - (double) audio.size() / kFs) < 1e-9, "duration");
+
+    // One-to-one matching within 30 ms: true positives, reported hits, worst timing error.
+    struct Score
+    {
+        size_t tp = 0, reported = 0;
+        double worst = 0.0;
+    };
+    auto score = [&](Drum d, const std::vector<double>& ref)
+    {
+        Score sc;
+        std::vector<double> est;
+        for (const auto& h : result.hits)
+            if (h.drum == d && h.confidence >= 0.3f)
+                est.push_back(h.time);
+        sc.reported = est.size();
+        std::vector<bool> used(est.size(), false);
+        for (double r : ref)
+        {
+            long best = -1;
+            for (size_t i = 0; i < est.size(); ++i)
+                if (!used[i] && std::abs(est[i] - r) < 0.03 && (best < 0 || std::abs(est[i] - r) < std::abs(est[(size_t) best] - r)))
+                    best = (long) i;
+            if (best >= 0)
+            {
+                used[(size_t) best] = true;
+                ++sc.tp;
+                sc.worst = std::max(sc.worst, std::abs(est[(size_t) best] - r));
+            }
+        }
+        return sc;
+    };
+
+    // A regression floor for the built-in analysis on this kit (its accuracy on real recordings is
+    // measured with bitvibe_drum_eval; see the README).
+    // Kick, snare and tom: every hit found within 6 ms, at most one extra.
+    for (Drum d : { Drum::Kick, Drum::Snare, Drum::Tom })
+    {
+        const Score sc = score(d, truth[(size_t) d]);
+        CHECK(sc.tp == truth[(size_t) d].size() && sc.reported <= sc.tp + 1, "%s: %zu of %zu found, %zu reported",
+              drumName(d), sc.tp, truth[(size_t) d].size(), sc.reported);
+        CHECK(sc.worst < 0.006, "%s: worst timing error %.1f ms", drumName(d), sc.worst * 1000.0);
+    }
+
+    // Hi-hats: at least half of the loud ones. Known weak spots of the built-in analysis (the neural
+    // helper does better): a hat on the same beat as a kick, quiet hats right after louder hits, a crash
+    // taken for a hat and a snare leaking into the hat (allowed below as up to four "false" hats).
+    std::vector<double> loudHats;
+    for (const auto& n : demoBeat.notes)
+        if (n.drum == Drum::HiHat && n.gain >= 0.4f)
+            loudHats.push_back(n.time);
+    std::sort(loudHats.begin(), loudHats.end());
+    const Score loud = score(Drum::HiHat, loudHats), all = score(Drum::HiHat, truth[(size_t) Drum::HiHat]);
+    CHECK((double) loud.tp >= 0.5 * (double) loudHats.size(), "hi-hat: %zu of %zu loud hats found", loud.tp, loudHats.size());
+    CHECK(all.reported <= all.tp + 4 && all.worst < 0.006, "hi-hat: %zu reported, %zu of them real, worst %.1f ms",
+          all.reported, all.tp, all.worst * 1000.0);
+
+    // Cymbals: nothing reported that is not a cymbal.
+    const Score cym = score(Drum::Cymbal, truth[(size_t) Drum::Cymbal]);
+    CHECK(cym.reported == cym.tp, "cymbal: %zu reported, %zu real", cym.reported, cym.tp);
+
+    // Levels: the loud snares come out louder than the quiet one; loud hi-hats louder than the off-beats.
+    auto levelAt = [&](double t, Drum d)
+    {
+        float best = -1000.0f, dist = 1.0f;
+        for (const auto& h : result.hits)
+            if (h.drum == d && std::abs(h.time - t) < dist)
+            {
+                dist = (float) std::abs(h.time - t);
+                best = h.levelDb;
+            }
+        return dist < 0.03f ? best : -1000.0f;
+    };
+    const float loudSnare = levelAt(start + 1 * beat, Drum::Snare), quietSnare = levelAt(start + 7 * beat, Drum::Snare);
+    CHECK(loudSnare > quietSnare + 3.0f, "accented snare %.1f dB vs quiet %.1f dB", (double) loudSnare, (double) quietSnare);
+    const float loudHat = levelAt(start + 4.5 * beat, Drum::HiHat), quietHat = levelAt(start + 5.5 * beat, Drum::HiHat);
+    CHECK(loudHat > quietHat + 6.0f, "loud off-beat hi-hat %.1f dB vs quiet %.1f dB", (double) loudHat, (double) quietHat);
+    bool levelsInRange = true;
+    for (const auto& h : result.hits)
+        levelsInRange = levelsInRange && h.levelDb <= 0.0f && h.levelDb >= kMinLevelFloorDb && h.confidence >= 0.0f && h.confidence <= 1.0f;
+    CHECK(levelsInRange, "levels are 0 dB or below and confidences within 0..1");
+    CHECK(std::abs(result.tempoBpm - bpm) < 1.0 || std::abs(result.tempoBpm - 2.0 * bpm) < 2.0,
+          "tempo %.2f BPM (expected %g)", result.tempoBpm, bpm);
+
+    // measureLevels gives hits from another detector the same scale.
+    std::vector<DrumHit> external;
+    for (const auto& n : demoBeat.notes)
+        if (n.drum == Drum::Snare)
+            external.push_back(makeHit(n.time, Drum::Snare, 0.0f, 0.9f));
+    drums::measureLevels(external, audio.data(), audio.size(), kFs);
+    normaliseLevels(external);
+    float quietest = 0.0f;
+    for (const auto& h : external)
+        quietest = std::min(quietest, h.levelDb);
+    CHECK(quietest < -3.0f, "measured levels separate the quiet snare (%.1f dB)", (double) quietest);
+
+    // Silence, a very short file and pure noise do not crash or invent a beat.
+    const Signal quiet(48000, 0.0f);
+    CHECK(drums::analyse(quiet.data(), quiet.size(), kFs).hits.empty(), "silence has no hits");
+    CHECK(drums::analyse(quiet.data(), 100, kFs).hits.empty(), "a tiny file has no hits");
+
+    // A noise floor 40 dB down does not add hits or lose the kick and snare.
+    Signal noisy = audio;
+    const Signal floorNoise = noise((double) audio.size() / kFs, 0.008f, 9);
+    for (size_t i = 0; i < noisy.size(); ++i)
+        noisy[i] += floorNoise[i];
+    const auto noisyResult = drums::analyse(noisy.data(), noisy.size(), kFs);
+    for (Drum d : { Drum::Kick, Drum::Snare })
+    {
+        size_t found = 0, reported = 0;
+        for (const auto& h : noisyResult.hits)
+            if (h.drum == d && h.confidence >= 0.3f)
+            {
+                ++reported;
+                for (double r : truth[(size_t) d])
+                    found += std::abs(h.time - r) < 0.03;
+            }
+        CHECK(found == truth[(size_t) d].size() && reported == found, "with a noise floor, %s: %zu of %zu found, %zu reported",
+              drumName(d), found, truth[(size_t) d].size(), reported);
+    }
+}
+
+int main(int argc, char** argv)
+{
+    gVerbose = argc > 1 && std::string(argv[1]) == "--verbose";
     testMappings();
     testIdentity();
     testBitDepth();
@@ -905,6 +1380,11 @@ int main()
     testPresets();
     testMix();
     testEffectsOnTriggers();
+    testTriggerEvents();
+    testDrumScheduler();
+    testTempoEstimate();
+    testFft();
+    testDrumAnalysis();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;
