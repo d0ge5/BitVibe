@@ -151,8 +151,9 @@ int main(int argc, char** argv)
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 24 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 25 && findParam(*plugin, "Program") != nullptr,
-          "exposes " + String(plugin->getParameters().size()) + " parameters (24 + Program selector)");
+    check(plugin->getParameters().size() == 27 && findParam(*plugin, "Program") != nullptr
+              && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr,
+          "exposes " + String(plugin->getParameters().size()) + " parameters (26 + Program selector, incl. Mix and FX Only On Triggers)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 
@@ -297,6 +298,66 @@ int main(int argc, char** argv)
         const auto again = render(*plugin, pluck);
         const double diff = maxDifference(again, factory);
         check(diff < 1.0e-3, "slot 1 sounds like the factory sound (max diff " + String(diff, 6) + ")");
+
+        // Mix and "FX Only On Triggers" belong to the rig, not to a slot. A host does not necessarily re-initialise the
+        // plug-in when prepareToPlay is called again, so before each comparison 0.6 s of silence is played through it:
+        // that lets every parameter smoother settle (the slowest takes ~0.12 s) and cannot trigger anything.
+        auto fresh = [&]
+        {
+            AudioBuffer<float> silence(2, (int) (0.6 * kFs));
+            silence.clear();
+            render(*plugin, silence);
+        };
+        check(text("Mix") == "100% effect" && text("FX Only On Triggers") == "Off",
+              "mix starts at 100% effect with the trigger-only option off (" + text("Mix") + ")");
+        setNormalised(*plugin, "Mix", 0.4f);
+        setNormalised(*plugin, "FX Only On Triggers", 1.0f);
+        plugin->setCurrentProgram(2); // Lo-Fi Radio: crush + filter, sequencer and stutter off
+        check(near(value("Mix"), 0.4f) && text("FX Only On Triggers") == "On",
+              "recalling a preset leaves Mix and the trigger-only option alone");
+
+        setNormalised(*plugin, "Mix", 1.0f);
+        fresh();
+        const auto idleOut = render(*plugin, pluck);
+        check(maxDifference(idleOut, pluck) < 1.0e-6,
+              "trigger-only option on, nothing triggering: the signal stays clean (diff " + String(maxDifference(idleOut, pluck), 8) + ")");
+
+        setNormalised(*plugin, "FX Only On Triggers", 0.0f);
+        fresh();
+        const auto lofi = render(*plugin, pluck);
+        check(maxDifference(lofi, pluck) > 0.02, "trigger-only option off: the Lo-Fi Radio sound is applied");
+
+        setNormalised(*plugin, "Mix", 0.0f);
+        fresh();
+        const double mixZero = maxDifference(render(*plugin, pluck), pluck);
+        check(mixZero < 1.0e-6, "Mix at 0% returns the clean input (diff " + String(mixZero, 8) + ")");
+
+        setNormalised(*plugin, "Mix", 0.5f);
+        fresh();
+        const auto half = render(*plugin, pluck);
+        check(maxDifference(half, pluck) > 0.005 && maxDifference(half, lofi) > 0.005,
+              "Mix at 50% differs from both the clean input and the full effect");
+        // The sample-rate hold keeps its timing from one render to the next (the host does not reset the engine), so
+        // the crushed signal is not identical sample for sample between renders. Compare how far each is from the
+        // clean input instead: at 50% the effect should contribute about half of its full deviation. (The exact
+        // sample-for-sample blend is checked on the processor itself in BitVibeEditorSnapshot.)
+        auto rmsFromClean = [&](const AudioBuffer<float>& b)
+        {
+            double acc = 0;
+            for (int c = 0; c < b.getNumChannels(); ++c)
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                {
+                    const double d = (double) b.getSample(c, i) - (double) pluck.getSample(c, i);
+                    acc += d * d;
+                }
+            return std::sqrt(acc / (double) (b.getNumChannels() * b.getNumSamples()));
+        };
+        const double ratio = rmsFromClean(half) / jmax(1.0e-12, rmsFromClean(lofi));
+        check(ratio > 0.4 && ratio < 0.6, "Mix at 50% adds about half of the effect's deviation (ratio " + String(ratio, 3) + ")");
+
+        setNormalised(*plugin, "Mix", 1.0f);
+        plugin->setCurrentProgram(0);
+        fresh();
 
         // A slot with a stored expression-morph set-up: clean at toe up, crushed + stutter at toe down.
         plugin->setCurrentProgram(10);

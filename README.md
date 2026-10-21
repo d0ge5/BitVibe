@@ -35,7 +35,10 @@ in the hands of more people for free.
   "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
 - **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
   the plug-in and in your DAW's program list.
-- **Plug-in extras:** tempo sync to the host, all 24 parameters automatable, input and output gain,
+- **Mix knob** to blend your clean input with the effect, and an option to apply the sample-rate, bit and
+  filter effects **only while the stutter or sequencer is playing**, so your playing stays clean in between.
+- **Hover tips:** rest the mouse on any control for a short, plain-language description of what it does.
+- **Plug-in extras:** tempo sync to the host, all 26 parameters automatable, input and output gain,
   adjustable trigger sensitivity and stutter length, and processing that stays in stereo. No reported
   latency, and light on CPU (under 1 % of one core in my measurements).
 
@@ -96,12 +99,35 @@ sequencer type switch, with a preset and expression-morph strip on top.
 - **TAP** sets the tempo. **Hold it** (or use the HOLD button) to freeze the stutter; you can press it
   before playing so the next note is the one that gets frozen.
 - **BYPASS** switches the effect in and out. It is also wired to your host's bypass.
-- The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Trigger** sensitivity for the
-  attack detector, host tempo **Sync**, instrument/line **Headroom**, and the stutter snippet length.
+- The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Mix**, **Trigger** sensitivity
+  for the attack detector, host tempo **Sync**, instrument/line **Headroom**, the stutter snippet length and
+  the **FX ONLY ON TRIGGERS** switch (both explained below).
 
 It starts on preset 1, a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0
 semitones). Turn **Sequencer** to *Off* for a clean signal. If the stutter or sequencer misses notes or
 triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guitar signal first.
+
+### Mix and effects only on triggers
+
+- **MIX** blends your clean input (fully left) with the effect (fully right, the default). The clean signal is
+  your input as it arrives, before the input gain; the output gain applies to the blend; and **BYPASS** always
+  gives back the untouched input.
+- **FX ONLY ON TRIGGERS** changes when the sample-rate, bit-depth and filter effects act. Normally they are
+  always applied. Switch this on and they only act while the **stutter** or the **sequencer** is playing: they
+  fade in when a picked note starts one and fade out when it ends, so your playing stays clean in between.
+  The stutter and the sequencer themselves (the repeats, the pitch steps, the muting) work as usual either
+  way. With the Sequencer knob on *LOOP* the sequencer never stops, so the effects stay on, and with both the
+  sequencer and the stutter off nothing ever triggers, so the signal passes through clean.
+- Neither setting is stored in a preset: like the output level, they belong to your rig and keep their
+  values when you change preset.
+
+### Hover tips
+
+<p align="center"><img src="artifacts/editor_tooltip.png" width="340" alt="Resting the mouse on the MIX knob shows a short description"></p>
+
+Rest the mouse on any knob, switch, button or the preset bar for about half a second and a short description
+appears. The text for the six step knobs on the Alt layer follows the sequencer type: it says whether a step
+sets a pitch, a filter cutoff or a sample rate.
 
 ### Presets
 
@@ -113,8 +139,8 @@ slot.
 
 - A slot remembers the sound: the six knobs, the six step knobs, the sequencer type, tempo, stutter length,
   the morph switch and the two morph sets. It does **not** remember what belongs to your rig or to the
-  moment: bypass, stutter hold, host sync, the Expression position, input / output gain, headroom and
-  trigger sensitivity keep their values when you change preset.
+  moment: bypass, stutter hold, host sync, the Expression position, input / output gain, headroom,
+  trigger sensitivity, the mix and the FX-only-on-triggers switch keep their values when you change preset.
 - Recalling a slot loads its sound. Changes you make afterwards are kept in the session (an orange dot next
   to the name says the slot has unsaved changes) but are only written into the slot by **SAVE**; changing
   slot first discards them. Selecting the slot you are already on does nothing, so a host that re-selects
@@ -211,9 +237,9 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 180 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 203 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
-morph blend and the factory presets). It also passes under MSVC AddressSanitizer and runs on macOS in CI.
+morph blend, the factory presets, the dry/wet mix and the effects-only-on-triggers behaviour over time). It also passes under MSVC AddressSanitizer and runs on macOS in CI.
 
 Two extra tools check the built plug-in itself:
 
@@ -224,12 +250,13 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 
 - `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
   runs audio through several settings, tests bypass, state save/restore and odd block sizes, recalls
-  presets through the host's program list, sweeps the expression morph and round-trips the state, and
-  writes demo WAV files.
+  presets through the host's program list, checks the mix and the trigger-only option, sweeps the expression
+  morph and round-trips the state, and writes demo WAV files.
 - `BitVibeEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
   is how the screenshots above were made). It also runs processor-level checks that a host cannot reach:
-  capturing the morph sets, renaming and saving presets, and state round trips (including old and damaged
-  state); its exit code is non-zero if one fails.
+  capturing the morph sets, renaming and saving presets, state round trips (including old and damaged
+  state), the exact mix maths and that every control has a hover description; its exit code is non-zero if
+  one fails.
 
 </details>
 

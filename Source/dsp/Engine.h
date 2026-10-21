@@ -45,6 +45,15 @@ struct Params
     bool lineHeadroom = false;       // false = instrument level, true = line/synth level
     float triggerSensitivity = 0.5f; // attack detector
     int stutterDivision = 1;         // snippet length: 0 = 1/4 note, 1 = 1/8, 2 = 1/16
+
+    // Blend between the clean input (0) and the effect (1). The clean signal is the input as it
+    // arrives, before the input gain; the output gain applies to the blend.
+    float mix = 1.0f;
+
+    // When on, the sample-rate, bit-depth and filter stage only acts while the stutter or the
+    // sequencer is running (a sequencer set to "continuous" is always running); otherwise the
+    // signal passes that stage untouched.
+    bool fxOnlyOnTriggers = false;
 };
 
 class Engine
@@ -73,6 +82,9 @@ public:
         bypassSm.setTime(fs, 10.0f);
         inGainSm.setTime(fs, 20.0f);
         outGainSm.setTime(fs, 20.0f);
+        mixSm.setTime(fs, 10.0f);
+        fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
+        fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
 
         gateAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.001));
         gateRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.030));
@@ -101,6 +113,8 @@ public:
         muteGain = 1.0f;
         holdPrev = false;
         beatPhase = 0.0;
+        fxMix = 1.0f;
+        fxInit = false;
     }
 
     // Processes in place. io points at numChannels channel buffers (1 or 2).
@@ -128,6 +142,17 @@ public:
             if (detector.process(mono))
                 onAttack();
             advanceSequencer();
+
+            // The crush / sample-rate / filter stage: always on, or only while a trigger effect plays.
+            const float fxTarget = (!blk.fxOnlyOnTriggers || seqRunning || channels[0].stutter.isActive()) ? 1.0f : 0.0f;
+            if (!fxInit)
+            {
+                fxMix = fxTarget;
+                fxInit = true;
+            }
+            fxMix += (fxTarget - fxMix) * (fxTarget > fxMix ? fxAttack : fxRelease);
+            if (std::abs(fxTarget - fxMix) < 1.0e-5f)
+                fxMix = fxTarget;
 
             float semitones = 0.0f, filterFactor = 1.0f, srFactor = 1.0f;
             bool mute = false;
@@ -182,7 +207,8 @@ public:
             if (std::abs(muteGain - (mute ? 0.0f : 1.0f)) < 1.0e-5f)
                 muteGain = mute ? 0.0f : 1.0f;
 
-            const float outGain = outGainSm.next(outGainTarget) / headroomScale;
+            const float outGain = outGainSm.next(outGainTarget);
+            const float mixAmount = mixSm.next(blk.mix);
             const float bypassMix = bypassSm.next(blk.bypass ? 0.0f : 1.0f);
 
             // ---- per-channel audio path --------------------------------------------------
@@ -191,6 +217,7 @@ public:
                 auto& ch = channels[(size_t) c];
                 float y = ch.stutter.process(x[(size_t) c]);
                 y = ch.pitch.process(y, ratio, pitchAmount);
+                const float beforeFx = y;
 
                 if (srTick)
                     ch.held = y;
@@ -205,14 +232,18 @@ public:
 
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
+                y = lerpExact(beforeFx, y, fxMix);
                 y *= muteGain;
-                y *= outGain;
+                y *= invHeadroom;
 
                 if (!std::isfinite(y))
                 {
                     y = 0.0f;
                     ch.ladder.reset();
                 }
+
+                y = lerpExact(dry[(size_t) c], y, mixAmount);
+                y *= outGain;
 
                 io[c][n] = lerpExact(dry[(size_t) c], y, bypassMix);
             }
@@ -247,6 +278,8 @@ private:
         float sampleRate = 1.0f, filter = 1.0f, bits = 1.0f;
         mapping::StutterMode stutter;
         bool bypass = false;
+        bool fxOnlyOnTriggers = false;
+        float mix = 1.0f;
         int stutterLength = 0;
     };
 
@@ -256,6 +289,8 @@ private:
         blk.filter = p.filter;
         blk.bits = p.bits;
         blk.bypass = p.bypass;
+        blk.fxOnlyOnTriggers = p.fxOnlyOnTriggers;
+        blk.mix = std::clamp(p.mix, 0.0f, 1.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
 
         if (!primed)
@@ -269,6 +304,7 @@ private:
             bypassSm.snap(p.bypass ? 0.0f : 1.0f);
             inGainSm.snap(dbToGain(p.inputGainDb));
             outGainSm.snap(dbToGain(p.outputGainDb));
+            mixSm.snap(blk.mix);
             primed = true;
         }
 
@@ -276,6 +312,7 @@ private:
         outGainTarget = dbToGain(p.outputGainDb);
         // Line level leaves ~3.5 dB more headroom before the converters clip (manual, specs).
         headroomScale = p.lineHeadroom ? 0.668f : 1.0f;
+        invHeadroom = 1.0f / headroomScale;
         detector.setSensitivity(p.triggerSensitivity);
 
         const float bpm = std::clamp(p.tempoBpm, kMinTempoBpm, kMaxTempoBpm);
@@ -416,8 +453,12 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm;
-    float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm;
+    float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
+
+    // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)
+    float fxMix = 1.0f, fxAttack = 1.0f, fxRelease = 1.0f;
+    bool fxInit = false;
 
     // sequencer
     std::array<mapping::Step, kNumSteps> steps {};

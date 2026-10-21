@@ -21,7 +21,7 @@ public:
 };
 
 // Round metal footswitch with separate press / release callbacks (the tap switch needs both).
-class FootSwitch : public juce::Component
+class FootSwitch : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     std::function<void()> onPress, onRelease;
@@ -36,7 +36,7 @@ private:
 };
 
 // Small rectangular push button (ALT, sequencer type).
-class PedalButton : public juce::Component
+class PedalButton : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit PedalButton(juce::String label) : text(std::move(label)) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
@@ -78,6 +78,8 @@ private:
 
     void timerCallback() override;
     void buildBackground();
+    void setTooltips();        // plain-language hover text for every control
+    void updateStepTooltips(); // the text of the step knobs depends on the sequencer type
     void stepProgram(int direction);
     void refreshPresetName();
     void configureKnob(juce::Slider&, int ticks);
@@ -94,10 +96,10 @@ private:
     std::array<Knob, kKnobs> knobs;
 
     // global panel
-    juce::Slider tempoSlider, inSlider, outSlider, trigSlider;
-    std::unique_ptr<APVTS::SliderAttachment> tempoAtt, inAtt, outAtt, trigAtt;
-    juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" };
-    std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt;
+    juce::Slider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;
+    std::unique_ptr<APVTS::SliderAttachment> tempoAtt, inAtt, mixAtt, outAtt, trigAtt;
+    juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
+    std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ComboBox headroomBox, stutterLenBox;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 
@@ -119,6 +121,9 @@ private:
     int shownProgram = -1;
     juce::String shownName;
     double flashUpUntil = 0.0, flashDownUntil = 0.0, flashSaveUntil = 0.0;
+
+    juce::TooltipWindow tooltipWindow { this, 600 }; // shows setTooltip() text after a short hover
+    int tooltipSeqType = -1;
 
     bool altLayer = false;
     bool tapDown = false, holdFromTap = false;

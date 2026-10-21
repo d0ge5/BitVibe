@@ -449,6 +449,8 @@ void testRobustness()
         p.inputGainDb = -12.0f + 24.0f * u(rng);
         p.lineHeadroom = u(rng) > 0.5f;
         p.stutterDivision = (int) (u(rng) * 3.0f) % 3;
+        p.mix = u(rng);
+        p.fxOnlyOnTriggers = u(rng) > 0.5f;
         Signal in = noise(1.5, 1.5f, (unsigned) trial);
         const Signal burst = singleBurst(1.5);
         for (size_t i = 0; i < in.size(); ++i)
@@ -736,6 +738,157 @@ void testPresets()
 }
 } // namespace
 
+// ---- dry/wet mix and "effects only on triggers" ----------------------------------------------
+
+// Sample-rate, bit-depth and filter settings that are easy to hear; sequencer and stutter off.
+Params crushed()
+{
+    Params p = neutral();
+    p.sampleRate = std::log(3000.0f / 48.0f) / std::log(1000.0f); // 3 kHz
+    p.bits = 4.0f / 23.0f;                                       // 5 bit
+    p.filter = 0.55f;
+    return p;
+}
+
+double maxAbsDiff(const Signal& a, const Signal& b, double t0 = 0.0, double t1 = 1.0e9)
+{
+    const size_t i0 = (size_t) (t0 * kFs), i1 = std::min({ a.size(), b.size(), (size_t) (t1 * kFs) });
+    double d = 0;
+    for (size_t i = i0; i < i1; ++i)
+        d = std::max(d, (double) std::abs(a[i] - b[i]));
+    return d;
+}
+
+double rmsDiff(const Signal& a, const Signal& b, double t0, double t1)
+{
+    const size_t i0 = (size_t) (t0 * kFs), i1 = std::min({ a.size(), b.size(), (size_t) (t1 * kFs) });
+    double acc = 0;
+    for (size_t i = i0; i < i1; ++i)
+        acc += (double) (a[i] - b[i]) * (double) (a[i] - b[i]);
+    return std::sqrt(acc / (double) std::max<size_t>(1, i1 - i0));
+}
+
+void testMix()
+{
+    std::puts("mix: blends the clean input with the effect");
+    const Signal in = noise(1.0, 0.4f, 11);
+    const Params wetParams = crushed();
+    const Signal wet = render(wetParams, in); // mix defaults to 100 % effect
+
+    CHECK(maxAbsDiff(wet, in) > 0.05, "the crushed signal should differ from the input");
+
+    Params p = wetParams;
+    p.mix = 0.0f;
+    CHECK(maxAbsDiff(render(p, in), in) < 1.0e-7, "mix 0 gives back the clean input");
+
+    for (float m : { 0.25f, 0.5f, 0.8f })
+    {
+        p.mix = m;
+        const Signal out = render(p, in);
+        double worst = 0;
+        for (size_t i = 0; i < in.size(); ++i)
+            worst = std::max(worst, (double) std::abs(out[i] - (in[i] + (wet[i] - in[i]) * m)));
+        CHECK(worst < 2.0e-6, "mix %.2f: max deviation from dry + (wet - dry) * mix is %g", m, worst);
+    }
+
+    // The output gain applies to the blend, so at mix 0 it simply scales the clean signal (+6.02 dB = x2).
+    p.mix = 0.0f;
+    p.outputGainDb = 6.0206f;
+    const Signal loud = render(p, in);
+    double gainErr = 0;
+    for (size_t i = 0; i < in.size(); ++i)
+        gainErr = std::max(gainErr, (double) std::abs(loud[i] - 2.0f * in[i]));
+    CHECK(gainErr < 1.0e-4, "output gain applies after the mix (error %g)", gainErr);
+
+    // Bypass always returns the untouched input, whatever the mix says.
+    p = wetParams;
+    p.mix = 0.3f;
+    p.bypass = true;
+    CHECK(maxAbsDiff(render(p, in), in) < 1.0e-6, "bypass is clean at any mix");
+
+    // Automating the mix settles exactly on the clean input.
+    p = wetParams;
+    const Signal swept = render(p, in, [](Params& q, size_t pos) { q.mix = pos < 24000 ? 1.0f : 0.0f; });
+    // The mix is smoothed over ~10 ms so it never clicks; it has settled well within 200 ms.
+    CHECK(maxAbsDiff(swept, in, 0.7, 1.0) < 1.0e-6, "mix automated to 0 ends on the clean input");
+    CHECK(maxAbsDiff(swept, in, 0.5, 0.52) > 0.01 && maxAbsDiff(swept, in, 0.5, 0.52) < maxAbsDiff(wet, in, 0.5, 0.52),
+          "the change is smooth, not an instant jump");
+    CHECK(maxAbsDiff(swept, wet, 0.0, 0.49) < 1.0e-6, "before the change the full effect is heard");
+
+    // Out-of-range values are clamped rather than amplifying.
+    p = wetParams;
+    p.mix = 5.0f;
+    CHECK(maxAbsDiff(render(p, in), wet) < 1.0e-7, "mix above 1 is treated as 1");
+    p.mix = -3.0f;
+    CHECK(maxAbsDiff(render(p, in), in) < 1.0e-7, "mix below 0 is treated as 0");
+}
+
+// A quiet 440 Hz tone (too quiet to trigger the pick detector) with one loud pick at 0.5 s. Comparing the
+// output with the input on the quiet part shows whether the sample-rate stage is acting at that moment.
+Signal quietToneWithPick()
+{
+    Signal s = sine(440.0, 2.2, 0.0015f);
+    Rng rng(3);
+    const size_t start = (size_t) (0.5 * kFs), len = (size_t) (0.1 * kFs);
+    for (size_t i = 0; i < len; ++i)
+        s[start + i] += 0.5f * rng.next() * (1.0f - (float) i / (float) len);
+    return s;
+}
+
+Params rateOnly()
+{
+    Params p = neutral();
+    p.sampleRate = std::log(3000.0f / 48.0f) / std::log(1000.0f); // 3 kHz hold: easy to see on a tone
+    return p;
+}
+
+void testEffectsOnTriggers()
+{
+    std::puts("effects only on triggers: crush / sample rate / filter act only while a trigger effect plays");
+    const Signal in = quietToneWithPick();
+    constexpr double kAudible = 1.0e-4; // rms difference that proves the hold is acting on the quiet tone
+
+    // Option off (default): the sample-rate stage is always on.
+    Params always = rateOnly();
+    CHECK(rmsDiff(render(always, in), in, 0.1, 0.45) > kAudible, "option off: the effect is on with nothing playing");
+
+    // Option on, sequencer and stutter both off: nothing ever triggers, so the signal stays clean.
+    Params idle = rateOnly();
+    idle.fxOnlyOnTriggers = true;
+    CHECK(maxAbsDiff(render(idle, in), in) < 1.0e-6, "option on, sequencer and stutter off: fully clean");
+
+    // Sequencer set to play once, six dry steps of 100 ms (so only the effect stage can change the sound).
+    Params seq = rateOnly();
+    seq.fxOnlyOnTriggers = true;
+    seq.seqPlay = 1;
+    seq.seqMult = 0;
+    seq.tempoBpm = 600.0f;
+    seq.steps.fill(mapping::pitchStepKnob(0));
+    const Signal seqOut = render(seq, in);
+    CHECK(maxAbsDiff(seqOut, in, 0.05, 0.45) < 1.0e-6, "sequencer: clean before the pick (max diff %g)", maxAbsDiff(seqOut, in, 0.05, 0.45));
+    CHECK(rmsDiff(seqOut, in, 0.7, 1.0) > kAudible, "sequencer: effect on while the sequence plays (rms diff %g)", rmsDiff(seqOut, in, 0.7, 1.0));
+    CHECK(maxAbsDiff(seqOut, in, 1.4, 2.1) < 1.0e-6, "sequencer: clean again after it finishes (max diff %g)", maxAbsDiff(seqOut, in, 1.4, 2.1));
+
+    // A sequencer on "continuous" never stops, so the effect stays on.
+    Params loop = seq;
+    loop.seqPlay = 5;
+    CHECK(rmsDiff(render(loop, in), in, 0.1, 0.45) > kAudible, "continuous sequencer keeps the effect on");
+
+    // Stutter: full speed, two repeats of a 1/8 note at 120 BPM (recording 0.25 s, then two repeats).
+    Params stut = rateOnly();
+    stut.fxOnlyOnTriggers = true;
+    stut.stutter = 2;
+    const Signal stutOut = render(stut, in);
+    CHECK(maxAbsDiff(stutOut, in, 0.05, 0.45) < 1.0e-6, "stutter: clean before the pick (max diff %g)", maxAbsDiff(stutOut, in, 0.05, 0.45));
+    CHECK(rmsDiff(stutOut, in, 0.65, 0.74) > kAudible, "stutter: effect on while it records (rms diff %g)", rmsDiff(stutOut, in, 0.65, 0.74));
+    CHECK(maxAbsDiff(stutOut, in, 1.5, 2.1) < 1.0e-6, "stutter: clean again after the repeats (max diff %g)", maxAbsDiff(stutOut, in, 1.5, 2.1));
+
+    // Switching the option off again brings the always-on behaviour back.
+    const Signal toggled = render(idle, in, [](Params& q, size_t pos) { q.fxOnlyOnTriggers = pos < 24000; });
+    CHECK(maxAbsDiff(toggled, in, 0.05, 0.45) < 1.0e-6, "option on: clean");
+    CHECK(rmsDiff(toggled, in, 0.7, 1.0) > kAudible, "option switched off: the effect comes back");
+}
+
 int main()
 {
     testMappings();
@@ -750,6 +903,8 @@ int main()
     testMorph();
     testMorphThroughEngine();
     testPresets();
+    testMix();
+    testEffectsOnTriggers();
 
     std::printf("\n%d checks, %d failed\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;

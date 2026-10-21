@@ -7,10 +7,10 @@ namespace
 // The pedal face and the global panel are laid out in their own coordinates; everything below the
 // header panel is shifted down by kFaceDy.
 constexpr int kFaceDy = 100;
-constexpr int kWidth = 480, kHeight = 700 + kFaceDy;
+constexpr int kWidth = 480, kHeight = 736 + kFaceDy;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
-const Rectangle<int> kGlobal { 12, 544, 456, 144 };
+const Rectangle<int> kGlobal { 12, 544, 456, 180 };
 
 // Header rows (window coordinates).
 const Rectangle<int> kPrevBounds { 24, 20, 30, 26 }, kNameBox { 60, 20, 266, 26 }, kNextBounds { 332, 20, 30, 26 },
@@ -22,6 +22,9 @@ const Rectangle<int> kCaptionBounds { 24, 82, 432, 12 };
 constexpr std::array<int, 3> kColX { 88, 240, 392 };
 constexpr std::array<int, 2> kRowY { 142, 288 };
 constexpr int kKnobSize = 88;
+
+// The five global knobs share one row: centre of the first and the spacing (face coordinates).
+constexpr int kGlobalKnobX0 = 58, kGlobalKnobDx = 91;
 
 const Colour kInk { 0xfff2f0e6 };       // engraved text
 const Colour kInkDim { 0xff9a988f };
@@ -68,6 +71,9 @@ PedalLookAndFeel::PedalLookAndFeel()
     setColour(PopupMenu::textColourId, kInk);
     setColour(PopupMenu::highlightedBackgroundColourId, Colour(0xff4a3410));
     setColour(PopupMenu::highlightedTextColourId, kInk);
+    setColour(TooltipWindow::backgroundColourId, Colour(0xff26262b));
+    setColour(TooltipWindow::textColourId, kInk);
+    setColour(TooltipWindow::outlineColourId, Colour(0xff55555d));
     setColour(Label::textColourId, kInk);
     setColour(Label::textWhenEditingColourId, kInk);
     setColour(Label::backgroundWhenEditingColourId, Colour(0xff0e0e10));
@@ -304,16 +310,18 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     };
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
+    smallKnob(mixSlider, mixAtt, ids::mix);
     smallKnob(outSlider, outAtt, ids::outputGain);
     smallKnob(trigSlider, trigAtt, ids::sensitivity);
 
-    for (auto* b : { &syncButton, &holdButton })
+    for (auto* b : { &syncButton, &holdButton, &fxTrigButton })
     {
         b->setLookAndFeel(&laf);
         addAndMakeVisible(*b);
     }
     syncAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::tempoSync, syncButton);
     holdAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::hold, holdButton);
+    fxTrigAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::fxTriggers, fxTrigButton);
 
     auto fillCombo = [this](ComboBox& box, const char* id)
     {
@@ -406,6 +414,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     morphAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::morph, morphButton);
     addAndMakeVisible(morphButton);
     refreshPresetName();
+    setTooltips();
 
     setSize(kWidth, kHeight);
     buildBackground();
@@ -420,10 +429,11 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &outSlider, &trigSlider })
+    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider })
         s->setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
+    fxTrigButton.setLookAndFeel(nullptr);
     morphButton.setLookAndFeel(nullptr);
     expressionSlider.setLookAndFeel(nullptr);
     presetLabel.setLookAndFeel(nullptr);
@@ -537,6 +547,66 @@ String BitVibeEditor::readoutText(int i) const
     }
 }
 
+// ------------------------------------------------------------------------------------------
+// Hover descriptors. Plain language, one or two short sentences each.
+
+void BitVibeEditor::setTooltips()
+{
+    static const char* frontTips[kKnobs] = {
+        "SAMPLE: lowers the sample rate for a gritty, aliased sound. Turn left for more. Fully right = off.",
+        "FILTER: a low-pass filter that darkens the sound. Turn left to close it. Fully right = off.",
+        "BITS: lowers the bit depth for digital distortion. Turn left for more. Fully right = off.",
+        "STUTTER: after each picked note, repeats a short slice of it. Left = off, then 1 to 16 repeats at normal, "
+        "double or half speed. Fully right = random.",
+        "SEQUENCER: how many times the 6-step sequence plays after each picked note: off, once, twice, 4, 8 or looping.",
+        "SEQ MULT: how fast the sequencer runs, as a multiple of the tempo (x1 to x128)."
+    };
+    for (int i = 0; i < kKnobs; ++i)
+        knobs[(size_t) i].front.setTooltip(frontTips[i]);
+    updateStepTooltips();
+
+    // footswitches and buttons
+    bypassSwitch.setTooltip("BYPASS: switches the effect on or off. The red light shows it is on.");
+    tapSwitch.setTooltip("TAP: tap to set the tempo. Press and hold to freeze the stutter.");
+    altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer.");
+    typeButton.setTooltip("SEQ TYPE: choose what the sequencer changes: pitch, filter or sample rate (shown by the two lights).");
+
+    // global panel
+    tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 6000 BPM. Set it by tapping, or turn on SYNC.");
+    inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
+    mixSlider.setTooltip("MIX: blends your clean input (left) with the effect (right). Fully right = effect only.");
+    outSlider.setTooltip("OUTPUT: the overall output level.");
+    trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
+    syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo knob.");
+    holdButton.setTooltip("HOLD: freeze the stutter on the current (or next) note until you switch this off.");
+    fxTrigButton.setTooltip("FX ONLY ON TRIGGERS: when on, the sample-rate, bit and filter effects only act while the stutter or "
+                            "sequencer is playing; the rest of the time your signal stays clean. A sequencer set to LOOP is always playing.");
+    headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths.");
+    stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
+
+    // preset bar and expression morph strip
+    prevButton.setTooltip("Previous preset.");
+    nextButton.setTooltip("Next preset.");
+    saveButton.setTooltip("SAVE: store the current sound in this preset slot.");
+    presetLabel.setTooltip("The preset name. Double-click to rename it. An orange dot means the sound has unsaved changes.");
+    setUpButton.setTooltip("SET UP: store the current knobs as the 'toe up' sound (expression slider fully left).");
+    setDownButton.setTooltip("SET DOWN: store the current knobs as the 'toe down' sound (expression slider fully right).");
+    expressionSlider.setTooltip("EXPRESSION: sweeps from the SET UP sound to the SET DOWN sound. Needs MORPH switched on.");
+    morphButton.setTooltip("MORPH: when on, the sound follows the expression slider instead of the knobs.");
+}
+
+void BitVibeEditor::updateStepTooltips()
+{
+    const auto type = seqType();
+    const char* what = type == bitvibe::SeqType::Pitch
+                           ? "its pitch shift, from -12 to +12 semitones (centre = unshifted)"
+                           : (type == bitvibe::SeqType::Filter ? "its filter cutoff, as a percent of the FILTER knob"
+                                                               : "its sample rate, as a percent of the SAMPLE knob");
+    for (int i = 0; i < kKnobs; ++i)
+        knobs[(size_t) i].step.setTooltip("STEP " + String(i + 1) + ": " + what + ". Fully left skips this step, fully right mutes it.");
+    tooltipSeqType = (int) type;
+}
+
 void BitVibeEditor::buildBackground()
 {
     background = Image(Image::ARGB, kWidth, kHeight, true);
@@ -614,15 +684,16 @@ void BitVibeEditor::resized()
     bypassSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 88, 462 })));
     tapSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 392, 462 })));
 
-    // global panel: four knobs, then switches
-    const std::array<Slider*, 4> small { &tempoSlider, &inSlider, &outSlider, &trigSlider };
+    // global panel: five knobs, then two rows of switches
+    const std::array<Slider*, 5> small { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider };
     for (size_t i = 0; i < small.size(); ++i)
-        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ 69 + (int) i * 114, 585 })));
+        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, 585 })));
 
     syncButton.setBounds(face({ 24, 654, 62, 24 }));
     holdButton.setBounds(face({ 92, 654, 62, 24 }));
     headroomBox.setBounds(face({ 170, 654, 124, 24 }));
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
+    fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 }
 
 void BitVibeEditor::paint(Graphics& g)
@@ -725,15 +796,16 @@ void BitVibeEditor::paint(Graphics& g)
     g.drawText("GLOBAL", Rectangle<int>(26, 548, 80, 12), Justification::left);
 
     struct Entry { const char* name; String value; };
-    const std::array<Entry, 4> entries {{
+    const std::array<Entry, 5> entries {{
         { "TEMPO", String(rawValue(ids::tempo), 1) },
         { "INPUT", String(rawValue(ids::inputGain), 1) + " dB" },
+        { "MIX", String(roundToInt(rawValue(ids::mix) * 100.0f)) + "%" },
         { "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB" },
         { "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%" },
     }};
     for (size_t i = 0; i < entries.size(); ++i)
     {
-        const int cx = 69 + (int) i * 114;
+        const int cx = kGlobalKnobX0 + (int) i * kGlobalKnobDx;
         g.setColour(kInk);
         g.setFont(bold(11.0f));
         g.drawText(entries[i].name, Rectangle<int>(100, 14).withCentre({ cx, 619 }), Justification::centred);
@@ -770,6 +842,8 @@ void BitVibeEditor::timerCallback()
     expressionSlider.getProperties().set("active", rawValue(ids::morph) > 0.5f);
 
     const auto type = seqType();
+    if ((int) type != tooltipSeqType)
+        updateStepTooltips();
     for (auto& k : knobs)
     {
         const int ticks = type == bitvibe::SeqType::Pitch ? 27 : 11;

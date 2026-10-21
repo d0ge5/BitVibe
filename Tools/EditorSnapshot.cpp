@@ -170,13 +170,19 @@ void testPresetsAndMorph()
 
     // Rig settings and switches are not part of a slot.
     setValue(*p, ids::inputGain, 7.0f);
+    setValue(*p, ids::mix, 0.4f);
+    setValue(*p, ids::fxTriggers, 1.0f);
     setValue(*p, ids::bypass, 1.0f);
     setValue(*p, ids::tempoSync, 1.0f);
     p->setCurrentProgram(4);
     check(std::abs(getValue(*p, ids::inputGain) - 7.0f) < 0.11f && getValue(*p, ids::bypass) > 0.5f &&
               getValue(*p, ids::tempoSync) > 0.5f,
           "recall leaves input gain, bypass and host sync alone");
+    check(std::abs(getValue(*p, ids::mix) - 0.4f) < 0.01f && getValue(*p, ids::fxTriggers) > 0.5f,
+          "recall leaves the mix and the trigger-only option alone");
     setValue(*p, ids::inputGain, 0.0f);
+    setValue(*p, ids::mix, 1.0f);
+    setValue(*p, ids::fxTriggers, 0.0f);
     setValue(*p, ids::bypass, 0.0f);
     setValue(*p, ids::tempoSync, 0.0f);
 
@@ -321,6 +327,104 @@ void testPresetsAndMorph()
         }
     }
 }
+
+// The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
+// before every render (the host test cannot guarantee that).
+void testMixAndTriggerOnly()
+{
+    std::puts("mix and trigger-only effects (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    p->setCurrentProgram(2); // Lo-Fi Radio: crush + filter, sequencer and stutter off
+
+    const auto full = run(*p, in);
+    check(maxDifference(full, in) > 0.01, "the Lo-Fi Radio sound changes the signal (max diff " + String(maxDifference(full, in), 4) + ")");
+
+    setValue(*p, ids::fxTriggers, 1.0f);
+    const double idle = maxDifference(run(*p, in), in);
+    check(idle < 1.0e-6, "trigger-only option on, nothing triggering: the signal stays clean (max diff " + String(idle, 8) + ")");
+    setValue(*p, ids::fxTriggers, 0.0f);
+
+    setValue(*p, ids::mix, 0.0f);
+    const double zero = maxDifference(run(*p, in), in);
+    check(zero < 1.0e-6, "Mix at 0% returns the clean input (max diff " + String(zero, 8) + ")");
+
+    setValue(*p, ids::mix, 0.5f);
+    const auto half = run(*p, in);
+    double err = 0;
+    for (int c = 0; c < half.getNumChannels(); ++c)
+        for (int i = 0; i < half.getNumSamples(); ++i)
+            err = jmax(err, (double) std::abs(half.getSample(c, i) - 0.5f * (in.getSample(c, i) + full.getSample(c, i))));
+    check(err < 1.0e-5, "Mix at 50% is the average of clean and effect (max error " + String(err, 8) + ")");
+
+    setValue(*p, ids::mix, 1.0f);
+    check(maxDifference(run(*p, in), full) < 1.0e-6, "Mix back at 100% restores the full effect");
+
+    // With the pitch sequencer running (slot 1, continuous) the effect stage counts as triggered, so the option
+    // makes no difference there.
+    p->setCurrentProgram(0);
+    const auto seqOff = run(*p, in);
+    setValue(*p, ids::fxTriggers, 1.0f);
+    const auto seqOn = run(*p, in);
+    check(maxDifference(seqOn, seqOff) < 1.0e-6, "a continuous sequencer keeps the effects on, so the option changes nothing");
+}
+
+
+// Hover descriptors. The tooltip window finds the component under the mouse and asks it for its tooltip text, so
+// every control must answer that question. The step knobs' text follows the sequencer type.
+void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expectedStepWord)
+{
+    std::puts("hover descriptors");
+    int controls = 0, missing = 0, tooLong = 0;
+    StringArray stepOneTips;
+    for (int i = 0; i < ed.getNumChildComponents(); ++i)
+    {
+        auto* c = ed.getChildComponent(i);
+        const bool interactive = dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr
+                                 || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<Label*>(c) != nullptr
+                                 || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr;
+        if (!interactive)
+            continue;
+        ++controls;
+        auto* tip = dynamic_cast<TooltipClient*>(c);
+        const String text = tip != nullptr ? tip->getTooltip() : String();
+        missing += text.isEmpty() ? 1 : 0;
+        tooLong += text.length() > 260 ? 1 : 0;
+        if (text.startsWith("STEP 1:"))
+            stepOneTips.add(text);
+        if (text.isEmpty())
+            std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
+    }
+    check(controls == 34 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 34 and 0)");
+    check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
+    check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
+          "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
+
+    // What a tooltip looks like in the editor's own style: show one for the MIX knob.
+    if (imageFile != nullptr)
+    {
+        const Point<int> mixKnob(240, 685);
+        // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
+        // topmost visible child under the point the same way hit-testing would.
+        Component* under = nullptr;
+        for (int i = ed.getNumChildComponents(); --i >= 0;)
+            if (auto* c = ed.getChildComponent(i); c->isVisible() && c->getBounds().contains(mixKnob))
+            {
+                under = c;
+                break;
+            }
+        auto* tip = dynamic_cast<TooltipClient*>(under);
+        check(tip != nullptr && tip->getTooltip().startsWith("MIX:"),
+              "the control under the MIX knob answers with the MIX description");
+        if (tip != nullptr)
+        {
+            TooltipWindow window(&ed, 600);
+            window.displayTip(ed.localPointToGlobal(mixKnob.translated(10, -30)), tip->getTooltip());
+            save(ed, *imageFile);
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -341,6 +445,8 @@ int main(int argc, char** argv)
     {
         std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(processor.createEditor()));
         save(*ed, outDir.getChildFile("editor_front.png"));
+        const auto tooltipImage = outDir.getChildFile("editor_tooltip.png");
+        testTooltips(*ed, &tooltipImage, "semitones");
         ed->setAltLayer(true);
         save(*ed, outDir.getChildFile("editor_alt_pitch.png"));
     }
@@ -365,6 +471,7 @@ int main(int argc, char** argv)
     {
         std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(processor.createEditor()));
         save(*ed, outDir.getChildFile("editor_played.png"));
+        testTooltips(*ed, nullptr, "filter cutoff"); // this state uses the filter sequencer
         ed->setAltLayer(true);
         save(*ed, outDir.getChildFile("editor_alt_filter.png"));
     }
@@ -381,6 +488,7 @@ int main(int argc, char** argv)
     std::puts("processor + editor lifecycle completed");
 
     testPresetsAndMorph();
+    testMixAndTriggerOnly();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

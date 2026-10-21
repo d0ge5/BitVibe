@@ -85,14 +85,24 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::morph), "Expression Morph", false));
+
+    // ---- blend and trigger-only effects --------------------------------------------------
+    // Mix: 0 = only the clean input, 1 = only the effect. Both settings belong to the rig, not to a
+    // preset slot (see the comment in the header).
+    layout.add(std::make_unique<AudioParameterFloat>(
+        id(ids::mix), "Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
+        AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "% effect"; })
+            .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
     return layout;
 }
 
 namespace
 {
 // Parameters a preset slot stores, in this order. Bypass, stutter hold, host sync, the expression
-// position and the input / output / headroom / trigger settings are left out on purpose (see the
-// comment in the header).
+// position, the input / output / headroom / trigger settings, the mix and the effects-on-triggers
+// option are left out on purpose (see the comment in the header).
 std::vector<String> presetParameterIds()
 {
     std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult };
@@ -173,6 +183,8 @@ BitVibeProcessor::BitVibeProcessor()
     pStutterLen = raw(ids::stutterLen);
     pExpression = raw(ids::expression);
     pMorph = raw(ids::morph);
+    pMix = raw(ids::mix);
+    pFxTriggers = raw(ids::fxTriggers);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
 
@@ -251,6 +263,8 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.lineHeadroom = roundToInt(pHeadroom->load()) == 1;
     p.triggerSensitivity = pSensitivity->load();
     p.stutterDivision = roundToInt(pStutterLen->load());
+    p.mix = pMix->load();
+    p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
     return p;
 }
 

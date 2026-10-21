@@ -26,6 +26,8 @@ inline constexpr const char* sensitivity = "sensitivity";
 inline constexpr const char* stutterLen = "stutterLen";
 inline constexpr const char* expression = "expression";
 inline constexpr const char* morph = "morph";
+inline constexpr const char* mix = "mix";
+inline constexpr const char* fxTriggers = "fxTriggers";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 } // namespace ids
@@ -52,8 +54,8 @@ public:
 
     // Sixteen preset slots. A slot holds the sound (knobs, tempo, stutter length, morph set-up) but not
     // the settings that belong to the player's rig or the moment: bypass, stutter hold, host sync, the
-    // expression position, input / output gain, headroom and trigger sensitivity keep their values when
-    // a preset is recalled.
+    // expression position, input / output gain, headroom, trigger sensitivity, the dry/wet mix and the
+    // "effects only on triggers" option keep their values when a preset is recalled.
     int getNumPrograms() override { return bitvibe::kNumPresets; }
     int getCurrentProgram() override { return currentProgram.load(); }
     void setCurrentProgram(int index) override;
@@ -135,6 +137,8 @@ private:
     std::atomic<float>* pStutterLen = nullptr;
     std::atomic<float>* pExpression = nullptr;
     std::atomic<float>* pMorph = nullptr;
+    std::atomic<float>* pMix = nullptr;
+    std::atomic<float>* pFxTriggers = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
