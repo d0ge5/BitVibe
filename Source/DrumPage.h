@@ -61,6 +61,8 @@ private:
     std::unique_ptr<APVTS::ComboBoxAttachment> stepClockAtt;
     juce::Slider levelKnob;
     std::unique_ptr<APVTS::SliderAttachment> levelAtt;
+    juce::ComboBox beatOutBox; // where the beat's sound goes: Auto / Monitor / Main
+    std::unique_ptr<APVTS::ComboBoxAttachment> beatOutAtt;
     juce::ParameterAttachment playParam;
     std::array<Row, bitvibe::kNumDrums> rows;
 

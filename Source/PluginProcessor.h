@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BeatRoute.h"
 #include "DrumBeat.h"
 #include "Engine.h"
 #include "Morph.h"
@@ -33,6 +34,7 @@ inline constexpr const char* beatPlay = "beatPlay";
 inline constexpr const char* beatLevel = "beatLevel";
 inline constexpr const char* pickTriggers = "pickTriggers";
 inline constexpr const char* stepClock = "stepClock";
+inline constexpr const char* beatOutput = "beatOutput";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 } // namespace ids
@@ -90,6 +92,11 @@ public:
 
     // The drum beat of the DRUMS tab (its hits can trigger the sequencer and the stutter).
     DrumBeat& getDrumBeat() { return drumBeat; }
+
+    // Where the beat's sound goes: the main output, the optional "Beat Monitor" output (the second output
+    // bus, which the host switches on and the player routes to their headphones) or nowhere. Updated every
+    // block; for the DRUMS tab's readout.
+    bitvibe::BeatRoute getBeatRoute() const { return (bitvibe::BeatRoute) beatRoute.load(std::memory_order_relaxed); }
 
     // Tempo actually in use (the host's when sync is on); for display only.
     float getEffectiveBpm() const { return effectiveBpm.load(std::memory_order_relaxed); }
@@ -153,6 +160,7 @@ private:
     std::atomic<float>* pBeatLevel = nullptr;
     std::atomic<float>* pPickTriggers = nullptr;
     std::atomic<float>* pStepClock = nullptr;
+    std::atomic<float>* pBeatOutput = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
@@ -167,6 +175,7 @@ private:
     std::atomic<int> currentProgram { 0 };
 
     std::atomic<float> effectiveBpm { 120.0f };
+    std::atomic<int> beatRoute { (int) bitvibe::BeatRoute::Main };
 
     double lastTapMs = 0.0;
     double tapAverageMs = 0.0;

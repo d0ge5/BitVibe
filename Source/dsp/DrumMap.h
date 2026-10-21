@@ -96,7 +96,10 @@ struct DrumSettings
     float minLevelDb = -12.0f;   // ignore hits quieter than this, in dB below the loudest hit of the drum
     float minConfidence = 0.3f;  // ignore hits the analysis is less sure about
 
-    bool operator==(const DrumSettings&) const = default;
+    bool operator==(const DrumSettings& o) const
+    {
+        return action == o.action && sameFloat(minLevelDb, o.minLevelDb) && sameFloat(minConfidence, o.minConfidence);
+    }
 };
 
 inline constexpr float kMinLevelFloorDb = -60.0f; // quietest level a hit is given (and the slider's end)
@@ -130,7 +133,7 @@ inline void normaliseLevels(std::vector<DrumHit>& hits)
         h.confidence = std::isfinite(h.confidence) ? std::clamp(h.confidence, 0.0f, 1.0f) : 0.0f;
     }
     std::stable_sort(hits.begin(), hits.end(), [](const DrumHit& a, const DrumHit& b)
-                     { return a.time != b.time ? a.time < b.time : (int) a.drum < (int) b.drum; });
+                     { return a.time < b.time || (!(b.time < a.time) && (int) a.drum < (int) b.drum); });
 }
 
 // Turns the hits of a looping beat into trigger events for one audio block. Stateless: the caller keeps

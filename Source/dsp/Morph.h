@@ -34,7 +34,14 @@ struct KnobSet
     };
     SeqType seqType = SeqType::Pitch;
 
-    bool operator==(const KnobSet&) const = default;
+    bool operator==(const KnobSet& o) const
+    {
+        for (size_t i = 0; i < steps.size(); ++i)
+            if (!sameFloat(steps[i], o.steps[i]))
+                return false;
+        return sameFloat(sampleRate, o.sampleRate) && sameFloat(filter, o.filter) && sameFloat(bits, o.bits)
+               && stutter == o.stutter && seqPlay == o.seqPlay && seqMult == o.seqMult && seqType == o.seqType;
+    }
 };
 
 namespace morph
@@ -59,7 +66,7 @@ namespace morph
     // a at t = 0, b at t = 1 exactly (a*(1-t) + b*t has no rounding error at the end points).
     inline float lerp(float a, float b, float t)
     {
-        return a == b ? a : clamp01(a * (1.0f - t) + b * t);
+        return sameFloat(a, b) ? a : clamp01(a * (1.0f - t) + b * t);
     }
 
     // Expression position at which the discrete knobs hop from the toe-up to the toe-down value.

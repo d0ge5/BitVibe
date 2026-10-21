@@ -150,17 +150,62 @@ int main(int argc, char** argv)
     plugin->setPlayConfigDetails(2, 2, kFs, kBlock);
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
-    // 30 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 31 && findParam(*plugin, "Program") != nullptr
+    // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
+    check(plugin->getParameters().size() == 32 && findParam(*plugin, "Program") != nullptr
               && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
               && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
-              && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr,
-          "exposes " + String(plugin->getParameters().size()) + " parameters (30 + Program selector, incl. the drum-map ones)");
+              && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr
+              && findParam(*plugin, "Beat Output") != nullptr,
+          "exposes " + String(plugin->getParameters().size()) + " parameters (31 + Program selector, incl. the drum-map ones and Beat Output)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 
-    const auto pluck = makePluck(4.0);
     float peak = 0;
+
+    // The optional "Beat Monitor" output: a second stereo output the host can switch on, so that the drum beat
+    // reaches the player's headphones without going into the main output and everything after it.
+    {
+        auto* monitor = plugin->getBus(false, 1);
+        check(plugin->getBusCount(false) == 2 && monitor != nullptr && monitor->getName() == "Beat Monitor" && !monitor->isEnabled(),
+              "the VST3 has a second output, 'Beat Monitor', that starts switched off");
+        // VST3 only allows bus arrangements to change while the plug-in is deactivated, so release it first, the way
+        // a host does, then change the arrangement and prepare it again.
+        plugin->releaseResources();
+        const bool enableResult = monitor != nullptr && monitor->enable(true);
+        const bool on = enableResult && monitor->isEnabled();
+        check(on && plugin->getTotalNumOutputChannels() == 4,
+              "the host can switch the Beat Monitor output on (stereo) (enable() " + String((int) enableResult) + ", enabled "
+                  + String((int) (monitor != nullptr && monitor->isEnabled())) + ", " + String(plugin->getTotalNumOutputChannels())
+                  + " output channels, " + String(plugin->getBusesLayout().outputBuses.size()) + " output buses)");
+        if (on)
+        {
+            plugin->prepareToPlay(kFs, kBlock);
+            bool finite = true, monitorSilent = true;
+            MidiBuffer midi;
+            for (int pass = 0; pass < 4; ++pass)
+            {
+                AudioBuffer<float> block(4, kBlock);
+                for (int i = 0; i < kBlock; ++i)
+                    for (int c = 0; c < 4; ++c)
+                        block.setSample(c, i, c < 2 ? 0.3f * std::sin(0.05f * (float) (i + pass * kBlock)) : 0.9f); // junk in the monitor channels
+                plugin->processBlock(block, midi);
+                for (int c = 0; c < 4; ++c)
+                    for (int i = 0; i < kBlock; ++i)
+                    {
+                        finite = finite && std::isfinite(block.getSample(c, i));
+                        if (c >= 2)
+                            monitorSilent = monitorSilent && block.getSample(c, i) == 0.0f;
+                    }
+            }
+            check(finite, "four-channel blocks (main + Beat Monitor) are finite");
+            check(monitorSilent, "with no beat playing the Beat Monitor output is silent (the junk it arrived with is cleared)");
+            plugin->releaseResources();
+            check(monitor->enable(false) && plugin->getTotalNumOutputChannels() == 2, "the host can switch it off again");
+        }
+        plugin->prepareToPlay(kFs, kBlock);
+    }
+
+    const auto pluck = makePluck(4.0);
 
     // 1. Factory sound (pitch sequencer, continuous)
     auto factory = render(*plugin, pluck);

@@ -12,6 +12,10 @@ namespace bitvibe
 {
 inline constexpr int kNumSteps = 6;
 
+// Exact equality of two floats, written so that the compiler's -Wfloat-equal stays quiet where an exact
+// comparison is what is meant (change detection, identical settings).
+inline bool sameFloat(float a, float b) { return !(a < b) && !(b < a); }
+
 // Manual, section 9: "very wide tempo range that extends from 23.4 BPM to 6000 BPM".
 inline constexpr float kMinTempoBpm = 23.4f;
 inline constexpr float kMaxTempoBpm = 6000.0f;

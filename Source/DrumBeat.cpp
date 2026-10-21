@@ -156,7 +156,7 @@ void DrumBeat::clear()
 
 void DrumBeat::setDeviceSampleRate(double sampleRate)
 {
-    if (sampleRate <= 0.0 || sampleRate == deviceRate.load())
+    if (sampleRate <= 0.0 || exactlyEqual(sampleRate, deviceRate.load()))
         return;
     deviceRate = sampleRate;
     bool loaded = false;
@@ -695,7 +695,7 @@ void DrumBeat::fromState(const ValueTree& t)
     setAnalysisMode(t["mode"].toString() == "builtin" ? AnalysisMode::BuiltInOnly : AnalysisMode::Auto);
     for (const auto& node : t)
     {
-        Drum d;
+        Drum d = Drum::Kick;
         if (!node.hasType("DRUM") || !drumFromId(node["id"].toString().toStdString(), d))
             continue;
         DrumSettings s = defaults[(size_t) d];
@@ -757,7 +757,11 @@ int DrumBeat::beginBlock(int numSamples, bool playing, bool triggers, TriggerEve
         playingOut.store(false, std::memory_order_relaxed);
         return 0;
     }
-    justStarted = !wasPlaying || restartRequested.exchange(false);
+    // Read the request before testing wasPlaying: with `!wasPlaying || exchange(false)` the exchange is skipped on
+    // the first block, so the request made by prepareToPlay stayed pending and sent the beat back to the top
+    // once more at the start of the second block (a ~10 ms replay and everything after it one block late).
+    const bool restart = restartRequested.exchange(false);
+    justStarted = !wasPlaying || restart;
     if (justStarted)
     {
         position = 0; // PLAY always starts the beat from the top
@@ -778,11 +782,11 @@ int DrumBeat::beginBlock(int numSamples, bool playing, bool triggers, TriggerEve
 
 void DrumBeat::addAudio(AudioBuffer<float>& buffer, int numChannels, int numSamples, float levelDb)
 {
-    if (!blockPlaying || blockAudio == nullptr || blockAudio->sampleRate != blockHits->sampleRate
+    if (!blockPlaying || blockAudio == nullptr || !exactlyEqual(blockAudio->sampleRate, blockHits->sampleRate)
         || blockAudio->audio.getNumSamples() != blockHits->loopLength || blockAudio->audio.getNumChannels() == 0)
         return;
 
-    if (gainRate != blockHits->sampleRate)
+    if (!exactlyEqual(gainRate, blockHits->sampleRate))
     {
         gainRate = blockHits->sampleRate;
         gain.reset(gainRate, 0.03);

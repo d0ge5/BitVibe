@@ -4,6 +4,7 @@
 #include "DrumAnalysis.h"
 #include "DemoBeat.h"
 #include "DrumMap.h"
+#include "BeatRoute.h"
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
@@ -1363,6 +1364,30 @@ void testDrumAnalysis()
     }
 }
 
+// ---- where the beat's sound goes ---------------------------------------------------------------------
+
+void testBeatRoute()
+{
+    std::puts("beat routing: which output carries the beat's sound");
+    using M = BeatOutput;
+    using R = BeatRoute;
+
+    // Auto: the Beat Monitor output when it is connected, otherwise the main output (never silent).
+    CHECK(chooseBeatRoute(M::Auto, true) == R::Monitor, "auto, monitor connected -> monitor");
+    CHECK(chooseBeatRoute(M::Auto, false) == R::Main, "auto, no monitor -> main (not silent)");
+    // Monitor: only that output, so silent when it is not connected.
+    CHECK(chooseBeatRoute(M::Monitor, true) == R::Monitor, "monitor, connected -> monitor");
+    CHECK(chooseBeatRoute(M::Monitor, false) == R::Silent, "monitor, not connected -> silent");
+    // Main: always the main output, even with a monitor output available.
+    CHECK(chooseBeatRoute(M::Main, true) == R::Main, "main, monitor connected -> still main");
+    CHECK(chooseBeatRoute(M::Main, false) == R::Main, "main, no monitor -> main");
+
+    // The parameter index is clamped, so a damaged or future value cannot select something undefined.
+    CHECK(beatOutputFromIndex(0) == M::Auto && beatOutputFromIndex(1) == M::Monitor && beatOutputFromIndex(2) == M::Main,
+          "indices 0, 1, 2 are Auto, Monitor, Main");
+    CHECK(beatOutputFromIndex(-4) == M::Auto && beatOutputFromIndex(99) == M::Main, "out-of-range indices are clamped");
+}
+
 int main(int argc, char** argv)
 {
     gVerbose = argc > 1 && std::string(argv[1]) == "--verbose";
@@ -1380,6 +1405,7 @@ int main(int argc, char** argv)
     testPresets();
     testMix();
     testEffectsOnTriggers();
+    testBeatRoute();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();

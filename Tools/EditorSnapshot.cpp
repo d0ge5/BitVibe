@@ -540,7 +540,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 30, "30 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 31, "31 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -753,6 +753,165 @@ void saveDrumsTab(const File& file)
     ed->showDrums(true);
     save(*ed, file);
 }
+
+// ---- where the beat's sound goes: the main output or the "Beat Monitor" output -------------------------
+
+struct Rendered
+{
+    AudioBuffer<float> main { 2, 0 }, aux { 2, 0 };
+    bitvibe::BeatRoute route = bitvibe::BeatRoute::Silent;
+};
+
+// Plays the input through the processor in 512-sample blocks. With the monitor output switched on the host
+// buffer has four channels; the two monitor channels start out filled with a loud constant so that a
+// processor that forgets to clear them shows up.
+Rendered runWithMonitor(BitVibeProcessor& p, const AudioBuffer<float>& in)
+{
+    p.prepareToPlay(48000.0, 512); // resets the engine and restarts the beat
+    const int total = p.getTotalNumOutputChannels();
+    const int n = in.getNumSamples();
+    Rendered r;
+    r.main.setSize(2, n);
+    r.aux.setSize(2, n);
+    r.aux.clear();
+    MidiBuffer midi;
+    for (int pos = 0; pos < n; pos += 512)
+    {
+        const int len = jmin(512, n - pos);
+        AudioBuffer<float> block(total, len);
+        for (int c = 0; c < total; ++c)
+            for (int i = 0; i < len; ++i)
+                block.setSample(c, i, c < 2 ? in.getSample(c, pos + i) : 0.9f);
+        p.processBlock(block, midi);
+        for (int c = 0; c < 2; ++c)
+        {
+            r.main.copyFrom(c, pos, block, c, 0, len);
+            if (total == 4)
+                r.aux.copyFrom(c, pos, block, 2 + c, 0, len);
+        }
+    }
+    r.route = p.getBeatRoute();
+    return r;
+}
+
+void setMonitor(BitVibeProcessor& p, bool connected)
+{
+    auto* bus = p.getBus(false, 1);
+    const bool ok = bus != nullptr && bus->enable(connected) && bus->isEnabled() == connected
+                    && p.getTotalNumOutputChannels() == (connected ? 4 : 2);
+    if (!ok)
+        check(false, String("could not ") + (connected ? "switch on" : "switch off") + " the Beat Monitor output");
+}
+
+void testBeatRouting()
+{
+    std::puts("beat routing (processor level)");
+    using bitvibe::BeatRoute;
+    constexpr int kAuto = 0, kMonitor = 1, kMain = 2;
+    constexpr float kLoud = -6.0f;
+    const auto in = makeInput(96000); // two seconds of guitar-like input
+
+    auto p = makeProcessor();
+    auto* monitorBus = p->getBus(false, 1);
+    check(p->getBusCount(false) == 2 && monitorBus != nullptr && monitorBus->getName() == "Beat Monitor" && !monitorBus->isEnabled(),
+          "a second output, 'Beat Monitor', exists and starts switched off");
+
+    // What a host may ask for: the monitor output is either off or stereo, the main bus is unchanged.
+    {
+        auto layout = p->getBusesLayout();
+        layout.outputBuses.set(1, AudioChannelSet::stereo());
+        check(p->checkBusesLayoutSupported(layout), "a stereo Beat Monitor is accepted");
+        layout.outputBuses.set(1, AudioChannelSet::mono());
+        check(!p->checkBusesLayoutSupported(layout), "a mono Beat Monitor is refused");
+        layout.outputBuses.set(1, AudioChannelSet::disabled());
+        check(p->checkBusesLayoutSupported(layout), "a disabled Beat Monitor is accepted");
+        layout.inputBuses.set(0, AudioChannelSet::stereo());
+        layout.outputBuses.set(0, AudioChannelSet::mono());
+        check(!p->checkBusesLayoutSupported(layout), "a stereo-in / mono-out main bus is still refused");
+    }
+
+    p->getDrumBeat().setAnalysisMode(DrumBeat::AnalysisMode::BuiltInOnly);
+    p->getDrumBeat().loadDemo();
+    p->getDrumBeat().waitUntilIdle(30000);
+    setValue(*p, ids::beatPlay, 1.0f);
+    check(p->getDrumBeat().getModel().loaded, "the demo beat is loaded (" + String((int) p->getDrumBeat().getModel().hits.size()) + " hits)");
+
+    auto render = [&](bool monitor, int mode, float levelDb, bool bypass = false, bool play = true)
+    {
+        setMonitor(*p, monitor);
+        setValue(*p, ids::beatOutput, (float) mode);
+        setValue(*p, ids::beatLevel, levelDb);
+        setValue(*p, ids::bypass, bypass ? 1.0f : 0.0f);
+        setValue(*p, ids::beatPlay, play ? 1.0f : 0.0f);
+        return runWithMonitor(*p, in);
+    };
+    auto maxAbs = [](const AudioBuffer<float>& b)
+    {
+        float m = 0.0f;
+        for (int c = 0; c < b.getNumChannels(); ++c)
+            m = jmax(m, b.getMagnitude(c, 0, b.getNumSamples()));
+        return (double) m;
+    };
+
+    // The guitar alone: the beat is silent but its hits still trigger the sequencer, exactly as when it plays.
+    // Rendered twice: the first play after loading must be exactly the same as a repeat. (It was not: a pending
+    // restart request sent the beat back to the top at the start of the second block, one block late from then on.)
+    const auto ref = render(false, kMain, DrumBeat::kBeatOffDb);
+    const auto refAgain = render(false, kMain, DrumBeat::kBeatOffDb);
+    check(maxDifference(ref.main, refAgain.main) < 1.0e-6,
+          "the first play after loading the beat is identical to a repeat (max diff " + String(maxDifference(ref.main, refAgain.main), 9) + ")");
+    const auto beatFirst = render(false, kMain, kLoud);
+    const auto beatAgain = render(false, kMain, kLoud);
+    check(maxDifference(beatFirst.main, beatAgain.main) < 1.0e-6, "...and so is the audible beat (no replay of its first block)");
+    // The beat in the main output, as it always was.
+    const auto inMain = render(false, kMain, kLoud);
+    check(inMain.route == BeatRoute::Main && maxDifference(inMain.main, ref.main) > 0.01,
+          "Main: the beat is heard in the main output (" + String(maxDifference(inMain.main, ref.main), 3) + ")");
+
+    // No monitor output connected.
+    const auto autoNoBus = render(false, kAuto, kLoud);
+    check(autoNoBus.route == BeatRoute::Main && maxDifference(autoNoBus.main, inMain.main) < 1.0e-6,
+          "Auto without a monitor output falls back to the main output (the beat is not lost)");
+    const auto monitorNoBus = render(false, kMonitor, kLoud);
+    check(monitorNoBus.route == BeatRoute::Silent && maxDifference(monitorNoBus.main, ref.main) < 1.0e-6,
+          "Monitor without a monitor output is silent and keeps the beat out of the main output");
+
+    // Monitor output connected.
+    const auto autoBus = render(true, kAuto, kLoud);
+    check(autoBus.route == BeatRoute::Monitor, "Auto with a monitor output sends the beat to it");
+    const double mainLeak = maxDifference(autoBus.main, ref.main);
+    check(mainLeak < 1.0e-6, "...and the main output is exactly the guitar alone (max diff " + String(mainLeak, 9) + ")");
+    check(rmsOf(autoBus.aux) > 0.01, "...and the Beat Monitor output carries the beat (rms " + String(rmsOf(autoBus.aux), 4) + ")");
+    double auxErr = 0.0;
+    for (int c = 0; c < 2; ++c)
+        for (int i = 0; i < in.getNumSamples(); ++i)
+            auxErr = jmax(auxErr, (double) std::abs(autoBus.aux.getSample(c, i) - (inMain.main.getSample(c, i) - ref.main.getSample(c, i))));
+    check(auxErr < 1.0e-5, "...and it is exactly the sound that Main would have added (max error " + String(auxErr, 9) + ")");
+
+    const auto monitorBusOnly = render(true, kMonitor, kLoud);
+    check(monitorBusOnly.route == BeatRoute::Monitor && maxDifference(monitorBusOnly.main, ref.main) < 1.0e-6
+              && maxDifference(monitorBusOnly.aux, autoBus.aux) < 1.0e-9,
+          "Monitor with a monitor output behaves the same as Auto");
+
+    const auto mainBus = render(true, kMain, kLoud);
+    check(mainBus.route == BeatRoute::Main && maxDifference(mainBus.main, inMain.main) < 1.0e-6 && maxAbs(mainBus.aux) == 0.0,
+          "Main with a monitor output available keeps the beat in the main output and leaves the monitor silent");
+
+    // Silence: the beat's level fully down, stopped, and the host's bypass.
+    const auto levelOff = render(true, kAuto, DrumBeat::kBeatOffDb);
+    check(maxAbs(levelOff.aux) == 0.0 && maxDifference(levelOff.main, ref.main) < 1.0e-6,
+          "beat level fully down: the monitor output is silent (and the junk it arrived with is cleared)");
+    const auto stopped = render(true, kAuto, kLoud, false, false);
+    check(maxAbs(stopped.aux) == 0.0, "beat stopped: the monitor output is silent");
+    const auto bypassed = render(true, kAuto, kLoud, true);
+    check(maxAbs(bypassed.aux) == 0.0 && maxDifference(bypassed.main, in) < 1.0e-6, "bypass: the monitor is silent and the main output is the untouched input");
+
+    // Leave the processor as it was.
+    setMonitor(*p, false);
+    setValue(*p, ids::bypass, 0.0f);
+    setValue(*p, ids::beatOutput, 0.0f);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -836,6 +995,7 @@ int main(int argc, char** argv)
     testPresetsAndMorph();
     testMixAndTriggerOnly();
     testDrumMap();
+    testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

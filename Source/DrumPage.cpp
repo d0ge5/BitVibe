@@ -122,6 +122,12 @@ DrumPage::DrumPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel)
     levelAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::beatLevel, levelKnob);
     addAndMakeVisible(levelKnob);
 
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::beatOutput)))
+        beatOutBox.addItemList(choice->choices, 1);
+    beatOutBox.setLookAndFeel(&laf);
+    addAndMakeVisible(beatOutBox);
+    beatOutAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::beatOutput, beatOutBox);
+
     for (int d = 0; d < kNumDrums; ++d)
     {
         auto& r = rows[(size_t) d];
@@ -160,7 +166,7 @@ DrumPage::~DrumPage()
         r.minLevel.setLookAndFeel(nullptr);
         r.detect.setLookAndFeel(nullptr);
     }
-    for (Component* c : std::initializer_list<Component*> { &library, &neuralButton, &pickButton, &stepClockBox, &levelKnob })
+    for (Component* c : std::initializer_list<Component*> { &library, &neuralButton, &pickButton, &stepClockBox, &levelKnob, &beatOutBox })
         c->setLookAndFeel(nullptr);
 }
 
@@ -176,6 +182,9 @@ void DrumPage::setTooltips()
     playButton.setTooltip("PLAY: start or stop the beat. It loops from the top at its own speed, independent of your DAW.");
     levelKnob.setTooltip("BEAT LEVEL: how loud you hear the beat (it never goes through the effect). Fully down = silent, "
                          "but its hits still trigger.");
+    beatOutBox.setTooltip("BEAT OUT: where you hear the beat. Auto = on the separate Beat Monitor output when your DAW has switched it on, "
+                          "so the beat stays out of the main output and everything after it; otherwise in the main output. "
+                          "Monitor = only on that output. Main = always in the main output.");
     pickButton.setTooltip("PICK TRIGGERS: picked notes on your guitar still start the stutter and the sequence. "
                           "Off = only the drum hits trigger them.");
     stepClockBox.setTooltip("STEPS MOVE WITH: Tempo = the steps move with the tempo. Drum hits = only hits set to "
@@ -439,7 +448,8 @@ void DrumPage::resized()
     reanalyseButton.setBounds(380, 78, 76, 24);
     neuralButton.setBounds(24, 108, 128, 22);
 
-    playButton.setBounds(24, 162, 78, 60);
+    playButton.setBounds(24, 158, 78, 28);
+    beatOutBox.setBounds(24, 203, 78, 22);
     levelKnob.setBounds(112, 156, 52, 52);
     pickButton.setBounds(178, 160, 140, 22);
     stepClockBox.setBounds(178, 200, 140, 24);
@@ -495,6 +505,7 @@ void DrumPage::paint(Graphics& g)
     g.setColour(ink);
     g.setFont(bold(10.0f));
     g.drawText("BEAT LEVEL", 104, 206, 68, 12, Justification::centred);
+    g.drawText("BEAT OUT", 24, 190, 78, 11, Justification::centred);
     g.setColour(inkDim);
     g.setFont(plain(10.0f));
     g.drawText(level <= DrumBeat::kBeatOffDb ? String("OFF") : String(level, 1) + " dB", 104, 217, 68, 12, Justification::centred);
@@ -504,6 +515,31 @@ void DrumPage::paint(Graphics& g)
     g.setColour(model.tempoBpm > 0.0 ? ink : inkDim);
     g.setFont(bold(17.0f));
     g.drawText(model.tempoBpm > 0.0 ? String(model.tempoBpm, 1) + " BPM" : String("-"), 330, 174, 126, 22, Justification::centredLeft);
+
+    // Where the beat's sound goes right now (the BEAT OUT setting and whether a monitor output is connected).
+    {
+        const auto route = proc.getBeatRoute();
+        const bool automatic = roundToInt(proc.apvts.getRawParameterValue(ids::beatOutput)->load()) == (int) BeatOutput::Auto;
+        String text;
+        Colour colour = inkDim;
+        if (route == BeatRoute::Monitor)
+        {
+            text = "Beat sound: Beat Monitor output only, not in the main output";
+            colour = accent;
+        }
+        else if (route == BeatRoute::Main)
+        {
+            text = automatic ? "Beat sound: main output (no Beat Monitor output connected)" : "Beat sound: main output";
+        }
+        else
+        {
+            text = "Beat sound: silent (the Beat Monitor output is not connected)";
+            colour = accent;
+        }
+        g.setColour(colour);
+        g.setFont(plain(10.0f));
+        g.drawText(text, kPlayPanel.getX() + 96, kPlayPanel.getY() + 4, kPlayPanel.getWidth() - 110, 12, Justification::centredRight, true);
+    }
 
     paintFeed(g);
     paintRows(g);

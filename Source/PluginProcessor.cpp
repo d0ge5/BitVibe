@@ -107,6 +107,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                          { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
+    // Where the beat's sound goes (see BeatRoute.h). Also a rig setting.
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
     return layout;
 }
 
@@ -173,7 +175,9 @@ bitvibe::KnobSet knobsFromTree(const ValueTree& t, const bitvibe::KnobSet& fallb
 BitVibeProcessor::BitVibeProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", AudioChannelSet::stereo(), true)
-                         .withOutput("Output", AudioChannelSet::stereo(), true)),
+                         .withOutput("Output", AudioChannelSet::stereo(), true)
+                         // Optional: the drum beat for the player to hear, kept out of the main output.
+                         .withOutput("Beat Monitor", AudioChannelSet::stereo(), false)),
       apvts(*this, nullptr, "BitVibe", createLayout())
 {
     auto raw = [this](const char* id) { return apvts.getRawParameterValue(id); };
@@ -199,6 +203,7 @@ BitVibeProcessor::BitVibeProcessor()
     pFxTriggers = raw(ids::fxTriggers);
     pBeatPlay = raw(ids::beatPlay);
     pBeatLevel = raw(ids::beatLevel);
+    pBeatOutput = raw(ids::beatOutput);
     pPickTriggers = raw(ids::pickTriggers);
     pStepClock = raw(ids::stepClock);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -223,7 +228,19 @@ bool BitVibeProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     const auto& in = layouts.getMainInputChannelSet();
     const auto& out = layouts.getMainOutputChannelSet();
-    return in == out && (in == AudioChannelSet::mono() || in == AudioChannelSet::stereo());
+    if (!(in == out && (in == AudioChannelSet::mono() || in == AudioChannelSet::stereo())))
+        return false;
+
+    // The optional "Beat Monitor" output is either off or stereo; there is only the one input.
+    if (layouts.inputBuses.size() > 1 || layouts.outputBuses.size() > 2)
+        return false;
+    if (layouts.outputBuses.size() == 2)
+    {
+        const auto& monitor = layouts.outputBuses.getReference(1);
+        if (!monitor.isDisabled() && monitor != AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 bitvibe::KnobSet BitVibeProcessor::liveKnobs() const
@@ -291,19 +308,36 @@ bitvibe::Params BitVibeProcessor::readParams()
 void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
 {
     ScopedNoDenormals noDenormals;
-    const int numChannels = std::min(buffer.getNumChannels(), bitvibe::Engine::kMaxChannels);
-    for (int c = numChannels; c < buffer.getNumChannels(); ++c)
-        buffer.clear(c, 0, buffer.getNumSamples());
-
-    // The drum beat: its hits trigger the sequencer / stutter, and its audio is mixed in after the effect
-    // (the drums are never crushed). Bypass silences both, so it stays transparent.
     const int numSamples = buffer.getNumSamples();
+
+    // The main bus carries the guitar; the optional "Beat Monitor" bus (two channels after it) is only there
+    // when the host has switched it on. Both are views into the host's buffer, nothing is allocated.
+    auto mainOut = getBusBuffer(buffer, false, 0);
+    auto monitor = getBusBuffer(buffer, false, 1);
+    const bool monitorConnected = monitor.getNumChannels() > 0;
+    const int numChannels = std::min(mainOut.getNumChannels(), bitvibe::Engine::kMaxChannels);
+    for (int c = numChannels; c < mainOut.getNumChannels(); ++c)
+        mainOut.clear(c, 0, numSamples);
+    if (monitorConnected)
+        monitor.clear(); // output-only channels arrive with whatever the host left in them
+
+    // The drum beat: its hits trigger the sequencer / stutter, and its sound is added after the effect (the
+    // drums are never crushed) to exactly one place: the main output, or the Beat Monitor output so that it
+    // stays out of the main output and everything after it. Bypass silences both, so it stays transparent.
     const auto params = readParams();
     const int numEvents = drumBeat.beginBlock(numSamples, pBeatPlay->load() > 0.5f, !params.bypass, triggerEvents.data(),
                                               (int) triggerEvents.size());
-    engine.process(buffer.getArrayOfWritePointers(), numChannels, numSamples, params, triggerEvents.data(), numEvents);
+    engine.process(mainOut.getArrayOfWritePointers(), numChannels, numSamples, params, triggerEvents.data(), numEvents);
+
+    const auto route = bitvibe::chooseBeatRoute(bitvibe::beatOutputFromIndex(roundToInt(pBeatOutput->load())), monitorConnected);
+    beatRoute.store((int) route, std::memory_order_relaxed);
     if (!params.bypass)
-        drumBeat.addAudio(buffer, numChannels, numSamples, pBeatLevel->load());
+    {
+        if (route == bitvibe::BeatRoute::Main)
+            drumBeat.addAudio(mainOut, numChannels, numSamples, pBeatLevel->load());
+        else if (route == bitvibe::BeatRoute::Monitor)
+            drumBeat.addAudio(monitor, monitor.getNumChannels(), numSamples, pBeatLevel->load());
+    }
     drumBeat.endBlock(numSamples);
 }
 

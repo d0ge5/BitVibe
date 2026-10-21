@@ -185,9 +185,10 @@ what each drum does when it hits hard enough.
    in the background in a few seconds and shows how many hits it found and the beat's tempo. MP3 is read
    with your operating system's own decoder. Files longer than five minutes are cut.
 2. **Play it.** **PLAY** loops the beat from the top at its own speed (it does not follow your DAW's
-   timeline). **BEAT LEVEL** sets how loud you hear it; it is mixed in after the effect, so the drums are
-   never crushed. Fully down the beat is silent but still triggers. **USE** sets BitVibe's tempo to the
-   beat's; **/2** and **x2** fix a tempo detected at half or double speed.
+   timeline). **BEAT LEVEL** sets how loud you hear it; it is added after the effect, so the drums are
+   never crushed or sequenced. Fully down the beat is silent but still triggers. **BEAT OUT** decides
+   where you hear it (see below). **USE** sets BitVibe's tempo to the beat's; **/2** and **x2** fix a tempo
+   detected at half or double speed.
 3. **Map the drums.** For each drum choose what a hit does: **Restart sequence**, **Next step**,
    **Stutter**, or **Restart + stutter** (what a pick does). **MIN LEVEL** is how loud a hit must be, in dB
    below the loudest hit of that drum in the beat, and **DETECT** how sure the analysis must be that it
@@ -204,6 +205,28 @@ what each drum does when it hits hard enough.
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
   belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
   triggers.
+
+#### Hearing the beat without sending it down the chain
+
+The beat is for you to play along with, not part of your guitar signal. The drums never go through the
+sequencer or the effect (only their *hits* drive them), and with **BEAT OUT** you can also keep their sound
+out of the main output, which is what feeds the next plug-in, an amp simulator or your recording.
+
+BitVibe's VST3 and Audio Unit versions have an optional second stereo output, **Beat Monitor**. Switch it on
+in your DAW and send it to your headphones, a cue mix or a separate interface output; the beat's sound then
+goes only there, and the main output carries just your processed guitar.
+
+- **Auto** (the default): the Beat Monitor output when your host has switched it on, otherwise the main
+  output, so the beat is never silently lost.
+- **Monitor**: only the Beat Monitor output. Silent until a host connects it.
+- **Main**: always the main output, with your guitar.
+
+The line at the top of the PLAYBACK panel says where the beat's sound is going right now. How you switch on an
+extra output differs between programs (look for "multi-output" or "aux outputs" for plug-ins in your DAW's
+manual), and not every host offers one for an effect plug-in; where it doesn't, Auto simply plays the beat in
+the main output. The Standalone app only uses its main output, so there the beat always plays in the output
+you are listening to. The beat's hits trigger the sequencer the same way wherever the sound goes, and your
+host's bypass silences the beat and its triggers.
 
 #### How accurate is the analysis?
 
@@ -318,10 +341,11 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 272 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 280 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, tempo estimation, the FFT and the drum analysis of the demo beat). It
+trigger events, the drum-map scheduler, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 
 `bitvibe_drum_eval mdb|idmt <audio dir> <annotation dir>` scores the built-in drum analysis against the
@@ -340,14 +364,17 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 - `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 through JUCE's plug-in host, checks the parameters,
   runs audio through several settings, tests bypass, state save/restore and odd block sizes, recalls
   presets through the host's program list, checks the mix, the trigger-only option and the drum-map
-  parameters, sweeps the expression morph and round-trips the state, and writes demo WAV files.
+  parameters, switches the optional Beat Monitor output on and off the way a host does, sweeps the expression
+  morph and round-trips the state, and writes demo WAV files.
 - `BitVibeEditorSnapshot <outdir>` renders the editor, both layers, to PNG without opening a window (this
   is how the screenshots above were made). It also runs processor-level checks that a host cannot reach:
   capturing the morph sets, renaming and saving presets, state round trips (including old and damaged
   state), the exact mix maths, that every control has a hover description, and the drum map: loading the
   demo beat and a WAV file, every mapped hit triggering on its sample, levels, exclusions, steps on hits,
-  the beat's audio and bypass, state with a missing file, and a file that is not audio. Its exit code is
-  non-zero if one fails.
+  the beat's audio and bypass, where the beat's sound goes (main output or the Beat Monitor output, for every
+  setting, with and without a monitor output, and silent when stopped, muted or bypassed), that the first play
+  after loading a beat is identical to a repeat, state with a missing file, and a file that is not audio. Its
+  exit code is non-zero if one fails.
 
 </details>
 

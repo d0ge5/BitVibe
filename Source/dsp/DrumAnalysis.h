@@ -161,6 +161,9 @@ namespace detail
         return 0.0;
     }
 
+    // Index of (row, col) in a row-major table with `cols` columns.
+    inline size_t cell(int row, int cols, int col) { return (size_t) row * (size_t) cols + (size_t) col; }
+
     inline int nextPowerOfTwo(int v)
     {
         int p = 1;
@@ -260,7 +263,7 @@ inline std::vector<float> onsetFunction(const Spectrogram& s, const Options& o =
     std::vector<float> logMag(s.mag.size());
     for (int t = 0; t < T; ++t)
         for (int b = 0; b < B; ++b)
-            logMag[(size_t) t * B + b] = std::log10(1.0f + o.logScale * s.at(t, b) / reference[(size_t) b]);
+            logMag[detail::cell(t, B, b)] = std::log10(1.0f + o.logScale * s.at(t, b) / reference[(size_t) b]);
     for (int t = o.fluxLag; t < T; ++t)
     {
         float acc = 0.0f;
@@ -268,8 +271,8 @@ inline std::vector<float> onsetFunction(const Spectrogram& s, const Options& o =
         {
             float earlier = 0.0f;
             for (int bb = std::max(0, b - 1); bb <= std::min(B - 1, b + 1); ++bb)
-                earlier = std::max(earlier, logMag[(size_t) (t - o.fluxLag) * B + bb]);
-            acc += std::max(0.0f, logMag[(size_t) t * B + b] - earlier);
+                earlier = std::max(earlier, logMag[detail::cell(t - o.fluxLag, B, bb)]);
+            acc += std::max(0.0f, logMag[detail::cell(t, B, b)] - earlier);
         }
         odf[(size_t) t] = acc;
     }
@@ -331,7 +334,7 @@ inline std::vector<int> detectOnsets(const Spectrogram& s, const Options& o = {}
         for (int j = -o.peakWindowFrames; j <= o.peakWindowFrames && isMax; ++j)
         {
             const int u = t + j;
-            if (j != 0 && u >= 0 && u < T && (odf[(size_t) u] > v || (j < 0 && odf[(size_t) u] == v)))
+            if (j != 0 && u >= 0 && u < T && (j < 0 ? odf[(size_t) u] >= v : odf[(size_t) u] > v))
                 isMax = false;
         }
         if (!isMax)
@@ -359,7 +362,7 @@ inline std::vector<int> detectOnsets(const Spectrogram& s, const Options& o = {}
 inline std::vector<float> attackSpectra(const Spectrogram& s, const std::vector<int>& onsetFrames, const Options& o = {})
 {
     const int B = s.numBands, N = (int) onsetFrames.size();
-    std::vector<float> A((size_t) N * B);
+    std::vector<float> A((size_t) N * (size_t) B);
     for (int n = 0; n < N; ++n)
     {
         const int t = onsetFrames[(size_t) n];
@@ -372,7 +375,7 @@ inline std::vector<float> attackSpectra(const Spectrogram& s, const std::vector<
                 base = std::min(base, s.at(t - j, b));
             if (base > 1.0e29f)
                 base = 0.0f;
-            A[(size_t) n * B + b] = std::max(0.0f, peak - base);
+            A[detail::cell(n, B, b)] = std::max(0.0f, peak - base);
         }
     }
     return A;
@@ -421,7 +424,7 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
     const std::vector<float> A = attackSpectra(s, onsetFrames, o);
 
     constexpr float eps = 1.0e-12f;
-    std::vector<float> prior((size_t) K * B), W, G((size_t) K * N);
+    std::vector<float> prior((size_t) K * (size_t) B), W, G((size_t) K * (size_t) N);
     for (int k = 0; k < K; ++k)
     {
         const Drum drum = (Drum) (k / kComponentsPerDrum);
@@ -429,11 +432,11 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
         for (int b = 0; b < B; ++b)
         {
             const double v = detail::prior(drum, k % kComponentsPerDrum, s.bandCentres[(size_t) b]) + 1.0e-4;
-            prior[(size_t) k * B + b] = (float) v;
+            prior[detail::cell(k, B, b)] = (float) v;
             sum += v;
         }
         for (int b = 0; b < B; ++b)
-            prior[(size_t) k * B + b] = (float) (prior[(size_t) k * B + b] / sum);
+            prior[detail::cell(k, B, b)] = (float) (prior[detail::cell(k, B, b)] / sum);
     }
     W = prior;
     for (int k = 0; k < K; ++k)
@@ -441,11 +444,11 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
         {
             double acc = 0.0;
             for (int b = 0; b < B; ++b)
-                acc += W[(size_t) k * B + b] * A[(size_t) n * B + b];
-            G[(size_t) k * N + n] = (float) (acc + eps);
+                acc += W[detail::cell(k, B, b)] * A[detail::cell(n, B, b)];
+            G[detail::cell(k, N, n)] = (float) (acc + eps);
         }
 
-    std::vector<float> ratio((size_t) N * B), num((size_t) B);
+    std::vector<float> ratio((size_t) N * (size_t) B), num((size_t) B);
     auto computeRatio = [&]
     {
         for (int n = 0; n < N; ++n)
@@ -453,8 +456,8 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
             {
                 float acc = eps;
                 for (int k = 0; k < K; ++k)
-                    acc += W[(size_t) k * B + b] * G[(size_t) k * N + n];
-                ratio[(size_t) n * B + b] = A[(size_t) n * B + b] / acc;
+                    acc += W[detail::cell(k, B, b)] * G[detail::cell(k, N, n)];
+                ratio[detail::cell(n, B, b)] = A[detail::cell(n, B, b)] / acc;
             }
     };
 
@@ -467,8 +470,8 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
             {
                 float acc = 0.0f;
                 for (int b = 0; b < B; ++b)
-                    acc += W[(size_t) k * B + b] * ratio[(size_t) n * B + b];
-                G[(size_t) k * N + n] *= acc;
+                    acc += W[detail::cell(k, B, b)] * ratio[detail::cell(n, B, b)];
+                G[detail::cell(k, N, n)] *= acc;
             }
         if (it < o.fixedIterations)
             continue;
@@ -480,30 +483,30 @@ inline OnsetGains factoriseOnsets(const Spectrogram& s, const std::vector<int>& 
         {
             double gSum = eps;
             for (int n = 0; n < N; ++n)
-                gSum += G[(size_t) k * N + n];
+                gSum += G[detail::cell(k, N, n)];
             for (int b = 0; b < B; ++b)
             {
                 double acc = 0.0;
                 for (int n = 0; n < N; ++n)
-                    acc += ratio[(size_t) n * B + b] * G[(size_t) k * N + n];
-                num[(size_t) b] = (float) (W[(size_t) k * B + b] * acc / gSum);
+                    acc += ratio[detail::cell(n, B, b)] * G[detail::cell(k, N, n)];
+                num[(size_t) b] = (float) (W[detail::cell(k, B, b)] * acc / gSum);
             }
             const double sum = std::accumulate(num.begin(), num.end(), (double) eps);
             double colSum = 0.0;
             for (int b = 0; b < B; ++b)
             {
-                const float w = (1.0f - alpha) * prior[(size_t) k * B + b] + alpha * (float) (num[(size_t) b] / sum);
-                W[(size_t) k * B + b] = w;
+                const float w = (1.0f - alpha) * prior[detail::cell(k, B, b)] + alpha * (float) (num[(size_t) b] / sum);
+                W[detail::cell(k, B, b)] = w;
                 colSum += w;
             }
             for (int b = 0; b < B; ++b)
-                W[(size_t) k * B + b] = (float) (W[(size_t) k * B + b] / colSum);
+                W[detail::cell(k, B, b)] = (float) (W[detail::cell(k, B, b)] / colSum);
         }
     }
 
     for (int n = 0; n < N; ++n)
         for (int k = 0; k < K; ++k)
-            g.gain[(size_t) n][(size_t) (k / kComponentsPerDrum)] += G[(size_t) k * N + n];
+            g.gain[(size_t) n][(size_t) (k / kComponentsPerDrum)] += G[detail::cell(k, N, n)];
     return g;
 }
 
