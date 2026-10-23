@@ -33,8 +33,8 @@ in the hands of more people for free.
 - Stutter and sequencer are triggered by **pick-attack detection**.
 - **Drum map** (DRUMS tab): load a drum loop (WAV or MP3), BitVibe finds its kick, snare, hi-hat, cymbal and
   tom hits, and each drum can restart the sequence, step it or fire the stutter when it hits hard enough. A
-  live feed shows the hits and what they trigger. An optional neural transcriber (ADTOF) gives the best
-  accuracy.
+  live feed shows the hits and what they trigger, and the beat can play on a separate **Beat Monitor** output
+  so it stays out of your main signal. An optional neural transcriber (ADTOF) gives the best accuracy.
 - **Expression morph:** store two complete sets of knobs (including the six step knobs), "toe up" and
   "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
 - **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
@@ -42,15 +42,15 @@ in the hands of more people for free.
 - **Mix knob** to blend your clean input with the effect, and an option to apply the sample-rate, bit and
   filter effects **only while the stutter or sequencer is playing**, so your playing stays clean in between.
 - **Hover tips:** rest the mouse on any control for a short, plain-language description of what it does.
-- **Plug-in extras:** tempo sync to the host, all 30 parameters automatable, input and output gain,
+- **Plug-in extras:** tempo sync to the host, all 31 parameters automatable, input and output gain,
   adjustable trigger sensitivity and stutter length, and processing that stays in stereo. No reported
   latency, and light on CPU (under 1 % of one core in my measurements).
 
 ## Install
 
-Prebuilt installers will be attached to the [Releases](https://github.com/d0ge5/BitVibe/releases) page.
-**None have been published yet**; until then, build them yourself (see
-[Building from source](#building-from-source)).
+Download the installer for your system from the **[latest release](https://github.com/d0ge5/BitVibe/releases/latest)**
+(each release also lists the files' SHA-256 checksums). To build them yourself instead, see
+[Building from source](#building-from-source).
 
 | System | Installer | What it installs |
 | --- | --- | --- |
