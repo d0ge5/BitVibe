@@ -135,8 +135,7 @@ footswitch and a sequencer type switch, with a preset and expression-morph strip
   before playing so the next note is the one that gets frozen.
 - **BYPASS** switches the effect in and out. It is also wired to your host's bypass.
 - The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Mix**, **Trigger** sensitivity
-  for the attack detector (fully left only hard picks, about -12 dBFS and louder, start the stutter and
-  sequencer; fully right even very soft playing does; the middle ignores very soft playing), host tempo **Sync**, instrument/line **Headroom**, the stutter snippet length and
+  for the attack detector, host tempo **Sync**, instrument/line **Headroom**, the stutter snippet length and
   the **FX ONLY ON TRIGGERS** switch (both explained below).
 
 It starts on preset 1, a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0

@@ -1045,7 +1045,7 @@ void BitVibeEditor::setTooltips()
                           "Plate is dense and bright, Shimmer climbs an octave as it fades, Gated is a big room chopped off short.");
     mixSlider.setTooltip("DRY/WET: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
-    trigSlider.setTooltip("TRIGGER: how hard you have to play to start the stutter and sequencer. Fully left only hard picks count; the middle ignores very soft playing; turn right if it misses notes and left if it fires too often.");
+    trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
     syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo knob.");
     holdButton.setTooltip("HOLD: freeze the stutter on the current (or next) note until you switch this off.");
     fxTrigButton.setTooltip("FX ONLY ON TRIGGERS: when on, the sample-rate, bit and filter effects only act while the stutter or "

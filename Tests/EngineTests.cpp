@@ -304,8 +304,7 @@ void testAttackDetector()
     Signal steady = sine(330.0, 2.0, 0.4f);
     CHECK(count(steady, 0.5f) == 1, "steady tone gave %d triggers", count(steady, 0.5f));
 
-    // How hard a note has to be hit: a pick of a given loudness (peak) after silence. At the lowest setting only hard
-    // picks count, at the highest even very soft ones do, and the middle setting leaves the softest alone.
+    // How hard a note has to be hit: a pick of a given loudness (peak) after silence.
     auto pickAt = [&](float peak, float sens)
     {
         Signal s((size_t) (1.0 * kFs), 0.0f);
@@ -314,10 +313,10 @@ void testAttackDetector()
             s[(size_t) (0.2 * kFs) + i] = peak * rng.next() * std::exp(-(float) i / (0.02f * (float) kFs));
         return count(s, sens);
     };
-    CHECK(pickAt(0.08f, 0.0f) == 0 && pickAt(0.2f, 0.0f) == 0, "lowest setting: soft and medium-soft picks (-22 and -14 dBFS) do not trigger");
-    CHECK(pickAt(0.7f, 0.0f) == 1, "lowest setting: a hard pick still triggers");
-    CHECK(pickAt(0.02f, 0.5f) == 0 && pickAt(0.15f, 0.5f) == 1, "middle setting: a very soft pick (-34 dBFS) does not, a normal one does");
-    CHECK(pickAt(0.02f, 1.0f) == 1 && pickAt(0.005f, 0.0f) == 0, "highest setting: a very soft pick triggers");
+    CHECK(pickAt(0.2f, 0.0f) == 1 && pickAt(0.005f, 0.0f) == 0, "lowest setting: a normal pick triggers, a -46 dBFS one does not");
+    CHECK(pickAt(0.02f, 0.5f) == 1, "middle setting: a soft pick (-34 dBFS) triggers");
+    CHECK(pickAt(0.002f, 1.0f) == 1, "highest setting: a very soft pick (-54 dBFS) triggers");
+    CHECK(AttackDetector::floorDb(0.0f) == -40.0f && AttackDetector::floorDb(1.0f) == -62.0f, "trigger floor runs from -40 to -62 dBFS");
 
     // What the editor shows: the loudest input since it last looked, the picks caught (even when picks may not trigger)
     // and whether the effect side is busy.

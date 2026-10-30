@@ -69,16 +69,13 @@ public:
     void setSensitivity(float s)
     {
         s = std::clamp(s, 0.0f, 1.0f);
-        // 0 = only hard picks count: the note has to be louder than -12 dBFS and jump 5.5 times above the
-        // recent level. 1 = very sensitive: -50 dBFS and a 2x jump. (Before, 0 was -40 dBFS and a 4x jump, and
-        // soft picks still got through.)
-        ratio = 5.5f + (2.0f - 5.5f) * s;
+        ratio = 4.0f + (1.8f - 4.0f) * s;
         floorLevel = std::pow(10.0f, floorDb(s) / 20.0f);
     }
 
     // How loud a pick must be (dBFS, after the input gain) to count, for a sensitivity (the editor draws it as a line
     // on the input meter).
-    static float floorDb(float sensitivity) { return -12.0f + (-50.0f + 12.0f) * std::clamp(sensitivity, 0.0f, 1.0f); }
+    static float floorDb(float sensitivity) { return -40.0f + (-62.0f + 40.0f) * std::clamp(sensitivity, 0.0f, 1.0f); }
 
     bool process(float x)
     {
