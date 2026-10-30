@@ -47,6 +47,10 @@ private:
     bool firedRecently(const bitvibe::DrumHit&) const;
     void paintFeed(juce::Graphics&);
     void paintRows(juce::Graphics&);
+    void paintPattern(juce::Graphics&);
+    juce::Rectangle<float> patternCell(int step) const;
+    int patternCellAt(juce::Point<float>) const;
+    void setPatternSteps(std::uint32_t steps);
 
     BitVibeProcessor& proc;
     DrumBeat& beat;
@@ -63,6 +67,12 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> levelAtt;
     juce::ComboBox beatOutBox; // where the beat's sound goes: Auto / Monitor / Main
     std::unique_ptr<APVTS::ComboBoxAttachment> beatOutAtt;
+
+    // the beat pattern: what it does, one-click presets, and a copy of what the beat holds (the grid is drawn from it)
+    juce::ComboBox patternActionBox;
+    PedalButton patternClearButton { "CLEAR" }, patternBeatsButton { "BEATS" }, patternAndButton { "OFFBEATS" },
+        patternBackbeatButton { "BACKBEAT" };
+    bitvibe::DrumPattern pattern;
     juce::ParameterAttachment playParam;
     std::array<Row, bitvibe::kNumDrums> rows;
 

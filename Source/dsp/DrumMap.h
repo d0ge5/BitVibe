@@ -189,6 +189,97 @@ struct DrumScheduler
     }
 };
 
+// ---- beat pattern -------------------------------------------------------------------------------------
+//
+// A trigger that does not wait for a drum. It fires at the steps of a one-bar grid of sixteenth notes that
+// the player picks, repeating every bar of the looping beat, whatever the drums are doing and however loud
+// they are. The grid is locked to the loop: the beat's whole beats (see estimateTempo) are divided into four
+// steps each, so it stays in time with the audio for the whole loop.
+
+inline constexpr int kPatternSteps = 16;
+inline constexpr uint32_t kPatternMask = (1u << kPatternSteps) - 1u;
+
+struct DrumPattern
+{
+    DrumAction action = DrumAction::Off;
+    uint32_t steps = 0; // bit n set = step n of the bar fires (step 0 = the first sixteenth of the bar)
+
+    bool operator==(const DrumPattern& o) const { return action == o.action && steps == o.steps; }
+};
+
+// Ready-made patterns for the buttons next to the grid (0 = clear).
+inline uint32_t patternPreset(int which)
+{
+    switch (which)
+    {
+        case 1: return 0x1111u; // every beat (steps 0, 4, 8, 12)
+        case 2: return 0x4444u; // the "and" of every beat (steps 2, 6, 10, 14)
+        case 3: return 0x1010u; // the backbeat: beats 2 and 4 (steps 4 and 12)
+        default: break;
+    }
+    return 0u;
+}
+
+// Sixteenth-note steps in the whole loop: four per whole beat. 0 when the loop or its tempo is unknown.
+inline int64_t patternNumSteps(double durationSeconds, double tempoBpm)
+{
+    if (!(durationSeconds > 0.0) || !(tempoBpm > 0.0))
+        return 0;
+    const double beats = std::round(durationSeconds * tempoBpm / 60.0);
+    return beats >= 1.0 ? (int64_t) beats * 4 : 0;
+}
+
+struct PatternScheduler
+{
+    // Adds the pattern's trigger events for one block to out, which already holds `written` events sorted by
+    // offset, and keeps the whole list sorted. Stateless like DrumScheduler: position is where in the loop the
+    // block starts. stepSamples is the length of one step (loopLength / numSteps). Returns the new count.
+    static int collect(const DrumPattern& pattern, double stepSamples, int64_t numSteps, int64_t loopLength,
+                       int64_t position, int numSamples, TriggerEvent* out, int maxEvents, int written)
+    {
+        if (pattern.action == DrumAction::Off || (pattern.steps & kPatternMask) == 0 || !(stepSamples > 0.0)
+            || numSteps <= 0 || loopLength <= 0 || numSamples <= 0)
+            return written;
+
+        const TriggerAction action = toTriggerAction(pattern.action);
+        int64_t segStart = std::clamp<int64_t>(position, 0, loopLength - 1);
+        int64_t remaining = numSamples;
+        int64_t offsetBase = 0;
+        while (remaining > 0)
+        {
+            const int64_t segLength = std::min(remaining, loopLength - segStart);
+            const int64_t segEnd = segStart + segLength;
+            int64_t n = std::max<int64_t>(0, (int64_t) std::floor((double) segStart / stepSamples) - 1);
+            for (; n < numSteps; ++n)
+            {
+                const int64_t at = (int64_t) std::llround((double) n * stepSamples);
+                if (at >= segEnd)
+                    break;
+                if (at < segStart || ((pattern.steps >> (n % kPatternSteps)) & 1u) == 0u)
+                    continue;
+                if (written < maxEvents)
+                    out[written++] = { (int) (offsetBase + (at - segStart)), action };
+            }
+            remaining -= segLength;
+            offsetBase += segLength;
+            segStart = 0;
+        }
+
+        for (int i = 1; i < written; ++i) // stable insertion sort: the list is short
+        {
+            const TriggerEvent e = out[i];
+            int j = i - 1;
+            while (j >= 0 && out[j].offset > e.offset)
+            {
+                out[j + 1] = out[j];
+                --j;
+            }
+            out[j + 1] = e;
+        }
+        return written;
+    }
+};
+
 // Tempo of a drum loop from its hits: an autocorrelation of the onset train with a mild preference for
 // 120 BPM, then snapped to a whole number of beats over the loop when that is close (loops are usually
 // cut on the beat). Returns 0 when there is too little to go on.

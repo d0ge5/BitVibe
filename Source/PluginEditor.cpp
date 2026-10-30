@@ -11,6 +11,8 @@ namespace
 constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480, kHeight = kTabsH + 736 + kFaceDy;
+// The DRUMS tab has a pattern panel more than the pedal has room for: the window is this much taller there.
+constexpr int kDrumsExtra = 108;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
@@ -496,6 +498,7 @@ void BitVibeEditor::showDrums(bool on)
     if (!on)
         setAltLayer(altLayer); // puts the right layer of knobs back
     drumPage->setVisible(on);
+    setSize(kWidth, on ? kHeight + kDrumsExtra : kHeight);
     pedalTab.lit = !on;
     drumsTab.lit = on;
     pedalTab.repaint();
@@ -647,7 +650,7 @@ void BitVibeEditor::updateStepTooltips()
 
 void BitVibeEditor::buildBackground()
 {
-    background = Image(Image::ARGB, kWidth, kHeight, true);
+    background = Image(Image::ARGB, kWidth, kHeight + kDrumsExtra, true);
     Graphics g(background);
 
     g.fillAll(Colour(0xff0d0d0f));
@@ -743,7 +746,7 @@ void BitVibeEditor::resized()
 
     pedalTab.setBounds(12, 8, 96, 24);
     drumsTab.setBounds(114, 8, 96, 24);
-    drumPage->setBounds(0, kTabsH, kWidth, kHeight - kTabsH);
+    drumPage->setBounds(0, kTabsH, kWidth, getHeight() - kTabsH);
 }
 
 void BitVibeEditor::paint(Graphics& g)

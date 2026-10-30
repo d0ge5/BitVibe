@@ -66,6 +66,11 @@ public:
     bitvibe::DrumSettingsArray getSettings() const;
     void setSettings(bitvibe::Drum drum, const bitvibe::DrumSettings& settings);
 
+    // The beat pattern: triggers at chosen sixteenth-note steps of every bar of the loop, independent of the
+    // drum hits and their level.
+    bitvibe::DrumPattern getPattern() const;
+    void setPattern(const bitvibe::DrumPattern& pattern);
+
     AnalysisMode getAnalysisMode() const;
     void setAnalysisMode(AnalysisMode);
 
@@ -104,6 +109,8 @@ private:
         std::vector<bitvibe::DrumHit> hits;
         std::vector<int64_t> samples; // each hit's position in the loop at sampleRate
         int64_t loopLength = 0;
+        int64_t numSteps = 0;     // sixteenth-note steps in the loop (0 = tempo unknown, so no pattern)
+        double stepSamples = 0.0; // length of one step
         double sampleRate = 48000.0;
         int generation = 0;
         HitData* nextRetired = nullptr;
@@ -199,6 +206,8 @@ private:
     // per-drum settings, read by the audio thread
     std::array<std::atomic<int>, bitvibe::kNumDrums> actions;
     std::array<std::atomic<float>, bitvibe::kNumDrums> minLevels, minConfidences;
+    std::atomic<int> patternAction { 0 };
+    std::atomic<uint32_t> patternSteps { 0 };
 
     HandOver<HitData> hitSlot;
     HandOver<AudioData> audioSlot;

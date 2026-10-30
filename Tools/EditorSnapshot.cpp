@@ -754,6 +754,81 @@ void saveDrumsTab(const File& file)
     save(*ed, file);
 }
 
+// ---- the beat pattern: restarts on chosen steps of the bar, whatever the drums do ------------------------
+
+void testBeatPatternProcessor()
+{
+    std::puts("beat pattern checks");
+    auto p = drumProcessor();
+    auto& beat = p->getDrumBeat();
+    for (int d = 0; d < bitvibe::kNumDrums; ++d)
+        beat.setSettings((Drum) d, { DrumAction::Off, -12.0f, 0.3f });
+    const auto model = beat.getModel();
+    const double barSeconds = 240.0 / model.tempoBpm; // four beats
+
+    auto expectedBars = [&](double seconds, double every)
+    {
+        std::vector<double> t;
+        for (double x = 0.0; x < seconds - 0.01; x += every)
+            t.push_back(x);
+        return t;
+    };
+
+    auto r = runDrums(*p, model.durationSeconds);
+    check(r.restarts.empty() && !r.stuttered, "no pattern and every drum Off: nothing triggers");
+
+    beat.setPattern({ DrumAction::RestartSequence, 0x0001u });
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, barSeconds)),
+          "step 1 only: one restart per bar (" + String((int) r.restarts.size()) + "): " + describeRestarts(r.restarts));
+
+    beat.setPattern({ DrumAction::RestartSequence, 0x1111u });
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, barSeconds / 4.0)),
+          "beats pattern: a restart on every beat (" + String((int) r.restarts.size()) + ")");
+
+    beat.setPattern({ DrumAction::Off, 0x1111u });
+    r = runDrums(*p, model.durationSeconds);
+    check(r.restarts.empty(), "pattern action Off: nothing triggers");
+
+    // Halving the tempo estimate halves the number of steps in the loop, so the same steps come twice as far apart.
+    beat.setPattern({ DrumAction::RestartSequence, 0x0001u });
+    beat.setTempoEstimate(model.tempoBpm * 2.0);
+    beat.waitUntilIdle(30000);
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, barSeconds / 2.0)),
+          "tempo estimate x2: the grid follows (" + String((int) r.restarts.size()) + " restarts)");
+    beat.setTempoEstimate(model.tempoBpm);
+    beat.waitUntilIdle(30000);
+
+    // Hits and the pattern together: kicks still restart, and the pattern adds its own.
+    beat.setSettings(Drum::Kick, { DrumAction::RestartSequence, -12.0f, 0.3f });
+    beat.setPattern({ DrumAction::Stutter, 0x4444u });
+    setValue(*p, ids::stutter, 4.0f);
+    r = runDrums(*p, model.durationSeconds);
+    check(r.stuttered && restartsMatch(r.restarts, demoTimes(Drum::Kick)), "kick hits restart while the pattern stutters on its own steps");
+    setValue(*p, ids::stutter, 0.0f);
+
+    // State round trip, and an old state without a pattern.
+    beat.setPattern({ DrumAction::NextStep, 0x2492u });
+    MemoryBlock state;
+    p->getStateInformation(state);
+    auto q = makeProcessor();
+    q->setStateInformation(state.getData(), (int) state.getSize());
+    q->getDrumBeat().waitUntilIdle(30000);
+    const auto got = q->getDrumBeat().getPattern();
+    check(got.action == DrumAction::NextStep && got.steps == 0x2492u, "the pattern is saved with the project");
+
+    auto old = makeProcessor();
+    old->getDrumBeat().setPattern({ DrumAction::Stutter, 0xFFFFu });
+    MemoryBlock oldState;
+    if (auto xml = makeProcessor()->apvts.copyState().createXml())
+        AudioProcessor::copyXmlToBinary(*xml, oldState);
+    old->setStateInformation(oldState.getData(), (int) oldState.getSize());
+    old->getDrumBeat().waitUntilIdle(30000);
+    check(old->getDrumBeat().getPattern() == bitvibe::DrumPattern {}, "a state from before the pattern existed resets it to off");
+}
+
 // ---- where the beat's sound goes: the main output or the "Beat Monitor" output -------------------------
 
 struct Rendered
@@ -995,6 +1070,7 @@ int main(int argc, char** argv)
     testPresetsAndMorph();
     testMixAndTriggerOnly();
     testDrumMap();
+    testBeatPatternProcessor();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

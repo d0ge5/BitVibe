@@ -34,7 +34,8 @@ in the hands of more people for free.
 - **Drum map** (DRUMS tab): load a drum loop (WAV or MP3), BitVibe finds its kick, snare, hi-hat, cymbal and
   tom hits, and each drum can restart the sequence, step it or fire the stutter when it hits hard enough. A
   live feed shows the hits and what they trigger, and the beat can play on a separate **Beat Monitor** output
-  so it stays out of your main signal. An optional neural transcriber (ADTOF) gives the best accuracy.
+  so it stays out of your main signal. A **beat pattern** can also trigger on chosen steps of the bar,
+  whatever the drums do. An optional neural transcriber (ADTOF) gives the best accuracy.
 - **Expression morph:** store two complete sets of knobs (including the six step knobs), "toe up" and
   "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
 - **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
@@ -201,7 +202,13 @@ what each drum does when it hits hard enough.
   dashed Min level line or belong to a drum that is off, crossed ones are excluded. Hits flash as they fire,
   and the six lights show the sequencer's step. **Click** a hit to exclude it (or include it again);
   **right-click** it to move it to another drum or delete it. RE-ANALYSE starts again and discards these edits.
-- The beat file, its hits (with your edits) and the drum settings are saved with your project. If the file
+- **BEAT PATTERN** (bottom of the tab): trigger on *where* you are in the bar instead of on how hard a drum
+  hits. Pick what the pattern does (restart the sequence, next step, stutter, or restart and stutter), then
+  click the 16 sixteenth-note steps of one bar to light the ones that fire; CLEAR, BEATS, OFFBEATS and
+  BACKBEAT fill in common patterns. The pattern repeats every bar of the loop, stays locked to the beat's
+  tempo (the /2 and x2 buttons move it), and works alongside the drum hits, or alone when the drums are
+  set to Off. The window grows taller while the DRUMS tab is open to make room.
+- The beat file, its hits (with your edits), the pattern and the drum settings are saved with your project. If the file
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
   belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
   triggers.
@@ -289,7 +296,7 @@ gate, and the instrument/line headroom difference.
 - The morph blend law: linear in knob position, with every discrete knob switching at 50 %.
 - What a preset slot contains (see [Presets](#presets)) and the factory sounds in slots 2 to 12.
 
-**Plug-in additions** (not in the hardware): the drum map and its analysis, the mix, the trigger-only option,
+**Plug-in additions** (not in the hardware): the drum map and its analysis, the beat pattern, the mix, the trigger-only option,
 presets with names, and the hover tips.
 
 **Not implemented yet:** MIDI CC and SysEx control of the presets (use your DAW's program list and
@@ -341,10 +348,10 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 280 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 299 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+trigger events, the drum-map scheduler, the beat pattern, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
 the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 

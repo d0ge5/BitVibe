@@ -8,11 +8,13 @@ namespace
 {
 // Page coordinates (the page sits below the editor's tab strip).
 const Rectangle<int> kBeatPanel { 12, 6, 456, 130 }, kPlayPanel { 12, 144, 456, 88 }, kFeedPanel { 12, 240, 456, 280 },
-    kMapPanel { 12, 528, 456, 296 };
+    kMapPanel { 12, 528, 456, 296 }, kPatternPanel { 12, 832, 456, 100 };
 const Rectangle<int> kDropZone { 24, 26, 432, 46 };
 const Rectangle<int> kOverview { 84, 260, 372, 12 };
 constexpr int kLaneX = 84, kLaneY = 278, kLaneW = 372, kLaneH = 40;
 constexpr int kRowY = 564, kRowH = 50;
+// The pattern grid: 16 cells in four groups of four (one per beat), laid out inside kPatternPanel.
+constexpr int kCellX = 24, kCellW = 23, kCellGap = 3, kGroupGap = 5, kCellDy = 52, kCellH = 28;
 constexpr float kLevelFloorDb = -48.0f; // bottom of the lanes and of the Min level slider
 constexpr double kScrollAhead = 3.0, kScrollBehind = 1.0, kShortLoop = 12.0;
 
@@ -128,6 +130,27 @@ DrumPage::DrumPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel)
     addAndMakeVisible(beatOutBox);
     beatOutAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::beatOutput, beatOutBox);
 
+    for (int a = 0; a < kNumDrumActions; ++a)
+        patternActionBox.addItem(drumActionName((DrumAction) a), a + 1);
+    patternActionBox.setLookAndFeel(&laf);
+    patternActionBox.onChange = [this]
+    {
+        if (updatingControls)
+            return;
+        auto p = beat.getPattern();
+        p.action = (DrumAction) jlimit(0, kNumDrumActions - 1, patternActionBox.getSelectedId() - 1);
+        beat.setPattern(p);
+        pattern = p;
+        repaint();
+    };
+    addAndMakeVisible(patternActionBox);
+    patternClearButton.onClick = [this] { setPatternSteps(patternPreset(0)); };
+    patternBeatsButton.onClick = [this] { setPatternSteps(patternPreset(1)); };
+    patternAndButton.onClick = [this] { setPatternSteps(patternPreset(2)); };
+    patternBackbeatButton.onClick = [this] { setPatternSteps(patternPreset(3)); };
+    for (auto* b : { &patternClearButton, &patternBeatsButton, &patternAndButton, &patternBackbeatButton })
+        addAndMakeVisible(*b);
+
     for (int d = 0; d < kNumDrums; ++d)
     {
         auto& r = rows[(size_t) d];
@@ -166,7 +189,7 @@ DrumPage::~DrumPage()
         r.minLevel.setLookAndFeel(nullptr);
         r.detect.setLookAndFeel(nullptr);
     }
-    for (Component* c : std::initializer_list<Component*> { &library, &neuralButton, &pickButton, &stepClockBox, &levelKnob, &beatOutBox })
+    for (Component* c : std::initializer_list<Component*> { &library, &neuralButton, &pickButton, &stepClockBox, &levelKnob, &beatOutBox, &patternActionBox })
         c->setLookAndFeel(nullptr);
 }
 
@@ -189,6 +212,12 @@ void DrumPage::setTooltips()
                           "Off = only the drum hits trigger them.");
     stepClockBox.setTooltip("STEPS MOVE WITH: Tempo = the steps move with the tempo. Drum hits = only hits set to "
                             "\"Next step\" move them.");
+    patternActionBox.setTooltip("PATTERN ACTION: what the pattern does at each lit step: restart the sequence, move it one step, "
+                                "fire the stutter, or both. Off = the pattern does nothing.");
+    patternClearButton.setTooltip("CLEAR: switch every step of the pattern off.");
+    patternBeatsButton.setTooltip("BEATS: light the first step of every beat (1 2 3 4).");
+    patternAndButton.setTooltip("OFFBEATS: light the 'and' between the beats (1 & 2 & 3 & 4 &).");
+    patternBackbeatButton.setTooltip("BACKBEAT: light beats 2 and 4.");
     halfButton.setTooltip("/2: halve the detected beat tempo (if it was detected twice too fast).");
     doubleButton.setTooltip("x2: double the detected beat tempo (if it was detected half as fast).");
     useTempoButton.setTooltip("USE: set BitVibe's tempo (sequencer steps, stutter length) to the beat's tempo.");
@@ -242,6 +271,13 @@ void DrumPage::refresh()
     const auto settings = beat.getSettings();
     if (settings != shownSettings)
         showSettings(settings);
+
+    pattern = beat.getPattern();
+    if (patternActionBox.getSelectedId() != (int) pattern.action + 1)
+    {
+        const ScopedValueSetter<bool> guard(updatingControls, true);
+        patternActionBox.setSelectedId((int) pattern.action + 1, dontSendNotification);
+    }
     repaint();
 }
 
@@ -396,6 +432,12 @@ int DrumPage::hitAt(Point<float> p) const
 void DrumPage::mouseDown(const MouseEvent& e)
 {
     const auto p = e.position;
+    const int cell = patternCellAt(p);
+    if (cell >= 0)
+    {
+        setPatternSteps(pattern.steps ^ (1u << cell)); // click a step to switch it on or off
+        return;
+    }
     if (kOverview.toFloat().expanded(0.0f, 4.0f).contains(p) && model.durationSeconds > kShortLoop)
     {
         const double t = (p.x - (float) kOverview.getX()) / (float) kOverview.getWidth() * model.durationSeconds;
@@ -450,6 +492,13 @@ void DrumPage::resized()
 
     playButton.setBounds(24, 158, 78, 28);
     beatOutBox.setBounds(24, 203, 78, 22);
+
+    const int patternY = kPatternPanel.getY() + 20;
+    patternActionBox.setBounds(24, patternY, 140, 24);
+    patternClearButton.setBounds(172, patternY, 66, 24);
+    patternBeatsButton.setBounds(242, patternY, 66, 24);
+    patternAndButton.setBounds(312, patternY, 66, 24);
+    patternBackbeatButton.setBounds(382, patternY, 66, 24);
     levelKnob.setBounds(112, 156, 52, 52);
     pickButton.setBounds(178, 160, 140, 22);
     stepClockBox.setBounds(178, 200, 140, 24);
@@ -474,6 +523,7 @@ void DrumPage::paint(Graphics& g)
     drawPanel(g, kPlayPanel, "PLAYBACK");
     drawPanel(g, kFeedPanel, "LIVE FEED");
     drawPanel(g, kMapPanel, "DRUM MAP");
+    drawPanel(g, kPatternPanel, "BEAT PATTERN");
 
     // Drop zone: the beat's name and what is happening.
     const auto zone = kDropZone.toFloat();
@@ -543,6 +593,83 @@ void DrumPage::paint(Graphics& g)
 
     paintFeed(g);
     paintRows(g);
+    paintPattern(g);
+}
+
+// ---- the beat pattern -------------------------------------------------------------------------------
+
+Rectangle<float> DrumPage::patternCell(int step) const
+{
+    const float x = (float) (kCellX + step * (kCellW + kCellGap) + (step / 4) * kGroupGap);
+    return { x, (float) (kPatternPanel.getY() + kCellDy), (float) kCellW, (float) kCellH };
+}
+
+int DrumPage::patternCellAt(Point<float> p) const
+{
+    for (int i = 0; i < kPatternSteps; ++i)
+        if (patternCell(i).expanded((float) kCellGap * 0.5f, 4.0f).contains(p))
+            return i;
+    return -1;
+}
+
+void DrumPage::setPatternSteps(std::uint32_t steps)
+{
+    pattern = beat.getPattern();
+    pattern.steps = steps & kPatternMask;
+    beat.setPattern(pattern);
+    repaint();
+}
+
+void DrumPage::paintPattern(Graphics& g)
+{
+    const int64_t numSteps = patternNumSteps(model.durationSeconds, model.tempoBpm);
+    const bool active = pattern.action != DrumAction::Off;
+
+    String text;
+    Colour textColour = inkDim;
+    if (!model.loaded)
+        text = "Load a beat first: the pattern follows its tempo";
+    else if (numSteps == 0)
+        text = "The beat's tempo is not known yet";
+    else if (!active)
+    {
+        text = "Choose what the pattern does";
+        textColour = accent;
+    }
+    else
+        text = String(model.tempoBpm, 1) + " BPM, one bar = 16 steps, fires at the lit steps";
+    g.setColour(textColour);
+    g.setFont(plain(10.0f));
+    g.drawText(text, kPatternPanel.getX() + 110, kPatternPanel.getY() + 4, kPatternPanel.getWidth() - 124, 12, Justification::centredRight, true);
+
+    // The step the beat is at, so you can see the pattern go by.
+    int playing = -1;
+    if (numSteps > 0 && beat.isPlaying() && beat.getPlayingGeneration() == model.generation)
+    {
+        const double stepSeconds = model.durationSeconds / (double) numSteps;
+        playing = (int) (std::floor(beat.getPositionSeconds() / stepSeconds)) % kPatternSteps;
+    }
+
+    static constexpr const char* sixteenths[4] = { "", "e", "&", "a" };
+    for (int i = 0; i < kPatternSteps; ++i)
+    {
+        const auto c = patternCell(i);
+        const bool on = ((pattern.steps >> i) & 1u) != 0u;
+        const bool beatStart = i % 4 == 0;
+        g.setColour(on ? (active ? accent : accent.withAlpha(0.35f)) : (beatStart ? Colour(0xff28282d) : Colour(0xff1d1d21)));
+        g.fillRoundedRectangle(c, 4.0f);
+        g.setColour(Colour(0xff0a0a0c));
+        g.drawRoundedRectangle(c.reduced(0.5f), 4.0f, 1.0f);
+        if (i == playing)
+        {
+            g.setColour(ink);
+            g.drawRoundedRectangle(c.expanded(1.5f), 5.0f, 1.6f);
+        }
+        g.setColour(beatStart ? ink : inkDim);
+        g.setFont(beatStart ? bold(10.5f) : plain(9.5f));
+        g.drawText(beatStart ? String(i / 4 + 1) : String(sixteenths[i % 4]), (int) c.getX() - 3, (int) c.getBottom() + 3, (int) c.getWidth() + 6, 12,
+                   Justification::centred);
+    }
 }
 
 void DrumPage::paintFeed(Graphics& g)

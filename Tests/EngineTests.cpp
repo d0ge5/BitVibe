@@ -1388,6 +1388,120 @@ void testBeatRoute()
     CHECK(beatOutputFromIndex(-4) == M::Auto && beatOutputFromIndex(99) == M::Main, "out-of-range indices are clamped");
 }
 
+// ---- beat pattern: triggers on chosen steps of the bar instead of on loud hits -------------------------
+
+void testBeatPattern()
+{
+    std::puts("beat pattern: triggers at chosen sixteenth-note steps of the loop");
+
+    // 8 beats in 4 s at 48 kHz: 32 steps of 6000 samples, two bars of 16 steps.
+    constexpr int64_t loopLength = 192000, numSteps = 32;
+    constexpr double stepSamples = (double) loopLength / (double) numSteps;
+    constexpr int64_t stepLength = 6000;
+    static_assert((double) stepLength == stepSamples);
+    CHECK(patternNumSteps(4.0, 120.0) == numSteps, "4 s at 120 BPM is 8 beats = 32 steps (%lld)", (long long) patternNumSteps(4.0, 120.0));
+    CHECK(patternNumSteps(9.6, 100.0) == 64, "9.6 s at 100 BPM is 16 beats = 64 steps");
+    CHECK(patternNumSteps(9.6, 0.0) == 0 && patternNumSteps(0.0, 100.0) == 0 && patternNumSteps(-1.0, 100.0) == 0,
+          "an unknown tempo or length gives no grid");
+
+    CHECK(patternPreset(0) == 0u && patternPreset(1) == 0x1111u && patternPreset(2) == 0x4444u && patternPreset(3) == 0x1010u,
+          "the preset buttons: clear, beats, the 'and' of every beat, the backbeat");
+
+    // Whole loop in one block: steps 0, 4, 8, 12 of each bar fire, at exact positions.
+    {
+        DrumPattern p { DrumAction::RestartSequence, 0x1111u };
+        std::array<TriggerEvent, 64> out {};
+        const int n = PatternScheduler::collect(p, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), (int) out.size(), 0);
+        bool exact = n == 8;
+        for (int i = 0; i < n && exact; ++i)
+        {
+            const int64_t step = (i / 4) * 16 + (i % 4) * 4;
+            exact = out[(size_t) i].offset == (int) (step * stepLength) && out[(size_t) i].action == TriggerAction::RestartSequence;
+        }
+        CHECK(exact, "beats pattern gives 8 events at steps 0,4,8,12,16,20,24,28 (got %d)", n);
+    }
+
+    // The same pattern read in awkward block sizes across two trips round the loop: every step exactly once.
+    for (int block : { 64, 256, 441, 512, 1000 })
+    {
+        DrumPattern p { DrumAction::NextStep, 0x4444u }; // steps 2, 6, 10, 14 of each bar
+        std::vector<int64_t> heard;
+        int64_t position = 0, absolute = 0;
+        std::array<TriggerEvent, 64> out {};
+        while (absolute < 2 * loopLength)
+        {
+            const int n = PatternScheduler::collect(p, stepSamples, numSteps, loopLength, position, block, out.data(), (int) out.size(), 0);
+            for (int i = 0; i < n; ++i)
+                heard.push_back(absolute + out[(size_t) i].offset);
+            position = (position + block) % loopLength;
+            absolute += block;
+        }
+        std::vector<int64_t> expected;
+        for (int lap = 0; lap < 2; ++lap)
+            for (int64_t st = 0; st < numSteps; ++st)
+                if ((0x4444u >> (st % 16)) & 1u)
+                    expected.push_back(lap * loopLength + st * stepLength);
+        // What was read ends at 2*loopLength rounded up to a whole block: keep what lies inside that.
+        expected.erase(std::remove_if(expected.begin(), expected.end(), [absolute](int64_t t) { return t >= absolute; }), expected.end());
+        CHECK(heard == expected, "block %d: %zu events heard, %zu expected, all at the right sample", block, heard.size(), expected.size());
+    }
+
+    // Nothing fires for Off, an empty pattern, or an unknown grid.
+    {
+        std::array<TriggerEvent, 16> out {};
+        CHECK(PatternScheduler::collect({ DrumAction::Off, 0xFFFFu }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
+              "action Off: no events");
+        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0u }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
+              "no steps selected: no events");
+        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, 0.0, 0, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
+              "unknown tempo (no grid): no events");
+        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, stepSamples, numSteps, 0, 0, 100, out.data(), 16, 0) == 0,
+              "empty loop: no events");
+        // Bits above the sixteen steps are ignored.
+        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFF0000u }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
+              "bits above step 16 are ignored");
+    }
+
+    // The action maps to the engine's trigger action.
+    {
+        std::array<TriggerEvent, 4> out {};
+        const std::pair<DrumAction, TriggerAction> table[] = { { DrumAction::RestartSequence, TriggerAction::RestartSequence },
+                                                              { DrumAction::NextStep, TriggerAction::NextStep },
+                                                              { DrumAction::Stutter, TriggerAction::Stutter },
+                                                              { DrumAction::RestartAndStutter, TriggerAction::RestartAndStutter } };
+        bool ok = true;
+        for (const auto& [drumAction, trigger] : table)
+        {
+            const int n = PatternScheduler::collect({ drumAction, 1u }, stepSamples, numSteps, loopLength, 0, 100, out.data(), 4, 0);
+            ok = ok && n == 1 && out[0].offset == 0 && out[0].action == trigger;
+        }
+        CHECK(ok, "each action becomes the matching trigger");
+    }
+
+    // Merged with drum-hit events that are already in the list: the whole list stays sorted, hits first on a tie.
+    {
+        std::array<TriggerEvent, 8> out {};
+        out[0] = { 0, TriggerAction::Stutter };           // a hit at the very same sample as step 0
+        out[1] = { 1500, TriggerAction::NextStep };
+        out[2] = { 5000, TriggerAction::NextStep };
+        const int n = PatternScheduler::collect({ DrumAction::RestartSequence, 0x0007u }, stepSamples, numSteps, loopLength, 0, 13000,
+                                                out.data(), 8, 3); // steps 0, 1, 2 at 0, 6000, 12000
+        bool sorted = true;
+        for (int i = 1; i < n; ++i)
+            sorted = sorted && out[(size_t) (i - 1)].offset <= out[(size_t) i].offset;
+        CHECK(n == 6 && sorted, "pattern events merge with hit events and the list stays sorted (%d events)", n);
+        CHECK(out[0].offset == 0 && out[0].action == TriggerAction::Stutter && out[1].offset == 0 && out[1].action == TriggerAction::RestartSequence,
+              "on a tie the drum hit comes first");
+    }
+
+    // A full list drops pattern events rather than overrunning it.
+    {
+        std::array<TriggerEvent, 3> out {};
+        const int n = PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 3, 0);
+        CHECK(n == 3, "events beyond the capacity are dropped (%d)", n);
+    }
+}
+
 int main(int argc, char** argv)
 {
     gVerbose = argc > 1 && std::string(argv[1]) == "--verbose";
@@ -1406,6 +1520,7 @@ int main(int argc, char** argv)
     testMix();
     testEffectsOnTriggers();
     testBeatRoute();
+    testBeatPattern();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();
