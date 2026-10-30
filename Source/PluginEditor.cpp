@@ -120,8 +120,8 @@ void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, in
                    ticks > 16 ? 1.0f : 1.4f);
     }
 
-    // knob body
-    const float R = radius * 0.68f;
+    // knob body: 15% bigger while it is held, so the player can see they have a grip on it (it still fits inside the tick marks)
+    const float R = radius * 0.68f * (slider.isMouseButtonDown() ? 1.15f : 1.0f);
     g.setColour(Colours::black.withAlpha(0.55f));
     g.fillEllipse(c.x - R + 1.0f, c.y - R + 3.5f, R * 2.0f, R * 2.0f);
 

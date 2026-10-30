@@ -430,7 +430,6 @@ void DrumBeat::publishHits()
 {
     auto d = std::make_unique<HitData>();
     d->sampleRate = deviceRate.load();
-    double duration = 0.0, tempo = 0.0;
     {
         const ScopedLock sl(lock);
         if (model.loaded)
@@ -440,14 +439,7 @@ void DrumBeat::publishHits()
             d->loopLength = model.audioAvailable && sourceAudio.getNumSamples() > 0
                                 ? (int64_t) std::llround(sourceAudio.getNumSamples() * d->sampleRate / sourceRate)
                                 : (int64_t) std::llround(model.durationSeconds * d->sampleRate);
-            duration = model.durationSeconds;
-            tempo = model.tempoBpm;
         }
-    }
-    if (d->loopLength > 0)
-    {
-        d->numSteps = patternNumSteps(duration, tempo);
-        d->stepSamples = d->numSteps > 0 ? (double) d->loopLength / (double) d->numSteps : 0.0;
     }
     d->samples.reserve(d->hits.size());
     for (const auto& h : d->hits)
@@ -594,7 +586,8 @@ DrumPattern DrumBeat::getPattern() const
     DrumPattern p;
     p.action = (DrumAction) jlimit(0, kNumDrumActions - 1, patternAction.load());
     p.steps = patternSteps.load() & kPatternMask;
-    p.randomBeats = patternRandomBeats.load() & 0xFu;
+    p.randomBeats = patternRandomBeats.load() & 0x1Fu;
+    p.signature = jlimit(0, kNumTimeSignatures - 1, patternSignature.load());
     return p;
 }
 
@@ -602,7 +595,8 @@ void DrumBeat::setPattern(const DrumPattern& p)
 {
     patternAction = jlimit(0, kNumDrumActions - 1, (int) p.action);
     patternSteps = p.steps & kPatternMask;
-    patternRandomBeats = p.randomBeats & 0xFu;
+    patternRandomBeats = p.randomBeats & 0x1Fu;
+    patternSignature = jlimit(0, kNumTimeSignatures - 1, p.signature);
 }
 
 DrumBeat::AnalysisMode DrumBeat::getAnalysisMode() const
@@ -701,6 +695,7 @@ ValueTree DrumBeat::toState() const
     t.setProperty("patternAction", (int) pattern.action, nullptr);
     t.setProperty("patternSteps", (int) pattern.steps, nullptr);
     t.setProperty("patternRandomBeats", (int) pattern.randomBeats, nullptr);
+    t.setProperty("patternSignature", pattern.signature, nullptr);
     const auto settings = getSettings();
     for (int d = 0; d < kNumDrums; ++d)
     {
@@ -731,7 +726,8 @@ void DrumBeat::fromState(const ValueTree& t)
         DrumPattern pattern;
         pattern.action = (DrumAction) jlimit(0, kNumDrumActions - 1, (int) t.getProperty("patternAction", 0));
         pattern.steps = (uint32_t) (int) t.getProperty("patternSteps", 0) & kPatternMask;
-        pattern.randomBeats = (uint32_t) (int) t.getProperty("patternRandomBeats", 0xF) & 0xFu;
+        pattern.randomBeats = (uint32_t) (int) t.getProperty("patternRandomBeats", 0x1F) & 0x1Fu;
+        pattern.signature = jlimit(0, kNumTimeSignatures - 1, (int) t.getProperty("patternSignature", 0));
         setPattern(pattern);
     }
 
@@ -819,11 +815,8 @@ int DrumBeat::beginBlock(int numSamples, bool playing, bool triggers, TriggerEve
         settings[(size_t) d] = { (DrumAction) actions[(size_t) d].load(std::memory_order_relaxed),
                                  minLevels[(size_t) d].load(std::memory_order_relaxed),
                                  minConfidences[(size_t) d].load(std::memory_order_relaxed) };
-    const int fromHits = DrumScheduler::collect(blockHits->hits.data(), blockHits->samples.data(), (int) blockHits->hits.size(),
-                                                blockHits->loopLength, position, numSamples, settings, events, maxEvents);
-    const DrumPattern pattern { (DrumAction) patternAction.load(std::memory_order_relaxed), patternSteps.load(std::memory_order_relaxed) };
-    return PatternScheduler::collect(pattern, blockHits->stepSamples, blockHits->numSteps, blockHits->loopLength, position,
-                                     numSamples, events, maxEvents, fromHits);
+    return DrumScheduler::collect(blockHits->hits.data(), blockHits->samples.data(), (int) blockHits->hits.size(),
+                                  blockHits->loopLength, position, numSamples, settings, events, maxEvents);
 }
 
 void DrumBeat::addAudio(AudioBuffer<float>& buffer, int numChannels, int numSamples, float levelDb)

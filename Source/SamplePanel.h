@@ -38,7 +38,7 @@ private:
     juce::ComboBox bankBox;
     PedalButton saveButton { "SAVE" }, deleteButton { "DELETE" };
     PedalButton chooseButton { "CHOOSE SOUNDS..." }, folderButton { "OPEN SOUNDS FOLDER" };
-    juce::Slider mixSlider, chanceSlider, baseSlider, maxSlider;
+    KnobSlider mixSlider, chanceSlider, baseSlider, maxSlider;
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
     std::uint32_t previewPick = 0; // which of the picked sounds the preview plays (new each time the player starts a preview)

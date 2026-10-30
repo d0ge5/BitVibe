@@ -1992,143 +1992,190 @@ void testBeatRoute()
     CHECK(beatOutputFromIndex(-4) == M::Auto && beatOutputFromIndex(99) == M::Main, "out-of-range indices are clamped");
 }
 
-// ---- beat pattern: triggers on chosen steps of the bar instead of on loud hits -------------------------
+// ---- beat pattern: fires an action at chosen steps of a bar, from the plug-in's own tempo --------------
+
+// Times (in samples) at which the sequencer restarts at step 0, running the engine one sample at a time.
+std::vector<size_t> patternRestarts(const Params& base, double seconds, const std::function<void(Params&, size_t)>& automate = {})
+{
+    Engine e;
+    e.prepare(kFs);
+    Params p = base;
+    std::vector<size_t> times;
+    int previous = -1;
+    float sample = 0.0f;
+    float* channel = &sample;
+    const size_t total = (size_t) (seconds * kFs);
+    for (size_t i = 0; i < total; ++i)
+    {
+        sample = 0.0f;
+        if (automate)
+            automate(p, i);
+        e.process(&channel, 1, 1, p);
+        const int step = e.getCurrentStep();
+        if (step == 0 && previous != 0)
+            times.push_back(i);
+        previous = step;
+    }
+    return times;
+}
 
 void testBeatPattern()
 {
-    std::puts("beat pattern: triggers at chosen sixteenth-note steps of the loop");
+    std::puts("beat pattern: time signatures, presets, random, and the pattern clock");
 
-    // 8 beats in 4 s at 48 kHz: 32 steps of 6000 samples, two bars of 16 steps.
-    constexpr int64_t loopLength = 192000, numSteps = 32;
-    constexpr double stepSamples = (double) loopLength / (double) numSteps;
-    constexpr int64_t stepLength = 6000;
-    static_assert((double) stepLength == stepSamples);
-    CHECK(patternNumSteps(4.0, 120.0) == numSteps, "4 s at 120 BPM is 8 beats = 32 steps (%lld)", (long long) patternNumSteps(4.0, 120.0));
-    CHECK(patternNumSteps(9.6, 100.0) == 64, "9.6 s at 100 BPM is 16 beats = 64 steps");
-    CHECK(patternNumSteps(9.6, 0.0) == 0 && patternNumSteps(0.0, 100.0) == 0 && patternNumSteps(-1.0, 100.0) == 0,
-          "an unknown tempo or length gives no grid");
+    // The ten time signatures: their bars add up, and fit the biggest grid.
+    {
+        bool consistent = true;
+        for (int i = 0; i < kNumTimeSignatures; ++i)
+        {
+            const auto& ts = timeSignature(i);
+            int sum = 0;
+            for (int g = 0; g < ts.numGroups; ++g)
+                sum += ts.groupSteps[(size_t) g];
+            consistent = consistent && sum == ts.totalSteps && ts.totalSteps <= kMaxPatternSteps && ts.numGroups >= 1 && ts.numGroups <= 5;
+        }
+        CHECK(consistent, "every time signature's beats add up to its bar, and fit the grid");
+        CHECK(timeSignature(0).totalSteps == 16 && timeSignature(1).totalSteps == 12 && timeSignature(3).totalSteps == 12
+                  && timeSignature(5).totalSteps == 14 && timeSignature(6).totalSteps == 24 && timeSignature(9).totalSteps == 6,
+              "4/4 has 16 steps, 3/4 has 12, 6/8 has 12, 7/8 has 14, 12/8 has 24, 3/8 has 6");
+    }
 
+    // The preset buttons follow the signature: first step of every beat, the middle of every beat, the backbeat.
     CHECK(patternPreset(0) == 0u && patternPreset(1) == 0x1111u && patternPreset(2) == 0x4444u && patternPreset(3) == 0x1010u,
-          "the preset buttons: clear, beats, the 'and' of every beat, the backbeat");
-
-    // Whole loop in one block: steps 0, 4, 8, 12 of each bar fire, at exact positions.
-    {
-        DrumPattern p { DrumAction::RestartSequence, 0x1111u };
-        std::array<TriggerEvent, 64> out {};
-        const int n = PatternScheduler::collect(p, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), (int) out.size(), 0);
-        bool exact = n == 8;
-        for (int i = 0; i < n && exact; ++i)
-        {
-            const int64_t step = (i / 4) * 16 + (i % 4) * 4;
-            exact = out[(size_t) i].offset == (int) (step * stepLength) && out[(size_t) i].action == TriggerAction::RestartSequence;
-        }
-        CHECK(exact, "beats pattern gives 8 events at steps 0,4,8,12,16,20,24,28 (got %d)", n);
-    }
-
-    // The same pattern read in awkward block sizes across two trips round the loop: every step exactly once.
-    for (int block : { 64, 256, 441, 512, 1000 })
-    {
-        DrumPattern p { DrumAction::NextStep, 0x4444u }; // steps 2, 6, 10, 14 of each bar
-        std::vector<int64_t> heard;
-        int64_t position = 0, absolute = 0;
-        std::array<TriggerEvent, 64> out {};
-        while (absolute < 2 * loopLength)
-        {
-            const int n = PatternScheduler::collect(p, stepSamples, numSteps, loopLength, position, block, out.data(), (int) out.size(), 0);
-            for (int i = 0; i < n; ++i)
-                heard.push_back(absolute + out[(size_t) i].offset);
-            position = (position + block) % loopLength;
-            absolute += block;
-        }
-        std::vector<int64_t> expected;
-        for (int lap = 0; lap < 2; ++lap)
-            for (int64_t st = 0; st < numSteps; ++st)
-                if ((0x4444u >> (st % 16)) & 1u)
-                    expected.push_back(lap * loopLength + st * stepLength);
-        // What was read ends at 2*loopLength rounded up to a whole block: keep what lies inside that.
-        expected.erase(std::remove_if(expected.begin(), expected.end(), [absolute](int64_t t) { return t >= absolute; }), expected.end());
-        CHECK(heard == expected, "block %d: %zu events heard, %zu expected, all at the right sample", block, heard.size(), expected.size());
-    }
-
-    // Nothing fires for Off, an empty pattern, or an unknown grid.
-    {
-        std::array<TriggerEvent, 16> out {};
-        CHECK(PatternScheduler::collect({ DrumAction::Off, 0xFFFFu }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
-              "action Off: no events");
-        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0u }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
-              "no steps selected: no events");
-        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, 0.0, 0, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
-              "unknown tempo (no grid): no events");
-        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, stepSamples, numSteps, 0, 0, 100, out.data(), 16, 0) == 0,
-              "empty loop: no events");
-        // Bits above the sixteen steps are ignored.
-        CHECK(PatternScheduler::collect({ DrumAction::Stutter, 0xFFFF0000u }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 16, 0) == 0,
-              "bits above step 16 are ignored");
-    }
-
-    // The action maps to the engine's trigger action.
-    {
-        std::array<TriggerEvent, 4> out {};
-        const std::pair<DrumAction, TriggerAction> table[] = { { DrumAction::RestartSequence, TriggerAction::RestartSequence },
-                                                              { DrumAction::NextStep, TriggerAction::NextStep },
-                                                              { DrumAction::Stutter, TriggerAction::Stutter },
-                                                              { DrumAction::RestartAndStutter, TriggerAction::RestartAndStutter } };
-        bool ok = true;
-        for (const auto& [drumAction, trigger] : table)
-        {
-            const int n = PatternScheduler::collect({ drumAction, 1u }, stepSamples, numSteps, loopLength, 0, 100, out.data(), 4, 0);
-            ok = ok && n == 1 && out[0].offset == 0 && out[0].action == trigger;
-        }
-        CHECK(ok, "each action becomes the matching trigger");
-    }
-
-    // Merged with drum-hit events that are already in the list: the whole list stays sorted, hits first on a tie.
-    {
-        std::array<TriggerEvent, 8> out {};
-        out[0] = { 0, TriggerAction::Stutter };           // a hit at the very same sample as step 0
-        out[1] = { 1500, TriggerAction::NextStep };
-        out[2] = { 5000, TriggerAction::NextStep };
-        const int n = PatternScheduler::collect({ DrumAction::RestartSequence, 0x0007u }, stepSamples, numSteps, loopLength, 0, 13000,
-                                                out.data(), 8, 3); // steps 0, 1, 2 at 0, 6000, 12000
-        bool sorted = true;
-        for (int i = 1; i < n; ++i)
-            sorted = sorted && out[(size_t) (i - 1)].offset <= out[(size_t) i].offset;
-        CHECK(n == 6 && sorted, "pattern events merge with hit events and the list stays sorted (%d events)", n);
-        CHECK(out[0].offset == 0 && out[0].action == TriggerAction::Stutter && out[1].offset == 0 && out[1].action == TriggerAction::RestartSequence,
-              "on a tie the drum hit comes first");
-    }
+          "4/4: clear, beats, the 'and' of every beat, the backbeat");
+    CHECK(patternPreset(1, 1) == 0x111u && patternPreset(2, 1) == 0x444u && patternPreset(3, 1) == 0x010u, "3/4 presets");
+    CHECK(patternPreset(1, 3) == 0x041u && patternPreset(2, 3) == 0x208u && patternPreset(3, 3) == 0x040u, "6/8 presets (two beats of six steps)");
+    CHECK(patternPreset(1, 5) == 0x111u && patternPreset(3, 5) == 0x010u, "7/8 counts 2 + 2 + 3 eighths: beats at steps 0, 4, 8");
+    CHECK(patternPreset(3, 9) == 0x1u, "a one-beat bar has its backbeat on the beat");
 
     // RANDOM: only the chosen beats change, the rest keep their steps, and the same seed gives the same pattern.
+    for (int signature : { 0, 3, 6 })
     {
-        bool onlyChosen = true, deterministic = true, neverEmpty = true, varied = false;
-        uint32_t first = patternRandom(0xA5A5u, 0x6u, 1u);
+        const auto& ts = timeSignature(signature);
+        bool onlyChosen = true, deterministic = true, neverEmpty = true, varied = false, inRange = true;
+        const uint32_t base = 0xA5A5A5u & ((1u << ts.totalSteps) - 1u);
+        const uint32_t chosen = 0x2u; // beat 2
+        const uint32_t beatBits = ((1u << ts.groupSteps[1]) - 1u) << patternGroupStart(ts, 1);
+        const uint32_t first = patternRandom(base, chosen, 1u, signature);
         for (uint32_t seed = 1; seed <= 200; ++seed)
         {
-            const uint32_t base = 0xA5A5u;
-            const uint32_t r = patternRandom(base, 0x6u, seed); // beats 2 and 3
-            onlyChosen = onlyChosen && (r & 0xF00Fu) == (base & 0xF00Fu) && r <= kPatternMask;
-            deterministic = deterministic && r == patternRandom(base, 0x6u, seed);
-            neverEmpty = neverEmpty && (r & 0x0FF0u) != 0u;
+            const uint32_t r = patternRandom(base, chosen, seed, signature);
+            onlyChosen = onlyChosen && (r & ~beatBits) == (base & ~beatBits);
+            deterministic = deterministic && r == patternRandom(base, chosen, seed, signature);
+            neverEmpty = neverEmpty && (r & beatBits) != 0u;
+            inRange = inRange && r < (1u << ts.totalSteps);
             varied = varied || r != first;
         }
-        CHECK(onlyChosen, "random: beats that are not chosen keep their steps");
-        CHECK(deterministic && neverEmpty && varied, "random: repeatable per seed, different between seeds, never empty");
-        CHECK(patternRandom(0x1234u, 0u, 7u) == 0x1234u, "random with no beat chosen changes nothing");
+        CHECK(onlyChosen && inRange, "%s: random leaves the beats that are not chosen alone", ts.name);
+        CHECK(deterministic && neverEmpty && varied, "%s: random is repeatable per seed, varied between seeds, never empty", ts.name);
+    }
+    CHECK(patternRandom(0x1234u, 0u, 7u) == 0x1234u, "random with no beat chosen changes nothing");
+    {
         int firstStepLit = 0, inBetweenLit = 0;
         for (uint32_t seed = 1; seed <= 400; ++seed)
         {
-            const uint32_t r = patternRandom(0u, 0xFu, seed);
+            const uint32_t r = patternRandom(0u, 0x1Fu, seed);
             firstStepLit += (int) (r & 1u);
             inBetweenLit += (int) ((r >> 1) & 1u);
         }
-        CHECK(firstStepLit > inBetweenLit, "random: the first sixteenth of a beat fires more often than the second (%d vs %d)", firstStepLit, inBetweenLit);
+        CHECK(firstStepLit > inBetweenLit, "random: the first step of a beat fires more often than the second (%d vs %d)", firstStepLit, inBetweenLit);
     }
 
-    // A full list drops pattern events rather than overrunning it.
+    // The clock in the engine: 120 BPM is a 6000-sample step. A one-bar pattern lighting only step 0 of 4/4 restarts
+    // the sequence at the start and every 2 s after (96000 samples).
+    auto pattern = [](uint32_t steps, int barSteps)
     {
-        std::array<TriggerEvent, 3> out {};
-        const int n = PatternScheduler::collect({ DrumAction::Stutter, 0xFFFFu }, stepSamples, numSteps, loopLength, 0, (int) loopLength, out.data(), 3, 0);
-        CHECK(n == 3, "events beyond the capacity are dropped (%d)", n);
+        Params p = neutral();
+        p.seqPlay = 5; // loops, so a restart is visible as the step going back to 0
+        p.seqMult = 0;
+        p.tempoBpm = 120.0f;
+        p.steps.fill(mapping::pitchStepKnob(0));
+        p.pickTriggers = false;
+        p.patternOn = true;
+        p.patternAction = TriggerAction::RestartSequence;
+        p.patternSteps = steps;
+        p.patternBarSteps = barSteps;
+        return p;
+    };
+    {
+        // seqPlay "loop" keeps stepping 0..5 every 0.5 s, so detect restarts as steps going to 0 off the beat of the loop:
+        // use a once-only sequence instead (it stops after 3 s) and look at a 5 s window.
+        Params p = pattern(0x0001u, 16);
+        p.seqPlay = 1;
+        const auto t = patternRestarts(p, 5.0);
+        CHECK(t.size() == 3 && t[0] == 0 && t[1] == 96000 && t[2] == 192000, "4/4, step 1 only: a restart at the start and every bar (%zu found)", t.size());
+
+        Params q = pattern(0x0010u, 16); // step 5 (the second beat's first step)
+        q.seqPlay = 1;
+        const auto u = patternRestarts(q, 5.0);
+        CHECK(u.size() == 3 && u[0] == 24000 && u[1] == 24000 + 96000 && u[2] == 24000 + 192000, "4/4, the second beat: 0.5 s into every bar");
+
+        Params w = pattern(0x0001u, 12); // 3/4: a bar is 12 steps = 72000 samples
+        w.seqPlay = 1;
+        const auto v = patternRestarts(w, 4.0);
+        CHECK(v.size() == 3 && v[1] == 72000 && v[2] == 144000, "3/4: the bar is 1.5 s long");
+
+        Params x = pattern(0x0001u, 14); // 7/8: 14 steps
+        x.seqPlay = 1;
+        const auto y = patternRestarts(x, 4.0);
+        CHECK(y.size() == 3 && y[1] == 84000 && y[2] == 168000, "7/8: the bar is 1.75 s long");
+
+        Params off = pattern(0x0001u, 16);
+        off.seqPlay = 1;
+        off.patternOn = false;
+        CHECK(patternRestarts(off, 3.0).empty(), "pattern off: nothing restarts");
+        Params none = pattern(0x0000u, 16);
+        none.seqPlay = 1;
+        CHECK(patternRestarts(none, 3.0).empty(), "no step lit: nothing restarts");
+
+        // The tempo moves the grid: doubling it halves the bar.
+        Params fast = pattern(0x0001u, 16);
+        fast.seqPlay = 1;
+        fast.tempoBpm = 240.0f;
+        const auto f = patternRestarts(fast, 3.0);
+        CHECK(f.size() >= 3 && f[1] == 48000 && f[2] == 96000, "twice the tempo, half the bar");
+    }
+
+    // The clock runs whether or not the pattern is on, and the engine tells the editor where it is (for the highlight).
+    {
+        Params p = pattern(0u, 16);
+        p.patternOn = false;
+        Engine e;
+        e.prepare(kFs);
+        std::vector<float> block(50000, 0.0f);
+        float* ch = block.data();
+        e.process(&ch, 1, 50000, p);
+        CHECK(e.getPatternStep() == 8, "after 50000 samples at 120 BPM the bar is at step 8 (%d)", e.getPatternStep());
+        p.patternBarSteps = 6; // a shorter bar: the position wraps into it
+        float* ch2 = block.data();
+        e.process(&ch2, 1, 6000, p);
+        CHECK(e.getPatternStep() >= 0 && e.getPatternStep() < 6, "a shorter bar wraps the position (%d)", e.getPatternStep());
+    }
+
+    // Following the host: at 1 quarter note (4 steps) in, a pattern with step 6 lit (bit 5) fires one step later (6000 samples).
+    {
+        Params p = pattern(0x0020u, 16);
+        p.seqPlay = 1;
+        p.hostPpq = 1.0;
+        Engine e;
+        e.prepare(kFs);
+        int previous = -1;
+        std::vector<size_t> restarts;
+        float sample = 0.0f;
+        float* ch = &sample;
+        for (size_t i = 0; i < 20000; ++i)
+        {
+            sample = 0.0f;
+            // the host reports its position at each block start: here every 100 samples
+            p.hostPpq = i % 100 == 0 ? 1.0 + (double) i / 24000.0 : -1.0;
+            e.process(&ch, 1, 1, p);
+            const int step = e.getCurrentStep();
+            if (step == 0 && previous != 0)
+                restarts.push_back(i);
+            previous = step;
+        }
+        CHECK(restarts.size() == 1 && restarts[0] >= 5990 && restarts[0] <= 6010, "following the host: the lit step arrives when the host reaches it (%zu at %zu)",
+              restarts.size(), restarts.empty() ? (size_t) 0 : restarts[0]);
     }
 }
 

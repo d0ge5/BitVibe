@@ -372,6 +372,21 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.tempoBpm = jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoBpm, p.tempoBpm);
     effectiveBpm.store(p.tempoBpm, std::memory_order_relaxed);
 
+    {
+        // The beat pattern fires from the plug-in's own tempo; while following the host it lines up with the host's position.
+        const auto pattern = drumBeat.getPattern();
+        p.patternOn = pattern.action != bitvibe::DrumAction::Off && pattern.steps != 0;
+        p.patternAction = bitvibe::toTriggerAction(pattern.action);
+        p.patternSteps = pattern.steps;
+        p.patternBarSteps = bitvibe::timeSignature(pattern.signature).totalSteps;
+        if (pTempoSync->load() > 0.5f)
+            if (auto* head = getPlayHead())
+                if (auto pos = head->getPosition())
+                    if (pos->getIsPlaying())
+                        if (auto ppq = pos->getPpqPosition())
+                            p.hostPpq = *ppq;
+    }
+
     p.bypass = pBypass->load() > 0.5f;
     p.stutterHold = pHold->load() > 0.5f;
     p.inputGainDb = pInGain->load();

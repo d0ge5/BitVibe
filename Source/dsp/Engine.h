@@ -19,6 +19,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 
 namespace bitvibe
 {
@@ -100,6 +101,16 @@ struct Params
     float sampleBaseDb = -60.0f, sampleMaxDb = -9.0f;
     float sampleChance = 1.0f;
     const SampleSet* sampleSet = nullptr;
+
+    // Beat pattern: an action fired at the lit steps of a bar of sixteenth notes, from the plug-in's own tempo.
+    // patternSteps has a bit per step (bit 0 = the first step of the bar) and patternBarSteps is the length of the
+    // bar. hostPpq (quarter notes since the start of the host's timeline, or < 0 when not following the host) lines
+    // the grid up with the host while it plays.
+    bool patternOn = false;
+    TriggerAction patternAction = TriggerAction::RestartSequence;
+    std::uint32_t patternSteps = 0;
+    int patternBarSteps = 16;
+    double hostPpq = -1.0;
 
     // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
     bool pickTriggers = true;
@@ -213,6 +224,9 @@ public:
         fxMix = 1.0f;
         fxInit = false;
         reverbSend = 0.0f;
+        patternIdx = 0;
+        patternPhase = 0.0;
+        patternFresh = true;
         samplePlayer.reset();
     }
 
@@ -232,6 +246,7 @@ public:
         {
             while (nextEvent < numEvents && events[nextEvent].offset <= n)
                 applyTrigger(events[nextEvent++].action);
+            advancePattern();
 
             // ---- input stage -------------------------------------------------------------
             const float inGain = inGainSm.next(inGainTarget);
@@ -394,6 +409,7 @@ public:
 
         beatPhaseOut.store((float) beatPhase, std::memory_order_relaxed);
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
+        patternStepOut.store(patternIdx, std::memory_order_relaxed);
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
     }
 
@@ -401,6 +417,7 @@ public:
     float getBeatPhase() const { return beatPhaseOut.load(std::memory_order_relaxed); }
     int getCurrentStep() const { return stepOut.load(std::memory_order_relaxed); }
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
+    int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
 
 private:
     struct Channel
@@ -427,6 +444,10 @@ private:
         int reverbType = 0;
         bool distOn = false, distReverb = false;
         int distType = 0;
+        bool patternOn = false;
+        TriggerAction patternAction = TriggerAction::RestartSequence;
+        std::uint32_t patternSteps = 0;
+        int patternBarSteps = 16;
         float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
         float sampleGain = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
@@ -447,6 +468,12 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        blk.patternOn = p.patternOn;
+        blk.patternAction = p.patternAction;
+        blk.patternSteps = p.patternSteps;
+        blk.patternBarSteps = std::clamp(p.patternBarSteps, 1, 32);
+        if (patternIdx >= blk.patternBarSteps)
+            patternIdx = 0;
         blk.distOn = p.distOn;
         blk.distType = std::clamp(p.distType, 0, 1);
         blk.distReverb = p.distReverb;
@@ -530,6 +557,9 @@ private:
         const int div = std::clamp(p.stutterDivision, 0, 2);
         blk.stutterLength = (int) (beatSamples * kDivision[div]);
 
+        if (p.hostPpq >= 0.0)
+            followHost(p.hostPpq);
+
         if (p.stutterHold != holdPrev)
         {
             for (auto& ch : channels)
@@ -599,6 +629,52 @@ private:
         }
         seqPhase = 0.0;
         stepForward();
+    }
+
+    // The pattern's clock: one step is a sixteenth note of the tempo. The first step of the bar fires as soon as the
+    // engine starts; after that a step fires when the clock reaches it. While following the host, the bar is put
+    // back in line with the host's position at the start of every block that has drifted away from it.
+    void advancePattern()
+    {
+        const double stepSamples = std::max(1.0, beatSamples * 0.25);
+        bool fire = false;
+        if (patternFresh)
+        {
+            patternFresh = false;
+            patternIdx = 0;
+            patternPhase = 0.0;
+            fire = true;
+        }
+        else
+        {
+            patternPhase += 1.0;
+            if (patternPhase >= stepSamples)
+            {
+                patternPhase -= stepSamples;
+                patternIdx = (patternIdx + 1) % blk.patternBarSteps;
+                fire = true;
+            }
+        }
+        if (fire && blk.patternOn && ((blk.patternSteps >> patternIdx) & 1u) != 0u)
+            applyTrigger(blk.patternAction);
+    }
+
+    void followHost(double ppq)
+    {
+        const double stepSamples = std::max(1.0, beatSamples * 0.25);
+        const double position = std::max(0.0, ppq) * 4.0; // in steps
+        const double whole = std::floor(position);
+        const int idx = (int) std::fmod(whole, (double) blk.patternBarSteps);
+        const double phase = (position - whole) * stepSamples;
+        const bool sameStep = idx == patternIdx && std::abs(phase - patternPhase) < 0.5 * stepSamples;
+        if (patternFresh || !sameStep)
+        {
+            patternFresh = false;
+            patternIdx = idx;
+            patternPhase = phase;
+            if (phase < 1.0 && blk.patternOn && ((blk.patternSteps >> patternIdx) & 1u) != 0u)
+                applyTrigger(blk.patternAction); // landed exactly on a step
+        }
     }
 
     void startSequence()
@@ -702,6 +778,12 @@ private:
     float fxMix = 1.0f, fxAttack = 1.0f, fxRelease = 1.0f;
     bool fxInit = false;
     SamplePlayer samplePlayer;
+
+    // the beat pattern's clock: the step the bar is at and how far into it (in samples)
+    int patternIdx = 0;
+    double patternPhase = 0.0;
+    bool patternFresh = true;
+    std::atomic<int> patternStepOut { 0 };
     const SampleSet* lastSampleSet = nullptr;
     float reverbSend = 0.0f; // 1 while a sequence or stutter plays (smoothed): the reverb hears only that
 

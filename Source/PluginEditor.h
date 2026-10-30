@@ -73,6 +73,22 @@ private:
     bool pressed = false;
 };
 
+// A rotary knob that repaints when it is grabbed or let go, so the look-and-feel can draw it bigger while it is held.
+class KnobSlider : public juce::Slider
+{
+public:
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDown(e);
+        repaint();
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseUp(e);
+        repaint();
+    }
+};
+
 class PatternPanel;
 class SamplePanel;
 
@@ -97,7 +113,7 @@ private:
 
     struct Knob
     {
-        juce::Slider front, step;
+        KnobSlider front, step;
         std::unique_ptr<APVTS::SliderAttachment> frontAttachment, stepAttachment;
         const char* label = "";
     };
@@ -122,19 +138,19 @@ private:
     std::array<Knob, kKnobs> knobs;
 
     // global panel
-    juce::Slider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;
+    KnobSlider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;
     std::unique_ptr<APVTS::SliderAttachment> tempoAtt, inAtt, mixAtt, outAtt, trigAtt;
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ComboBox headroomBox, stutterLenBox;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
-    juce::Slider reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
+    KnobSlider reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
     std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
     juce::ComboBox reverbTypeBox;
 
     // distortion on the sequenced sound: drive, tone and level, an on switch and a "reverb too" switch
-    juce::Slider distDriveSlider, distToneSlider, distLevelSlider;
+    KnobSlider distDriveSlider, distToneSlider, distLevelSlider;
     std::unique_ptr<APVTS::SliderAttachment> distDriveAtt, distToneAtt, distLevelAtt;
     juce::ToggleButton distOnButton { "ON" }, distReverbButton { "REVERB TOO" };
     juce::ComboBox distTypeBox; // overdrive or fuzz

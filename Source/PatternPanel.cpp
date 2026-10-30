@@ -6,13 +6,26 @@ using namespace pedalstyle;
 
 namespace
 {
-// The 16 cells sit in four groups of four (one per beat).
-constexpr int kCellX = 12, kCellW = 23, kCellGap = 3, kGroupGap = 5, kCellY = 52, kCellH = 28;
-constexpr int kLabelY = 83, kLabelH = 14;
-constexpr int kRowY = 20, kRowH = 24;
+constexpr float kGridX = 12.0f, kGridWidth = 432.0f, kCellGap = 3.0f, kGroupGap = 6.0f, kMaxCellWidth = 23.0f;
+constexpr int kCellY = 84, kCellH = 28;
+constexpr int kLabelY = 115, kLabelH = 14;
+constexpr int kRowY = 20, kRowH = 24, kSignatureY = 50;
+
+// What is written under a step: the beat number is a button of its own; the others are the counting syllables.
+const char* syllable(int groupSize, int offset)
+{
+    static const char* four[4] = { "", "e", "&", "a" };
+    static const char* six[6] = { "", "", "la", "", "li", "" };
+    static const char* eight[8] = { "", "", "e", "", "&", "", "a", "" };
+    if (groupSize == 4)
+        return four[offset];
+    if (groupSize == 6)
+        return six[offset];
+    return eight[offset % 8];
+}
 } // namespace
 
-PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : beat(p.getDrumBeat()), laf(lookAndFeel)
+PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), beat(p.getDrumBeat()), laf(lookAndFeel)
 {
     setSize(kWidth, kHeight);
 
@@ -31,20 +44,38 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
     };
     addAndMakeVisible(actionBox);
 
-    clearButton.onClick = [this] { setSteps(patternPreset(0)); };
-    beatsButton.onClick = [this] { setSteps(patternPreset(1)); };
-    offbeatsButton.onClick = [this] { setSteps(patternPreset(2)); };
-    backbeatButton.onClick = [this] { setSteps(patternPreset(3)); };
+    for (int i = 0; i < kNumTimeSignatures; ++i)
+        signatureBox.addItem(timeSignature(i).name, i + 1);
+    signatureBox.setLookAndFeel(&laf);
+    signatureBox.onChange = [this]
+    {
+        if (updatingControls)
+            return;
+        auto current = beat.getPattern();
+        current.signature = jlimit(0, kNumTimeSignatures - 1, signatureBox.getSelectedId() - 1);
+        beat.setPattern(current);
+        pattern = current;
+        layoutGrid();
+        repaint();
+    };
+    addAndMakeVisible(signatureBox);
+
+    clearButton.onClick = [this] { setSteps(patternPreset(0, pattern.signature)); };
+    beatsButton.onClick = [this] { setSteps(patternPreset(1, pattern.signature)); };
+    offbeatsButton.onClick = [this] { setSteps(patternPreset(2, pattern.signature)); };
+    backbeatButton.onClick = [this] { setSteps(patternPreset(3, pattern.signature)); };
     randomButton.onClick = [this] { randomise(); };
     for (auto* b : { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
         addAndMakeVisible(*b);
 
     actionBox.setTooltip("PATTERN ACTION: what the pattern does at each lit step: restart the sequence, move it one step, "
                          "fire the stutter, or both. Off = the pattern does nothing.");
+    signatureBox.setTooltip("TIME SIGNATURE: the shape of the bar. The grid below follows it: one cell per sixteenth note, grouped into beats. "
+                            "The pattern repeats every bar, at the tempo of the TEMPO knob (or your DAW's, with SYNC on).");
     clearButton.setTooltip("CLEAR: switch every step of the pattern off.");
-    beatsButton.setTooltip("BEATS: light the first step of every beat (1 2 3 4).");
-    offbeatsButton.setTooltip("OFFBEATS: light the 'and' between the beats (1 & 2 & 3 & 4 &).");
-    backbeatButton.setTooltip("BACKBEAT: light beats 2 and 4.");
+    beatsButton.setTooltip("BEATS: light the first step of every beat.");
+    offbeatsButton.setTooltip("OFFBEATS: light the 'and' in the middle of every beat.");
+    backbeatButton.setTooltip("BACKBEAT: light every second beat (2 and 4 in 4/4).");
     randomButton.setTooltip("RANDOM: make a new random pattern. Only the beats you have chosen (the numbers under the steps) change; "
                             "press it again for another one.");
     refresh();
@@ -53,6 +84,7 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
 PatternPanel::~PatternPanel()
 {
     actionBox.setLookAndFeel(nullptr);
+    signatureBox.setLookAndFeel(nullptr);
 }
 
 void PatternPanel::resized()
@@ -64,32 +96,50 @@ void PatternPanel::resized()
         b->setBounds(x, kRowY, 62, kRowH);
         x += 64;
     }
+    signatureBox.setBounds(112, kSignatureY, 72, 22);
 }
 
-Rectangle<float> PatternPanel::cell(int step) const
+// One cell per sixteenth note of the bar, grouped into the beats of the time signature, as wide as the room allows.
+void PatternPanel::layoutGrid()
 {
-    return { (float) (kCellX + step * (kCellW + kCellGap) + (step / 4) * kGroupGap), (float) kCellY, (float) kCellW, (float) kCellH };
-}
-
-Rectangle<float> PatternPanel::beatLabel(int beatIndex) const
-{
-    const auto first = cell(beatIndex * 4); // under the first step of the beat; the other three show e & a
-    return { first.getX(), (float) kLabelY, first.getWidth(), (float) kLabelH };
+    const auto& ts = timeSignature(pattern.signature);
+    shownSignature = pattern.signature;
+    const int n = ts.totalSteps;
+    const float width = jmin(kMaxCellWidth, (kGridWidth - (float) (n - ts.numGroups) * kCellGap - (float) (ts.numGroups - 1) * kGroupGap) / (float) n);
+    float x = kGridX;
+    int step = 0;
+    for (auto& c : cells)
+        c = {};
+    for (auto& l : beatLabels)
+        l = {};
+    for (int g = 0; g < ts.numGroups; ++g)
+    {
+        const int size = ts.groupSteps[(size_t) g];
+        const float groupStart = x;
+        for (int s = 0; s < size; ++s, ++step)
+        {
+            cells[(size_t) step] = { x, (float) kCellY, width, (float) kCellH };
+            x += width + (s + 1 < size ? kCellGap : 0.0f);
+        }
+        beatLabels[(size_t) g] = { groupStart - 1.0f, (float) kLabelY, jmax(width, 18.0f) + 2.0f, (float) kLabelH };
+        x += kGroupGap;
+    }
 }
 
 int PatternPanel::cellAt(Point<float> p) const
 {
-    for (int i = 0; i < kPatternSteps; ++i)
-        if (cell(i).expanded((float) kCellGap * 0.5f, 4.0f).contains(p))
+    const int n = timeSignature(pattern.signature).totalSteps;
+    for (int i = 0; i < n; ++i)
+        if (cells[(size_t) i].expanded(kCellGap * 0.5f, 4.0f).contains(p))
             return i;
     return -1;
 }
 
 int PatternPanel::beatLabelAt(Point<float> p) const
 {
-    for (int b = 0; b < 4; ++b)
-        if (beatLabel(b).contains(p))
-            return b;
+    for (int g = 0; g < timeSignature(pattern.signature).numGroups; ++g)
+        if (beatLabels[(size_t) g].contains(p))
+            return g;
     return -1;
 }
 
@@ -104,7 +154,7 @@ void PatternPanel::setSteps(std::uint32_t steps)
 void PatternPanel::randomise()
 {
     pattern = beat.getPattern();
-    pattern.steps = patternRandom(pattern.steps, pattern.randomBeats, (uint32_t) Random::getSystemRandom().nextInt());
+    pattern.steps = patternRandom(pattern.steps, pattern.randomBeats, (uint32_t) Random::getSystemRandom().nextInt(), pattern.signature);
     beat.setPattern(pattern);
     repaint();
 }
@@ -117,11 +167,11 @@ void PatternPanel::mouseDown(const MouseEvent& e)
         setSteps(pattern.steps ^ (1u << step)); // click a step to switch it on or off
         return;
     }
-    const int b = beatLabelAt(e.position);
-    if (b >= 0)
+    const int g = beatLabelAt(e.position);
+    if (g >= 0)
     {
         pattern = beat.getPattern();
-        pattern.randomBeats ^= 1u << b; // click a beat number to let RANDOM change it or leave it alone
+        pattern.randomBeats ^= 1u << g; // click a beat number to let RANDOM change it or leave it alone
         beat.setPattern(pattern);
         repaint();
     }
@@ -131,7 +181,7 @@ String PatternPanel::getTooltip()
 {
     const auto p = getMouseXYRelative().toFloat();
     if (cellAt(p) >= 0)
-        return "Click a step to switch it on or off. The pattern repeats every bar of the beat and fires at the lit steps.";
+        return "Click a step to switch it on or off. The bright outline is the step the bar is at right now. The pattern repeats every bar.";
     if (beatLabelAt(p) >= 0)
         return "Click a beat number to include it in RANDOM (lit) or keep it as it is (dim).";
     return {};
@@ -139,19 +189,23 @@ String PatternPanel::getTooltip()
 
 void PatternPanel::refresh()
 {
-    if (beat.getGeneration() != model.generation || !model.loaded)
-        model = beat.getModel();
     pattern = beat.getPattern();
-    if (actionBox.getSelectedId() != (int) pattern.action + 1)
+    if (pattern.signature != shownSignature)
+        layoutGrid();
+    if (actionBox.getSelectedId() != (int) pattern.action + 1 || signatureBox.getSelectedId() != pattern.signature + 1)
     {
         const ScopedValueSetter<bool> guard(updatingControls, true);
         actionBox.setSelectedId((int) pattern.action + 1, dontSendNotification);
+        signatureBox.setSelectedId(pattern.signature + 1, dontSendNotification);
     }
     repaint();
 }
 
 void PatternPanel::paint(Graphics& g)
 {
+    if (pattern.signature != shownSignature)
+        layoutGrid();
+
     const auto bounds = getLocalBounds();
     g.setColour(panel);
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
@@ -161,61 +215,63 @@ void PatternPanel::paint(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("BEAT PATTERN", 14, 4, 200, 12, Justification::left);
 
-    const int64_t numSteps = patternNumSteps(model.durationSeconds, model.tempoBpm);
+    const auto& ts = timeSignature(pattern.signature);
     const bool active = pattern.action != DrumAction::Off;
 
     String text;
     Colour textColour = inkDim;
-    if (!model.loaded)
-        text = "Load a beat first: the pattern follows its tempo";
-    else if (numSteps == 0)
-        text = "The beat's tempo is not known yet";
-    else if (!active)
+    if (!active)
     {
         text = "Choose what the pattern does";
         textColour = accent;
     }
     else
-        text = String(model.tempoBpm, 1) + " BPM, one bar = 16 steps";
+        text = String(proc.getEffectiveBpm(), 1) + " BPM, " + ts.name + ", one bar = " + String(ts.totalSteps) + " steps";
     g.setColour(textColour);
     g.setFont(plain(10.0f));
     g.drawText(text, 130, 4, kWidth - 144, 12, Justification::centredRight, true);
 
-    // The step the beat is at, so you can see the pattern go by.
-    int playing = -1;
-    if (numSteps > 0 && beat.isPlaying() && beat.getPlayingGeneration() == model.generation)
-    {
-        const double stepSeconds = model.durationSeconds / (double) numSteps;
-        playing = (int) (std::floor(beat.getPositionSeconds() / stepSeconds)) % kPatternSteps;
-    }
+    g.setColour(inkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("TIME SIGNATURE", 14, kSignatureY, 96, 22, Justification::centredLeft);
 
-    static constexpr const char* sixteenths[4] = { "", "e", "&", "a" };
-    for (int i = 0; i < kPatternSteps; ++i)
+    // The step the bar is at right now (the engine's own clock), so it is easy to see where a step sits in time.
+    const int playing = jlimit(0, ts.totalSteps - 1, proc.getEngine().getPatternStep());
+
+    int step = 0;
+    for (int group = 0; group < ts.numGroups; ++group)
     {
-        const auto c = cell(i);
-        const bool on = ((pattern.steps >> i) & 1u) != 0u;
-        const bool beatStart = i % 4 == 0;
-        g.setColour(on ? (active ? accent : accent.withAlpha(0.35f)) : (beatStart ? Colour(0xff28282d) : Colour(0xff1d1d21)));
-        g.fillRoundedRectangle(c, 4.0f);
-        g.setColour(Colour(0xff0a0a0c));
-        g.drawRoundedRectangle(c.reduced(0.5f), 4.0f, 1.0f);
-        if (i == playing)
+        const int size = ts.groupSteps[(size_t) group];
+        for (int s = 0; s < size; ++s, ++step)
         {
-            g.setColour(ink);
-            g.drawRoundedRectangle(c.expanded(1.5f), 5.0f, 1.6f);
-        }
-        if (!beatStart)
-        {
-            g.setColour(inkDim);
-            g.setFont(plain(9.5f));
-            g.drawText(sixteenths[i % 4], (int) c.getX() - 3, (int) c.getBottom() + 3, (int) c.getWidth() + 6, 12, Justification::centred);
+            const auto c = cells[(size_t) step];
+            const bool on = ((pattern.steps >> step) & 1u) != 0u;
+            const bool current = step == playing;
+            Colour fill = on ? (active ? accent : accent.withAlpha(0.35f)) : (s == 0 ? Colour(0xff28282d) : Colour(0xff1d1d21));
+            if (current)
+                fill = on ? fill.brighter(0.5f) : Colour(0xff4a4a52);
+            g.setColour(fill);
+            g.fillRoundedRectangle(c, 4.0f);
+            g.setColour(Colour(0xff0a0a0c));
+            g.drawRoundedRectangle(c.reduced(0.5f), 4.0f, 1.0f);
+            if (current)
+            {
+                g.setColour(ink);
+                g.drawRoundedRectangle(c.expanded(1.5f), 5.0f, 2.0f);
+            }
+            if (s > 0)
+            {
+                g.setColour(inkDim);
+                g.setFont(plain(9.5f));
+                g.drawText(syllable(size, s), (int) c.getX() - 3, kLabelY, (int) c.getWidth() + 6, kLabelH, Justification::centred);
+            }
         }
     }
 
     // Beat numbers double as the RANDOM switches: lit = RANDOM may change this beat.
-    for (int b = 0; b < 4; ++b)
+    for (int b = 0; b < ts.numGroups; ++b)
     {
-        const auto r = beatLabel(b);
+        const auto r = beatLabels[(size_t) b];
         const bool included = ((pattern.randomBeats >> b) & 1u) != 0u;
         g.setColour(included ? accent.withAlpha(0.22f) : Colour(0xff1d1d21));
         g.fillRoundedRectangle(r.reduced(0.0f, 0.5f), 4.0f);

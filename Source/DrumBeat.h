@@ -110,8 +110,6 @@ private:
         std::vector<bitvibe::DrumHit> hits;
         std::vector<int64_t> samples; // each hit's position in the loop at sampleRate
         int64_t loopLength = 0;
-        int64_t numSteps = 0;     // sixteenth-note steps in the loop (0 = tempo unknown, so no pattern)
-        double stepSamples = 0.0; // length of one step
         double sampleRate = 48000.0;
         int generation = 0;
         HitData* nextRetired = nullptr;
@@ -167,7 +165,8 @@ private:
     std::array<std::atomic<float>, bitvibe::kNumDrums> minLevels, minConfidences;
     std::atomic<int> patternAction { 0 };
     std::atomic<uint32_t> patternSteps { 0 };
-    std::atomic<uint32_t> patternRandomBeats { 0xF };
+    std::atomic<uint32_t> patternRandomBeats { 0x1F };
+    std::atomic<int> patternSignature { 0 };
 
     HandOver<HitData> hitSlot;
     HandOver<AudioData> audioSlot;

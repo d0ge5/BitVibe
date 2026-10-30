@@ -987,7 +987,7 @@ void testBeatPatternProcessor()
     for (int d = 0; d < bitvibe::kNumDrums; ++d)
         beat.setSettings((Drum) d, { DrumAction::Off, -12.0f, 0.3f });
     const auto model = beat.getModel();
-    const double barSeconds = 240.0 / model.tempoBpm; // four beats
+    const double barSeconds = 1.0; // a bar of 4/4 at the 240 BPM that drumProcessor() sets: 16 steps of 62.5 ms
 
     auto expectedBars = [&](double seconds, double every)
     {
@@ -1014,15 +1014,21 @@ void testBeatPatternProcessor()
     r = runDrums(*p, model.durationSeconds);
     check(r.restarts.empty(), "pattern action Off: nothing triggers");
 
-    // Halving the tempo estimate halves the number of steps in the loop, so the same steps come twice as far apart.
+    // The tempo knob moves the grid, and the time signature changes the length of the bar.
     beat.setPattern({ DrumAction::RestartSequence, 0x0001u });
-    beat.setTempoEstimate(model.tempoBpm * 2.0);
-    beat.waitUntilIdle(30000);
+    setValue(*p, ids::tempo, 120.0f);
     r = runDrums(*p, model.durationSeconds);
-    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, barSeconds / 2.0)),
-          "tempo estimate x2: the grid follows (" + String((int) r.restarts.size()) + " restarts)");
-    beat.setTempoEstimate(model.tempoBpm);
-    beat.waitUntilIdle(30000);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, 2.0)),
+          "tempo 120: the bar is 2 s (" + String((int) r.restarts.size()) + " restarts)");
+    setValue(*p, ids::tempo, 240.0f);
+    beat.setPattern({ DrumAction::RestartSequence, 0x0001u, 0x1Fu, 1 }); // 3/4
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, 0.75)),
+          "3/4: the bar is three beats, 0.75 s (" + String((int) r.restarts.size()) + " restarts)");
+    beat.setPattern({ DrumAction::RestartSequence, 0x0001u, 0x1Fu, 6 }); // 12/8
+    r = runDrums(*p, model.durationSeconds);
+    check(restartsMatch(r.restarts, expectedBars(model.durationSeconds, 1.5)),
+          "12/8: the bar is 24 steps, 1.5 s (" + String((int) r.restarts.size()) + " restarts)");
 
     // Hits and the pattern together: kicks still restart, and the pattern adds its own.
     beat.setSettings(Drum::Kick, { DrumAction::RestartSequence, -12.0f, 0.3f });
@@ -1033,14 +1039,15 @@ void testBeatPatternProcessor()
     setValue(*p, ids::stutter, 0.0f);
 
     // State round trip, and an old state without a pattern.
-    beat.setPattern({ DrumAction::NextStep, 0x2492u });
+    beat.setPattern({ DrumAction::NextStep, 0x2492u, 0x15u, 6 });
     MemoryBlock state;
     p->getStateInformation(state);
     auto q = makeProcessor();
     q->setStateInformation(state.getData(), (int) state.getSize());
     q->getDrumBeat().waitUntilIdle(30000);
     const auto got = q->getDrumBeat().getPattern();
-    check(got.action == DrumAction::NextStep && got.steps == 0x2492u, "the pattern is saved with the project");
+    check(got.action == DrumAction::NextStep && got.steps == 0x2492u && got.signature == 6 && got.randomBeats == 0x15u,
+          "the pattern, its time signature and the beats RANDOM may change are saved with the project");
 
     auto old = makeProcessor();
     old->getDrumBeat().setPattern({ DrumAction::Stutter, 0xFFFFu });

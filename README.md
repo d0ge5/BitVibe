@@ -35,7 +35,7 @@ in the hands of more people for free.
   tom hits, and each drum can restart the sequence, step it or fire the stutter when it hits hard enough. A
   live feed shows the hits and what they trigger, and the beat can play on a separate **Beat Monitor** output
   so it stays out of your main signal. A **beat pattern** can also trigger on chosen steps of the bar,
-  whatever the drums do. An optional neural transcriber (ADTOF) gives the best accuracy.
+  whatever the drums do (and with no drums at all). An optional neural transcriber (ADTOF) gives the best accuracy.
 - **Expression morph:** store two complete sets of knobs (including the six step knobs), "toe up" and
   "toe down", and sweep smoothly between them with one automatable **Expression** parameter.
 - **16 preset slots**, each a full sound including its two morph sets, with names you can edit, shown in
@@ -217,7 +217,7 @@ through *skip* / *mute* if a set puts that step at the very end of the knob).
 
 > **Currently switched off:** the DRUMS tab is hidden in this version while it is reworked. The drum map, beat playback
 > and analysis described here are still in the code and the tests; the tab comes back by setting `kShowDrumsTab` in
-> `Source/PluginEditor.cpp`. Until then the beat pattern on the pedal page has no beat to follow.
+> `Source/PluginEditor.cpp`. The beat pattern on the pedal page does not need it.
 
 <img src="artifacts/editor_drums.png" align="right" width="300" alt="The DRUMS tab with the demo beat playing">
 
@@ -247,14 +247,16 @@ what each drum does when it hits hard enough.
   dashed Min level line or belong to a drum that is off, crossed ones are excluded. Hits flash as they fire,
   and the six lights show the sequencer's step. **Click** a hit to exclude it (or include it again);
   **right-click** it to move it to another drum or delete it. RE-ANALYSE starts again and discards these edits.
-- **BEAT PATTERN** (bottom of the PEDAL tab, so it is at hand while you play): trigger on *where* you are in
-  the bar instead of on how hard a drum hits. Pick what the pattern does (restart the sequence, next step,
-  stutter, or restart and stutter), then click the 16 sixteenth-note steps of one bar to light the ones that
-  fire; CLEAR, BEATS, OFFBEATS and BACKBEAT fill in common patterns. **RANDOM** makes a new random pattern
-  (the first step of a beat is the likeliest to fire); click the beat numbers 1 to 4 under the steps to choose
-  which beats RANDOM may change, the others keep their steps. The pattern repeats every bar of the loop,
-  stays locked to the beat's tempo (the /2 and x2 buttons move it), and works alongside the drum hits, or
-  alone when the drums are set to Off. A beat has to be loaded (DRUMS tab) for the pattern to have a tempo.
+- **BEAT PATTERN** (in the right-hand column of the PEDAL tab): fire an action on chosen steps of a bar instead of
+  waiting for a pick or a drum. Pick what the pattern does (restart the sequence, next step, stutter, or restart
+  and stutter), choose a **time signature** (4/4, 3/4, 2/4, 6/8, 5/4, 7/8, 12/8, 9/8, 2/2 or 3/8) and click the
+  sixteenth-note steps of the bar to light the ones that fire; the grid follows the signature, with the steps
+  grouped into its beats. The pattern runs from the plug-in's own tempo (the TEMPO knob, or your DAW's tempo and
+  position when SYNC is on, so the bar lines up with the DAW), and the step the bar is at right now is outlined
+  in the grid, so it is easy to see where a step sits in time. CLEAR, BEATS, OFFBEATS and BACKBEAT fill in common
+  patterns for the chosen signature. **RANDOM** makes a new random pattern (the first step of a beat is the
+  likeliest to fire); click the beat numbers under the steps to choose which beats RANDOM may change, the others
+  keep their steps. The pattern works alongside the drum hits, or alone when the drums are set to Off.
 - The beat file, its hits (with your edits), the pattern and the drum settings are saved with your project. If the file
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
   belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
@@ -395,10 +397,10 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 365 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 367 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
 the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 

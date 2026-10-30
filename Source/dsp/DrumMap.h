@@ -191,30 +191,74 @@ struct DrumScheduler
 
 // ---- beat pattern -------------------------------------------------------------------------------------
 //
-// A trigger that does not wait for a drum. It fires at the steps of a one-bar grid of sixteenth notes that
-// the player picks, repeating every bar of the looping beat, whatever the drums are doing and however loud
-// they are. The grid is locked to the loop: the beat's whole beats (see estimateTempo) are divided into four
-// steps each, so it stays in time with the audio for the whole loop.
+// A trigger that does not wait for a drum. The player picks a time signature and lights steps of a one-bar grid
+// of sixteenth notes; the engine fires the pattern's action at every lit step, bar after bar, from the plug-in's
+// own tempo (or the host's position when SYNC is on). Nothing to do with the loudness of what is played.
 
-inline constexpr int kPatternSteps = 16;
-inline constexpr uint32_t kPatternMask = (1u << kPatternSteps) - 1u;
+inline constexpr int kMaxPatternSteps = 24; // the longest bar of the time signatures below (12/8)
+inline constexpr int kPatternSteps = 16;    // a bar of 4/4
+inline constexpr uint32_t kPatternMask = (1u << kMaxPatternSteps) - 1u;
+
+// A time signature as the grid draws it: the bar is split into beats (groups of sixteenth-note steps).
+struct TimeSignature
+{
+    const char* name;
+    int numGroups;
+    std::array<int, 5> groupSteps;
+    int totalSteps;
+};
+
+inline constexpr int kNumTimeSignatures = 10;
+
+// The ten most common signatures. Compound ones (6/8, 12/8, 9/8, 3/8) count dotted-quarter beats of six steps,
+// 7/8 is counted 2 + 2 + 3 eighths, 2/2 has two half-note beats of eight steps.
+inline const TimeSignature& timeSignature(int index)
+{
+    static const std::array<TimeSignature, kNumTimeSignatures> table {{
+        { "4/4", 4, { 4, 4, 4, 4, 0 }, 16 },
+        { "3/4", 3, { 4, 4, 4, 0, 0 }, 12 },
+        { "2/4", 2, { 4, 4, 0, 0, 0 }, 8 },
+        { "6/8", 2, { 6, 6, 0, 0, 0 }, 12 },
+        { "5/4", 5, { 4, 4, 4, 4, 4 }, 20 },
+        { "7/8", 3, { 4, 4, 6, 0, 0 }, 14 },
+        { "12/8", 4, { 6, 6, 6, 6, 0 }, 24 },
+        { "9/8", 3, { 6, 6, 6, 0, 0 }, 18 },
+        { "2/2", 2, { 8, 8, 0, 0, 0 }, 16 },
+        { "3/8", 1, { 6, 0, 0, 0, 0 }, 6 },
+    }};
+    return table[(size_t) std::clamp(index, 0, kNumTimeSignatures - 1)];
+}
 
 struct DrumPattern
 {
     DrumAction action = DrumAction::Off;
-    uint32_t steps = 0; // bit n set = step n of the bar fires (step 0 = the first sixteenth of the bar)
-    uint32_t randomBeats = 0xFu; // which of the four beats RANDOM may change (bit 0 = beat 1); the audio ignores it
+    uint32_t steps = 0;          // bit n set = step n of the bar fires (step 0 = the first sixteenth of the bar)
+    uint32_t randomBeats = 0x1Fu; // which beats RANDOM may change (bit 0 = beat 1); the audio ignores it
+    int signature = 0;           // index into the time signatures
 
-    bool operator==(const DrumPattern& o) const { return action == o.action && steps == o.steps && randomBeats == o.randomBeats; }
+    bool operator==(const DrumPattern& o) const
+    {
+        return action == o.action && steps == o.steps && randomBeats == o.randomBeats && signature == o.signature;
+    }
 };
 
-// RANDOM: a new random pattern inside the chosen beats (beatMask bit b = beat b+1); the other beats keep their
-// steps. The first sixteenth of a beat is the likeliest to fire, then the "and", then the two in-between ones.
-// At least one step in the chosen beats is lit. A beat mask of 0 changes nothing. Pure and portable: the same
-// seed always gives the same pattern.
-inline uint32_t patternRandom(uint32_t steps, uint32_t beatMask, uint32_t seed)
+// Where each beat (group) of a bar starts, and the step in the middle of it (the "and").
+inline int patternGroupStart(const TimeSignature& ts, int group)
 {
-    beatMask &= 0xFu;
+    int start = 0;
+    for (int g = 0; g < group && g < ts.numGroups; ++g)
+        start += ts.groupSteps[(size_t) g];
+    return start;
+}
+
+// RANDOM: a new random pattern inside the chosen beats (beatMask bit b = beat b+1); the other beats keep their
+// steps. The first step of a beat is the likeliest to fire, then the "and" in the middle of it, then the steps in
+// between. At least one step in the chosen beats is lit. A beat mask of 0 changes nothing. Pure and portable: the
+// same seed always gives the same pattern.
+inline uint32_t patternRandom(uint32_t steps, uint32_t beatMask, uint32_t seed, int signature = 0)
+{
+    const auto& ts = timeSignature(signature);
+    beatMask &= (1u << ts.numGroups) - 1u;
     if (beatMask == 0)
         return steps & kPatternMask;
     uint32_t state = seed * 2654435761u + 0x9E3779B9u;
@@ -225,100 +269,54 @@ inline uint32_t patternRandom(uint32_t steps, uint32_t beatMask, uint32_t seed)
         state ^= state << 5;
         return (int) (state % 100u);
     };
-    static constexpr int kChance[4] { 55, 20, 40, 20 }; // percent, for the first..fourth sixteenth of a beat
     uint32_t result = steps & kPatternMask;
     uint32_t lit = 0;
-    for (int beat = 0; beat < 4; ++beat)
+    for (int group = 0; group < ts.numGroups; ++group)
     {
-        if (((beatMask >> beat) & 1u) == 0u)
+        if (((beatMask >> group) & 1u) == 0u)
             continue;
-        result &= ~(0xFu << (beat * 4));
-        for (int s = 0; s < 4; ++s)
-            if (next() < kChance[s])
-                lit |= 1u << (beat * 4 + s);
+        const int size = ts.groupSteps[(size_t) group], start = patternGroupStart(ts, group);
+        for (int s = 0; s < size; ++s)
+            result &= ~(1u << (start + s));
+        for (int s = 0; s < size; ++s)
+        {
+            const int chance = s == 0 ? 55 : (s == size / 2 ? 40 : 20); // percent
+            if (next() < chance)
+                lit |= 1u << (start + s);
+        }
     }
     if (lit == 0) // never leave the chosen beats empty: light the first step of one of them
     {
-        int pick = next() % 4;
+        int pick = next() % ts.numGroups;
         while (((beatMask >> pick) & 1u) == 0u)
-            pick = (pick + 1) % 4;
-        lit = 1u << (pick * 4);
+            pick = (pick + 1) % ts.numGroups;
+        lit = 1u << patternGroupStart(ts, pick);
     }
     return (result | lit) & kPatternMask;
 }
 
-// Ready-made patterns for the buttons next to the grid (0 = clear).
-inline uint32_t patternPreset(int which)
+// Ready-made patterns for the buttons next to the grid (0 = clear): the first step of every beat, the "and" in the
+// middle of every beat, and the backbeat (every second beat: 2 and 4 in 4/4).
+inline uint32_t patternPreset(int which, int signature = 0)
 {
-    switch (which)
+    const auto& ts = timeSignature(signature);
+    uint32_t bits = 0;
+    for (int g = 0; g < ts.numGroups; ++g)
     {
-        case 1: return 0x1111u; // every beat (steps 0, 4, 8, 12)
-        case 2: return 0x4444u; // the "and" of every beat (steps 2, 6, 10, 14)
-        case 3: return 0x1010u; // the backbeat: beats 2 and 4 (steps 4 and 12)
-        default: break;
-    }
-    return 0u;
-}
-
-// Sixteenth-note steps in the whole loop: four per whole beat. 0 when the loop or its tempo is unknown.
-inline int64_t patternNumSteps(double durationSeconds, double tempoBpm)
-{
-    if (!(durationSeconds > 0.0) || !(tempoBpm > 0.0))
-        return 0;
-    const double beats = std::round(durationSeconds * tempoBpm / 60.0);
-    return beats >= 1.0 ? (int64_t) beats * 4 : 0;
-}
-
-struct PatternScheduler
-{
-    // Adds the pattern's trigger events for one block to out, which already holds `written` events sorted by
-    // offset, and keeps the whole list sorted. Stateless like DrumScheduler: position is where in the loop the
-    // block starts. stepSamples is the length of one step (loopLength / numSteps). Returns the new count.
-    static int collect(const DrumPattern& pattern, double stepSamples, int64_t numSteps, int64_t loopLength,
-                       int64_t position, int numSamples, TriggerEvent* out, int maxEvents, int written)
-    {
-        if (pattern.action == DrumAction::Off || (pattern.steps & kPatternMask) == 0 || !(stepSamples > 0.0)
-            || numSteps <= 0 || loopLength <= 0 || numSamples <= 0)
-            return written;
-
-        const TriggerAction action = toTriggerAction(pattern.action);
-        int64_t segStart = std::clamp<int64_t>(position, 0, loopLength - 1);
-        int64_t remaining = numSamples;
-        int64_t offsetBase = 0;
-        while (remaining > 0)
+        const int start = patternGroupStart(ts, g), size = ts.groupSteps[(size_t) g];
+        switch (which)
         {
-            const int64_t segLength = std::min(remaining, loopLength - segStart);
-            const int64_t segEnd = segStart + segLength;
-            int64_t n = std::max<int64_t>(0, (int64_t) std::floor((double) segStart / stepSamples) - 1);
-            for (; n < numSteps; ++n)
-            {
-                const int64_t at = (int64_t) std::llround((double) n * stepSamples);
-                if (at >= segEnd)
-                    break;
-                if (at < segStart || ((pattern.steps >> (n % kPatternSteps)) & 1u) == 0u)
-                    continue;
-                if (written < maxEvents)
-                    out[written++] = { (int) (offsetBase + (at - segStart)), action };
-            }
-            remaining -= segLength;
-            offsetBase += segLength;
-            segStart = 0;
+            case 1: bits |= 1u << start; break;
+            case 2: bits |= 1u << (start + size / 2); break;
+            case 3:
+                if (g % 2 == 1 || ts.numGroups == 1)
+                    bits |= 1u << start;
+                break;
+            default: break;
         }
-
-        for (int i = 1; i < written; ++i) // stable insertion sort: the list is short
-        {
-            const TriggerEvent e = out[i];
-            int j = i - 1;
-            while (j >= 0 && out[j].offset > e.offset)
-            {
-                out[j + 1] = out[j];
-                --j;
-            }
-            out[j + 1] = e;
-        }
-        return written;
     }
-};
+    return bits;
+}
 
 // Tempo of a drum loop from its hits: an autocorrelation of the onset train with a mild preference for
 // 120 BPM, then snapped to a whole number of beats over the loop when that is close (loops are usually
