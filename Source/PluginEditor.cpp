@@ -12,6 +12,7 @@ namespace
 constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480;
+constexpr bool kShowDrumsTab = false;
 // The window is taller on the pedal page (reverb and beat pattern panels below the global panel) than on DRUMS.
 constexpr int kDrumsHeight = kTabsH + 736 + kFaceDy, kPedalHeight = kTabsH + kFaceDy + 944 + 12;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
@@ -452,8 +453,13 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     pedalTab.setTooltip("PEDAL: the knobs, footswitches, presets and the expression morph.");
     drumsTab.setTooltip("DRUMS: load a drum beat and let its kick, snare, hi-hat, cymbal and tom hits trigger the sequencer and the stutter.");
     pedalTab.lit = true;
-    addAndMakeVisible(pedalTab);
-    addAndMakeVisible(drumsTab);
+    // The DRUMS tab is switched off for now (the drum map and beat playback underneath are all still there):
+    // set kShowDrumsTab to bring the tab strip back.
+    if (kShowDrumsTab)
+    {
+        addAndMakeVisible(pedalTab);
+        addAndMakeVisible(drumsTab);
+    }
     drumPage = std::make_unique<DrumPage>(proc, laf);
     addChildComponent(*drumPage);
 

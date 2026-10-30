@@ -181,6 +181,10 @@ through *skip* / *mute* if a set puts that step at the very end of the knob).
 
 ### Drum map (DRUMS tab)
 
+> **Currently switched off:** the DRUMS tab is hidden in this version while it is reworked. The drum map, beat playback
+> and analysis described here are still in the code and the tests; the tab comes back by setting `kShowDrumsTab` in
+> `Source/PluginEditor.cpp`. Until then the beat pattern on the pedal page has no beat to follow.
+
 <img src="artifacts/editor_drums.png" align="right" width="300" alt="The DRUMS tab with the demo beat playing">
 
 The **DRUMS** tab lets a drum beat play the sequencer and the stutter, instead of (or as well as) your
