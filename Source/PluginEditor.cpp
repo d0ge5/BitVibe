@@ -3,6 +3,7 @@
 #include "DrumPage.h"
 #include "PatternPanel.h"
 #include "SamplePanel.h"
+#include "UiSettings.h"
 
 using namespace juce;
 
@@ -310,8 +311,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         k.step.getProperties().set("alt", true);
         k.frontAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, frontIds[i], k.front);
         k.stepAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::step(i), k.step);
-        addAndMakeVisible(k.front);
-        addChildComponent(k.step);
+        content.addAndMakeVisible(k.front);
+        content.addChildComponent(k.step);
     }
 
     // global panel
@@ -323,7 +324,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         s.setMouseDragSensitivity(180);
         s.setLookAndFeel(&laf);
         att = std::make_unique<APVTS::SliderAttachment>(proc.apvts, id, s);
-        addAndMakeVisible(s);
+        content.addAndMakeVisible(s);
     };
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
@@ -340,12 +341,12 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     for (auto* b : { &distOnButton, &distReverbButton })
     {
         b->setLookAndFeel(&laf);
-        addAndMakeVisible(*b);
+        content.addAndMakeVisible(*b);
     }
     if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::distType)))
         distTypeBox.addItemList(choice->choices, 1);
     distTypeBox.setLookAndFeel(&laf);
-    addAndMakeVisible(distTypeBox);
+    content.addAndMakeVisible(distTypeBox);
     distTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::distType, distTypeBox);
     distOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distOn, distOnButton);
     distReverbAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distReverb, distReverbButton);
@@ -353,17 +354,17 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::reverbType)))
         reverbTypeBox.addItemList(choice->choices, 1);
     reverbTypeBox.setLookAndFeel(&laf);
-    addAndMakeVisible(reverbTypeBox);
+    content.addAndMakeVisible(reverbTypeBox);
     reverbTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::reverbType, reverbTypeBox);
     samplePanel = std::make_unique<SamplePanel>(proc, laf);
-    addAndMakeVisible(*samplePanel);
+    content.addAndMakeVisible(*samplePanel);
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
-    addAndMakeVisible(*patternPanel);
+    content.addAndMakeVisible(*patternPanel);
 
     for (auto* b : { &syncButton, &holdButton, &fxTrigButton })
     {
         b->setLookAndFeel(&laf);
-        addAndMakeVisible(*b);
+        content.addAndMakeVisible(*b);
     }
     syncAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::tempoSync, syncButton);
     holdAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::hold, holdButton);
@@ -374,7 +375,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(id)))
             box.addItemList(choice->choices, 1);
         box.setLookAndFeel(&laf);
-        addAndMakeVisible(box);
+        content.addAndMakeVisible(box);
     };
     fillCombo(headroomBox, ids::headroom);
     fillCombo(stutterLenBox, ids::stutterLen);
@@ -408,16 +409,16 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     };
 
     altButton.onClick = [this] { setAltLayer(!altLayer); };
-    typeButton.onClick = [this]
-    {
-        const int next = (roundToInt(rawValue(ids::seqType)) + 1) % 3;
-        typeParam.setValueAsCompleteGesture((float) next);
-    };
+    typePitchButton.onClick = [this] { typeParam.setValueAsCompleteGesture(0.0f); showSeqType(); };
+    typeFilterButton.onClick = [this] { typeParam.setValueAsCompleteGesture(1.0f); showSeqType(); };
+    typeRateButton.onClick = [this] { typeParam.setValueAsCompleteGesture(2.0f); showSeqType(); };
 
-    addAndMakeVisible(bypassSwitch);
-    addAndMakeVisible(tapSwitch);
-    addAndMakeVisible(altButton);
-    addAndMakeVisible(typeButton);
+    content.addAndMakeVisible(bypassSwitch);
+    content.addAndMakeVisible(tapSwitch);
+    content.addAndMakeVisible(altButton);
+    for (auto* b : { &typePitchButton, &typeFilterButton, &typeRateButton })
+        content.addAndMakeVisible(*b);
+    showSeqType();
 
     // preset bar: previous / next slot, the name (double-click to rename) and SAVE
     // the tempo read-out in the middle of the pedal: click it and type a BPM (Enter to set, Esc to cancel)
@@ -433,7 +434,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);
     };
     tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);
-    addAndMakeVisible(tempoLabel);
+    content.addAndMakeVisible(tempoLabel);
 
     presetLabel.setLookAndFeel(&laf);
     presetLabel.setFont(bold(13.5f));
@@ -452,8 +453,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         flashSaveUntil = Time::getMillisecondCounterHiRes() + 500.0;
     };
     for (auto* b : { &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton })
-        addAndMakeVisible(*b);
-    addAndMakeVisible(presetLabel);
+        content.addAndMakeVisible(*b);
+    content.addAndMakeVisible(presetLabel);
 
     // expression morph strip: capture the two sets, sweep between them, switch the morph on
     setUpButton.onClick = [this]
@@ -470,16 +471,16 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     expressionSlider.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
     expressionSlider.setLookAndFeel(&laf);
     expressionAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::expression, expressionSlider);
-    addAndMakeVisible(expressionSlider);
+    content.addAndMakeVisible(expressionSlider);
     morphButton.setLookAndFeel(&laf);
     morphAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::morph, morphButton);
-    addAndMakeVisible(morphButton);
+    content.addAndMakeVisible(morphButton);
     refreshPresetName();
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
                         &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -497,13 +498,22 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     // set kShowDrumsTab to bring the tab strip back.
     if (kShowDrumsTab)
     {
-        addAndMakeVisible(pedalTab);
-        addAndMakeVisible(drumsTab);
+        content.addAndMakeVisible(pedalTab);
+        content.addAndMakeVisible(drumsTab);
     }
     drumPage = std::make_unique<DrumPage>(proc, laf);
-    addChildComponent(*drumPage);
+    content.addChildComponent(*drumPage);
 
-    setSize(kPedalWidth, kHeight);
+    // The window can be resized (the shape stays): the pane is drawn at its designed size and scaled to fit.
+    addAndMakeVisible(content);
+    content.toBack();
+    baseWidth = kPedalWidth;
+    baseHeight = kHeight;
+    scale = savedScale = uisettings::loadWindowScale();
+    constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
+    setConstrainer(&constrainer);
+    setResizable(true, true);
+    applySize();
     buildBackground();
     startTimerHz(30);
 }
@@ -544,6 +554,19 @@ void BitVibeEditor::configureKnob(Slider& s, int ticks)
     s.getProperties().set("ticks", ticks);
 }
 
+// The button of the sequencer type in use is lit.
+void BitVibeEditor::showSeqType()
+{
+    const int type = roundToInt(rawValue(ids::seqType));
+    const std::array<std::pair<PedalButton*, int>, 3> buttons { { { &typePitchButton, 0 }, { &typeFilterButton, 1 }, { &typeRateButton, 2 } } };
+    for (const auto& [button, index] : buttons)
+        if (button->lit != (type == index))
+        {
+            button->lit = type == index;
+            button->repaint();
+        }
+}
+
 void BitVibeEditor::setAltLayer(bool on)
 {
     altLayer = on;
@@ -565,7 +588,10 @@ void BitVibeEditor::showDrums(bool on)
     if (!on)
         setAltLayer(altLayer); // puts the right layer of knobs back
     drumPage->setVisible(on);
-    setSize(on ? kWidth : kPedalWidth, kHeight);
+    baseWidth = on ? kWidth : kPedalWidth;
+    baseHeight = kHeight;
+    constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
+    applySize();
     pedalTab.lit = !on;
     drumsTab.lit = on;
     pedalTab.repaint();
@@ -677,7 +703,9 @@ void BitVibeEditor::setTooltips()
     bypassSwitch.setTooltip("BYPASS: switches the effect on or off. The red light shows it is on.");
     tapSwitch.setTooltip("TAP: tap to set the tempo. Press and hold to freeze the stutter.");
     altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer.");
-    typeButton.setTooltip("SEQ TYPE: choose what the sequencer changes: pitch, filter or sample rate (shown by the two lights).");
+    typePitchButton.setTooltip("SEQ TYPE: PITCH. The six step knobs set a pitch shift for each step, from -12 to +12 semitones.");
+    typeFilterButton.setTooltip("SEQ TYPE: FILTER. The six step knobs set the filter cutoff of each step, as a percent of the FILTER knob.");
+    typeRateButton.setTooltip("SEQ TYPE: SAMPLE RATE. The six step knobs set the sample rate of each step, as a percent of the SAMPLE knob.");
 
     // global panel
     tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Turn the knob, click the big BPM number to type a tempo, tap, or turn on SYNC.");
@@ -736,8 +764,11 @@ void BitVibeEditor::updateStepTooltips()
 
 void BitVibeEditor::buildBackground()
 {
-    background = Image(Image::ARGB, kPedalWidth, kHeight, true);
+    const auto* display = Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    backgroundScale = jlimit(1.0f, 4.0f, scale * (float) (display != nullptr ? jmax(1.0, display->scale) : 1.0));
+    background = Image(Image::ARGB, roundToInt((float) kPedalWidth * backgroundScale), roundToInt((float) kHeight * backgroundScale), true);
     Graphics g(background);
+    g.addTransform(AffineTransform::scale(backgroundScale));
 
     g.fillAll(Colour(0xff0d0d0f));
     g.setColour(kInkDim);
@@ -801,8 +832,30 @@ void BitVibeEditor::buildBackground()
     g.drawRoundedRectangle(reverb.reduced(0.5f), 10.0f, 1.0f);
 }
 
+void BitVibeEditor::applySize()
+{
+    constrainer.setMinimumSize(roundToInt((float) baseWidth * uisettings::kMinScale), roundToInt((float) baseHeight * uisettings::kMinScale));
+    constrainer.setMaximumSize(roundToInt((float) baseWidth * uisettings::kMaxScale), roundToInt((float) baseHeight * uisettings::kMaxScale));
+    setSize(roundToInt((float) baseWidth * scale), roundToInt((float) baseHeight * scale));
+}
+
 void BitVibeEditor::resized()
 {
+    AudioProcessorEditor::resized(); // keeps the resize corner in place
+
+    // The pane keeps its designed size and is scaled to the window.
+    if (baseWidth > 0)
+    {
+        const float newScale = jlimit(uisettings::kMinScale, uisettings::kMaxScale, (float) getWidth() / (float) baseWidth);
+        if (std::abs(newScale - scale) > 1.0e-4f)
+        {
+            scale = newScale;
+            scaleChangedMs = Time::getMillisecondCounterHiRes();
+        }
+        content.setBounds(0, 0, baseWidth, baseHeight);
+        content.setTransform(AffineTransform::scale((float) getWidth() / (float) baseWidth, (float) getHeight() / (float) baseHeight));
+    }
+
     // header: preset bar and morph strip
     prevButton.setBounds(kPrevBounds);
     nextButton.setBounds(kNextBounds);
@@ -822,7 +875,9 @@ void BitVibeEditor::resized()
         knobs[(size_t) i].step.setBounds(face(knobBounds(i)));
     }
 
-    typeButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 88, 383 })));
+    typePitchButton.setBounds(face({ 18, 371, 50, 22 }));
+    typeFilterButton.setBounds(face({ 71, 371, 50, 22 }));
+    typeRateButton.setBounds(face({ 124, 371, 50, 22 }));
     tempoLabel.setBounds(face(Rectangle<int>(130, 30).withCentre({ 240, 418 })));
     altButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 392, 383 })));
     bypassSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 88, 462 })));
@@ -861,12 +916,13 @@ void BitVibeEditor::resized()
 
     pedalTab.setBounds(12, 8, 96, 24);
     drumsTab.setBounds(114, 8, 96, 24);
-    drumPage->setBounds(0, kTabsH, kWidth, getHeight() - kTabsH);
+    drumPage->setBounds(0, kTabsH, kWidth, baseHeight - kTabsH);
 }
 
-void BitVibeEditor::paint(Graphics& g)
+void BitVibeEditor::paintContent(Graphics& g)
 {
-    g.drawImageAt(background, 0, 0);
+    // The background is drawn at the window's own pixel size, so it stays sharp when the window is made bigger.
+    g.drawImage(background, 0, 0, baseWidth, baseHeight, 0, 0, roundToInt((float) baseWidth * backgroundScale), roundToInt((float) baseHeight * backgroundScale));
     if (drumsShown)
         return; // the DRUMS page paints everything below the tabs
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
@@ -929,14 +985,15 @@ void BitVibeEditor::paint(Graphics& g)
 
     // Footswitch area
     const bool bypassed = rawValue(ids::bypass) > 0.5f;
-    const auto type = seqType();
-    drawLed(g, { 88.0f - 52.0f, 383.0f }, 4.5f, kAccent, type == bitvibe::SeqType::Pitch);
-    drawLed(g, { 88.0f + 52.0f, 383.0f }, 4.5f, kAccent, type == bitvibe::SeqType::Filter);
     drawLed(g, { 88.0f, 410.0f }, 6.0f, kRed, !bypassed);
 
     const bool tapBlink = proc.getEngine().getBeatPhase() < 0.18f;
     drawLed(g, { 392.0f, 410.0f }, 6.0f, kAccent, tapBlink);
     drawLed(g, { 392.0f - 52.0f, 383.0f }, 4.5f, kAccent, altLayer);
+
+    g.setColour(kInkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("SEQ TYPE", Rectangle<int>(18, 354, 156, 14), Justification::centred);
 
     g.setColour(kInk);
     g.setFont(bold(11.0f));
@@ -1036,7 +1093,21 @@ void BitVibeEditor::timerCallback()
         holdParam.setValueAsPartOfGesture(1.0f);
     }
 
+    {
+        const double nowMs = Time::getMillisecondCounterHiRes();
+        const bool settled = scaleChangedMs > 0.0 && nowMs - scaleChangedMs > 400.0;
+        if (settled && std::abs(scale - savedScale) > 1.0e-3f)
+        {
+            savedScale = scale;
+            uisettings::saveWindowScale(scale);
+        }
+        const float wanted = scale * (float) jmax(1.0, Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr
+                                                          ? Desktop::getInstance().getDisplays().getPrimaryDisplay()->scale : 1.0);
+        if (settled && std::abs(wanted - backgroundScale) > 0.02f)
+            buildBackground();
+    }
     refreshPresetName();
+    showSeqType();
     {
         const bool sync = rawValue(ids::tempoSync) > 0.5f;
         if (sync == tempoEditable) // typing a tempo does nothing while the host tempo is followed

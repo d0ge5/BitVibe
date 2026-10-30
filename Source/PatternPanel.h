@@ -34,6 +34,7 @@ private:
     PedalLookAndFeel& laf;
 
     juce::ComboBox actionBox, signatureBox;
+    PedalButton restartButton { "RESTART BAR" };
     PedalButton clearButton { "CLEAR" }, beatsButton { "BEATS" }, offbeatsButton { "OFFBEATS" },
         backbeatButton { "BACKBEAT" }, randomButton { "RANDOM" };
     bitvibe::DrumPattern pattern;

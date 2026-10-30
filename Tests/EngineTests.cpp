@@ -2152,6 +2152,27 @@ void testBeatPattern()
         CHECK(e.getPatternStep() >= 0 && e.getPatternStep() < 6, "a shorter bar wraps the position (%d)", e.getPatternStep());
     }
 
+    // Restart the bar: the clock goes back to the first step at once, and fires it.
+    {
+        Params p = pattern(0x0001u, 16);
+        p.seqPlay = 1;
+        Engine e;
+        e.prepare(kFs);
+        float sample = 0.0f;
+        float* ch = &sample;
+        for (int i = 0; i < 30001; ++i)
+        {
+            sample = 0.0f;
+            e.process(&ch, 1, 1, p);
+        }
+        const int before = e.getPatternStep(), sequenceStep = e.getCurrentStep();
+        e.restartPatternBar();
+        sample = 0.0f;
+        e.process(&ch, 1, 1, p);
+        CHECK(before == 5 && sequenceStep > 0 && e.getPatternStep() == 0 && e.getCurrentStep() == 0,
+              "restart bar: the clock goes from step %d back to step 1 and the sequence restarts (%d -> %d)", before + 1, sequenceStep, e.getCurrentStep());
+    }
+
     // Following the host: at 1 quarter note (4 steps) in, a pattern with step 6 lit (bit 5) fires one step later (6000 samples).
     {
         Params p = pattern(0x0020u, 16);

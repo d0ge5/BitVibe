@@ -98,8 +98,11 @@ public:
     explicit BitVibeEditor(BitVibeProcessor&);
     ~BitVibeEditor() override;
 
-    void paint(juce::Graphics&) override;
     void resized() override;
+
+    // Everything the editor shows lives in this pane, which is drawn at its designed size and scaled to the window,
+    // so the window can be resized freely (the shape stays fixed).
+    juce::Component& getContent() { return content; }
 
     // Swaps the six front-panel knobs for the six sequencer-step knobs (the pedal's Alt layer).
     void setAltLayer(bool on);
@@ -118,6 +121,18 @@ private:
         const char* label = "";
     };
 
+    class Content : public juce::Component
+    {
+    public:
+        explicit Content(BitVibeEditor& o) : owner(o) {}
+        void paint(juce::Graphics& g) override { owner.paintContent(g); }
+
+    private:
+        BitVibeEditor& owner;
+    };
+
+    void paintContent(juce::Graphics&);
+    void applySize(); // the window size for the page that is showing, at the player's scale
     void timerCallback() override;
     void buildBackground();
     void setTooltips();        // plain-language hover text for every control
@@ -130,6 +145,14 @@ private:
     juce::String readoutText(int index) const;
     float rawValue(const char* id) const;
     bitvibe::SeqType seqType() const;
+
+    Content content { *this };
+    juce::ComponentBoundsConstrainer constrainer;
+    int baseWidth = 0, baseHeight = 0;     // the size the page that is showing is designed at
+    float scale = 1.0f;                    // the window size as a multiple of that
+    float savedScale = 1.0f;
+    double scaleChangedMs = 0.0;
+    float backgroundScale = 0.0f;          // the pixel scale the background image was drawn at
 
     BitVibeProcessor& proc;
     PedalLookAndFeel laf;
@@ -163,7 +186,9 @@ private:
 
     // footswitches and buttons
     FootSwitch bypassSwitch, tapSwitch;
-    PedalButton altButton { "ALT" }, typeButton { "SEQ TYPE" };
+    PedalButton altButton { "ALT" };
+    PedalButton typePitchButton { "PITCH" }, typeFilterButton { "FILTER" }, typeRateButton { "SAMPLE" }; // what the sequencer changes
+    void showSeqType();
 
     // preset bar and expression morph strip (the panel above the pedal face)
     juce::Label presetLabel;

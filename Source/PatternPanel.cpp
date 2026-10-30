@@ -65,6 +65,8 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
     offbeatsButton.onClick = [this] { setSteps(patternPreset(2, pattern.signature)); };
     backbeatButton.onClick = [this] { setSteps(patternPreset(3, pattern.signature)); };
     randomButton.onClick = [this] { randomise(); };
+    restartButton.onClick = [this] { proc.getEngine().restartPatternBar(); };
+    addAndMakeVisible(restartButton);
     for (auto* b : { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
         addAndMakeVisible(*b);
 
@@ -72,6 +74,8 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
                          "fire the stutter, or both. Off = the pattern does nothing.");
     signatureBox.setTooltip("TIME SIGNATURE: the shape of the bar. The grid below follows it: one cell per sixteenth note, grouped into beats. "
                             "The pattern repeats every bar, at the tempo of the TEMPO knob (or your DAW's, with SYNC on).");
+    restartButton.setTooltip("RESTART BAR: start the bar again from its first step right now (the pattern then carries on from there). "
+                             "Handy to line the pattern up with what you are playing. Not used while SYNC follows your DAW, which sets the bar itself.");
     clearButton.setTooltip("CLEAR: switch every step of the pattern off.");
     beatsButton.setTooltip("BEATS: light the first step of every beat.");
     offbeatsButton.setTooltip("OFFBEATS: light the 'and' in the middle of every beat.");
@@ -97,6 +101,7 @@ void PatternPanel::resized()
         x += 64;
     }
     signatureBox.setBounds(112, kSignatureY, 72, 22);
+    restartButton.setBounds(332, kSignatureY, 112, 22);
 }
 
 // One cell per sixteenth note of the bar, grouped into the beats of the time signature, as wide as the room allows.

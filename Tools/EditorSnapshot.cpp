@@ -7,6 +7,7 @@
 // Exit code 0 means every check passed.
 
 #include "PluginEditor.h"
+#include "UiSettings.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -553,6 +554,37 @@ void testSoundBanks()
     }
 }
 
+// The window can be resized: the content is scaled to the window, the shape stays, and the size is remembered.
+void testResizing()
+{
+    std::puts("resizable window");
+    auto p = makeProcessor();
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    const int w = ed->getWidth(), h = ed->getHeight();
+    check(w == 948 && h == 872, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(ed->isResizable(), "the editor can be resized");
+
+    ed->setSize(w * 3 / 2, h * 3 / 2);
+    const auto scaleNow = ed->getContent().getTransform().getScaleFactor();
+    check(std::abs(scaleNow - 1.5f) < 0.01f && ed->getContent().getWidth() == w, "at 150% the pane is drawn 1.5 times bigger (scale " + String(scaleNow, 3) + ")");
+    auto big = ed->createComponentSnapshot(ed->getLocalBounds(), true, 1.0f);
+    check(big.getWidth() == w * 3 / 2 && big.getHeight() == h * 3 / 2, "and it renders at the new size");
+    // the content really fills the bigger window: the bottom right of the pedal's global panel is drawn, not empty
+    check(big.getPixelAt(big.getWidth() / 4, big.getHeight() - 40).getBrightness() > 0.04f, "the scaled content reaches the bottom of the window");
+
+    ed->setSize(w / 2, h / 2);
+    check(std::abs(ed->getContent().getTransform().getScaleFactor() - 0.5f) < 0.01f, "and 50% draws it half the size");
+
+    // the remembered size
+    uisettings::saveWindowScale(1.25f);
+    check(std::abs(uisettings::loadWindowScale() - 1.25f) < 1.0e-4f, "the window size is remembered");
+    std::unique_ptr<BitVibeEditor> again(static_cast<BitVibeEditor*>(p->createEditor()));
+    check(std::abs((float) again->getWidth() / (float) w - 1.25f) < 0.01f, "and a new editor opens at it");
+    uisettings::saveWindowScale(5.0f);
+    check(uisettings::loadWindowScale() <= uisettings::kMaxScale, "a remembered size is kept inside the limits");
+    SampleBank::settingsFolder().getChildFile("ui_settings.xml").deleteFile();
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -602,9 +634,10 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     std::puts("hover descriptors");
     int controls = 0, missing = 0, tooLong = 0;
     StringArray stepOneTips;
-    for (int i = 0; i < ed.getNumChildComponents(); ++i)
+    auto& pane = ed.getContent();
+    for (int i = 0; i < pane.getNumChildComponents(); ++i)
     {
-        auto* c = ed.getChildComponent(i);
+        auto* c = pane.getChildComponent(i);
         const bool interactive = dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr
                                  || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<Label*>(c) != nullptr
                                  || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr;
@@ -620,7 +653,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 47 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 47 and 0)");
+    check(controls == 49 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 49 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -632,8 +665,8 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
         // topmost visible child under the point the same way hit-testing would.
         Component* under = nullptr;
-        for (int i = ed.getNumChildComponents(); --i >= 0;)
-            if (auto* c = ed.getChildComponent(i); c->isVisible() && c->getBounds().contains(mixKnob))
+        for (int i = pane.getNumChildComponents(); --i >= 0;)
+            if (auto* c = pane.getChildComponent(i); c->isVisible() && c->getBounds().contains(mixKnob))
             {
                 under = c;
                 break;
@@ -1308,6 +1341,7 @@ int main(int argc, char** argv)
     testReverbParams();
     testSampleBlendParams();
     testSoundBanks();
+    testResizing();
     testDistortionParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

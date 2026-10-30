@@ -84,6 +84,10 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 ## Using it
 
+**The window can be resized**: drag the corner at the bottom right (or let your DAW resize it). The whole plug-in
+scales up or down with its shape fixed, from 60 % to 200 % of its normal size, and the size is remembered for next
+time. Knobs also grow a little while you hold them, so you can see you have a grip on them.
+
 The window has two tabs. **PEDAL** is laid out like a guitar pedal: six knobs, a bypass footswitch, a tap
 footswitch and a sequencer type switch, with a preset and expression-morph strip on top. **DRUMS** holds the
 [drum map](#drum-map-drums-tab).
@@ -99,9 +103,9 @@ footswitch and a sequencer type switch, with a preset and expression-morph strip
 
 - **ALT** swaps the knobs to the six sequencer steps (they turn orange). A step at minimum is
   **skipped**, at maximum it is **muted**.
-- **SEQ TYPE** cycles what the sequencer controls: **Pitch** (each step −12 … +12 semitones, centre =
-  unshifted), **Filter** or **Sample Rate** (each step is 0–100 % of the front-panel value). The two small
-  LEDs show the type; both off means Sample Rate.
+- **SEQ TYPE** (three buttons under the label) chooses what the sequencer controls: **PITCH** (each step
+  −12 … +12 semitones, centre = unshifted), **FILTER** or **SAMPLE** (sample rate: each step is 0–100 % of the
+  front-panel value). The lit button is the one in use.
 - **TAP** sets the tempo. **Hold it** (or use the HOLD button) to freeze the stutter; you can press it
   before playing so the next note is the one that gets frozen.
 - **BYPASS** switches the effect in and out. It is also wired to your host's bypass.
@@ -256,7 +260,8 @@ what each drum does when it hits hard enough.
   in the grid, so it is easy to see where a step sits in time. CLEAR, BEATS, OFFBEATS and BACKBEAT fill in common
   patterns for the chosen signature. **RANDOM** makes a new random pattern (the first step of a beat is the
   likeliest to fire); click the beat numbers under the steps to choose which beats RANDOM may change, the others
-  keep their steps. The pattern works alongside the drum hits, or alone when the drums are set to Off.
+  keep their steps. **RESTART BAR** starts the bar again from its first step right now, which is the way to line the
+  pattern up with what you are playing (not used with SYNC on, where the DAW sets the bar). The pattern works alongside the drum hits, or alone when the drums are set to Off.
 - The beat file, its hits (with your edits), the pattern and the drum settings are saved with your project. If the file
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
   belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
@@ -397,7 +402,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 367 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 368 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

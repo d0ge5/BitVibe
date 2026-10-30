@@ -419,6 +419,10 @@ public:
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
 
+    // Starts the pattern's bar again from its first step, on the next sample (any thread). While the pattern is
+    // following the host the host's position wins and puts the bar back.
+    void restartPatternBar() { patternRestartRequests.fetch_add(1, std::memory_order_release); }
+
 private:
     struct Channel
     {
@@ -468,6 +472,11 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        if (const int requests = patternRestartRequests.load(std::memory_order_acquire); requests != seenPatternRestarts)
+        {
+            seenPatternRestarts = requests;
+            patternFresh = true; // the first step of the bar fires on the next sample
+        }
         blk.patternOn = p.patternOn;
         blk.patternAction = p.patternAction;
         blk.patternSteps = p.patternSteps;
@@ -784,6 +793,8 @@ private:
     double patternPhase = 0.0;
     bool patternFresh = true;
     std::atomic<int> patternStepOut { 0 };
+    std::atomic<int> patternRestartRequests { 0 };
+    int seenPatternRestarts = 0;
     const SampleSet* lastSampleSet = nullptr;
     float reverbSend = 0.0f; // 1 while a sequence or stutter plays (smoothed): the reverb hears only that
 
