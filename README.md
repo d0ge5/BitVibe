@@ -132,8 +132,10 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   filter the reverb only, not your sound (fully left / right = off). It is part of the effect side, so the dry/wet **MIX**
   above still brings back the clean input, and BYPASS switches it off.
 - **SAMPLE BLEND** (panel in the right-hand column) brings a random sound into the sequence: at the start of
-  every sequencer step one sound is picked at random from your list and mixed into the sequenced sound (so the
-  reverb hears it too). **CHOOSE SOUNDS** opens a menu where you tick the sounds the sequencer may pick from
+  every sequencer step one sound is picked at random from your list and fed into the signal before the pitch
+  shifter and the bit-crush, sample-rate and filter stage, so it is shifted by the sequence's pitch steps and
+  crushed along with everything else (and the reverb hears it). The sounds only play while the sequencer is
+  playing and stop when it ends. **CHOOSE SOUNDS** opens a menu where you tick the sounds the sequencer may pick from
   (click as many as you like, click outside to close; *Pick all* and *Pick none* are there too). **MIX** is how
   loud the chosen sound is (fully left = off, the default) and **CHANCE** is how often a step gets one (100% =
   every step). Muted steps stay silent. The sounds are your own audio files (WAV, AIFF, FLAC or OGG, up to 20
@@ -370,7 +372,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 337 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 341 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

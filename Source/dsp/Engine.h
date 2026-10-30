@@ -269,6 +269,9 @@ public:
             const float revMix = reverbMixSm.next(blk.reverbMix);
             const float revTone = reverbToneSm.next(blk.reverbTone);
             const float revLevel = reverbLevelSm.next(blk.reverbLevel);
+            // The random sounds belong to the sequence: they stop when it stops.
+            if (!seqRunning)
+                samplePlayer.release();
             const float sampleSignal = samplePlayer.process() * sampleMixSm.next(blk.sampleMix);
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
@@ -284,7 +287,9 @@ public:
             for (int c = 0; c < nCh; ++c)
             {
                 auto& ch = channels[(size_t) c];
-                float y = ch.stutter.process(x[(size_t) c]);
+                // The sound joins the signal before the pitch shifter and the crush / sample-rate / filter stage, so
+                // it is shifted by the sequence and crushed with everything else.
+                float y = ch.stutter.process(x[(size_t) c]) + sampleSignal;
                 y = ch.pitch.process(y, ratio, pitchAmount);
                 const float beforeFx = y;
 
@@ -302,7 +307,6 @@ public:
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
-                y += sampleSignal; // the random sounds join the sequenced sound (and so get the reverb too)
                 const float reverbOut = ch.reverb.process(y * reverbSend, revSettings);
                 y *= muteGain;
                 y *= invHeadroom;

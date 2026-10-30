@@ -1208,6 +1208,55 @@ void testSampleBlend()
     p.sampleSet = &empty;
     CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "an empty list adds nothing");
 
+    // The sounds belong to the sequence: a long clip is cut when the sequence ends (it would last 20000 samples).
+    {
+        SampleSet longSet;
+        SampleClip c;
+        c.data.assign(40000, 0.3f);
+        c.rate = kFs;
+        longSet.clips.push_back(std::move(c));
+        Params q = sequence();
+        q.sampleMix = 1.0f;
+        q.sampleSet = &longSet;
+        const Signal r = renderWithTrigger(q);
+        const size_t end = 1000 + 6 * 4800;
+        CHECK(std::abs(r[end - 1000]) > 0.25f && std::abs(r[end + 600]) < 1.0e-6f && std::abs(r[end + 5000]) < 1.0e-6f,
+              "the sound stops when the sequence stops (%.3f before, %.3f after)", r[end - 1000], r[end + 600]);
+    }
+
+    // They are crushed with the rest of the sequence: at a low bit depth the sound is no longer its clean level.
+    {
+        Params q = sequence();
+        q.sampleMix = 1.0f;
+        q.sampleSet = &set;
+        q.bits = 0.05f;
+        const Signal r = renderWithTrigger(q);
+        const float v = r[1000 + 500];
+        CHECK(std::abs(v) > 0.05f && std::abs(v - 0.2f) > 0.01f && std::abs(v - 0.4f) > 0.01f, "the sound goes through the bit crusher (%.3f)", v);
+        q.bits = 1.0f;
+        const float clean = renderWithTrigger(q)[1000 + 500];
+        CHECK(std::abs(clean - 0.2f) < 1.0e-3f || std::abs(clean - 0.4f) < 1.0e-3f, "with the crusher off it is clean again (%.3f)", clean);
+    }
+
+    // They are pitch-shifted by the sequence: a step +12 semitones plays the sound an octave up (twice as fast).
+    {
+        SampleSet ramp;
+        SampleClip c;
+        for (int i = 0; i < 4000; ++i)
+            c.data.push_back(0.4f * std::sin(2.0f * 3.14159265f * 400.0f * (float) i / (float) kFs));
+        c.rate = kFs;
+        ramp.clips.push_back(std::move(c));
+        Params q = sequence();
+        q.sampleMix = 1.0f;
+        q.sampleSet = &ramp;
+        const Signal flat = renderWithTrigger(q);
+        q.steps.fill(mapping::pitchStepKnob(12));
+        const Signal up = renderWithTrigger(q);
+        CHECK(tonePower(flat, 0.03, 0.09, 400.0) > 4.0 * tonePower(flat, 0.03, 0.09, 800.0) &&
+                  tonePower(up, 0.03, 0.09, 800.0) > 4.0 * tonePower(up, 0.03, 0.09, 400.0),
+              "the sequence's +12 step moves the sound from 400 Hz up to 800 Hz");
+    }
+
     // A clip at half the engine's rate lasts twice as long.
     SampleSet slow;
     {

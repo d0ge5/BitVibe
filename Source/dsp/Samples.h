@@ -67,6 +67,14 @@ public:
         // Every voice is busy fading out (very fast retriggering): drop this one.
     }
 
+    // Fades out whatever is sounding (the sequence has stopped).
+    void release()
+    {
+        for (auto& v : voices)
+            if (v.clip != nullptr)
+                v.releasing = true;
+    }
+
     // The next output sample, with every sounding clip summed.
     float process()
     {
