@@ -132,6 +132,12 @@ private:
     juce::Slider reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
     std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
     juce::ComboBox reverbTypeBox;
+
+    // distortion on the sequenced sound: drive, tone and level, an on switch and a "reverb too" switch
+    juce::Slider distDriveSlider, distToneSlider, distLevelSlider;
+    std::unique_ptr<APVTS::SliderAttachment> distDriveAtt, distToneAtt, distLevelAtt;
+    juce::ToggleButton distOnButton { "ON" }, distReverbButton { "REVERB TOO" };
+    std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;
     std::unique_ptr<PatternPanel> patternPanel;

@@ -419,6 +419,24 @@ void testSampleBlendParams()
     check(q->getSampleBank().getNumSelected() == library.size(), "a state from before the sample blend picks every sound");
 }
 
+// The distortion parameters reach the engine.
+void testDistortionParams()
+{
+    std::puts("distortion (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f);
+    setValue(*p, ids::tempo, 120.0f);
+    const auto plain = run(*p, in);
+    setValue(*p, ids::distDrive, 1.0f);
+    check(maxDifference(run(*p, in), plain) < 1.0e-6f, "distortion switched off: nothing changes");
+    setValue(*p, ids::distOn, 1.0f);
+    const auto driven = run(*p, in);
+    check(maxDifference(driven, plain) > 0.02f && isFinite(driven), "distortion on: the sequenced sound changes (max diff " + String(maxDifference(driven, plain), 3) + ")");
+    setValue(*p, ids::mix, 0.0f);
+    check(maxDifference(run(*p, in), in) < 1.0e-5f, "dry/wet mix 0 still gives the clean signal");
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -486,7 +504,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 41 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 41 and 0)");
+    check(controls == 46 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 46 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -629,7 +647,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 39, "39 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 44, "44 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1162,6 +1180,7 @@ int main(int argc, char** argv)
     testBeatPatternProcessor();
     testReverbParams();
     testSampleBlendParams();
+    testDistortionParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

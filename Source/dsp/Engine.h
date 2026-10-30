@@ -11,6 +11,7 @@
 // resonance, the stutter snippet length (a note division of the tempo) and the detector design.
 
 #include "Components.h"
+#include "Distortion.h"
 #include "Mapping.h"
 #include "Reverb.h"
 #include "Samples.h"
@@ -82,6 +83,12 @@ struct Params
     float reverbLowCutHz = 20.0f;      // high-pass on the reverb only (20 Hz = off)
     float reverbHighCutHz = 20000.0f;  // low-pass on the reverb only (20 kHz = off)
 
+    // Distortion on the sequenced sound (the sequence, its stutters and the random sounds; never the clean signal):
+    // drive / tone / level, 0..1 each. distReverb also distorts the reverb. Off by default.
+    bool distOn = false;
+    float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
+    bool distReverb = false;
+
     // Sample blend: at the start of every sequencer step (with this chance) one of the picked sounds, chosen at
     // random, is mixed into the sequenced sound at this level. 0 = off (the default). The set is owned by the caller
     // and must stay alive while the engine may play from it (the plug-in keeps the previous set until the next block).
@@ -122,6 +129,11 @@ public:
         for (int c = 0; c < kMaxChannels; ++c)
             channels[(size_t) c].reverb.prepare(fs, c);
         samplePlayer.prepare(fs);
+        for (auto& ch : channels)
+        {
+            ch.dist.prepare(fs);
+            ch.distReverb.prepare(fs);
+        }
 
         srKnobSm.setTime(fs, 10.0f);
         filterKnobSm.setTime(fs, 10.0f);
@@ -139,6 +151,7 @@ public:
         reverbLowSm.setTime(fs, 15.0f);
         reverbHighSm.setTime(fs, 15.0f);
         sampleMixSm.setTime(fs, 15.0f);
+        distOnSm.setTime(fs, 10.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
         fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
 
@@ -157,6 +170,8 @@ public:
             ch.pitch.reset();
             ch.ladder.reset();
             ch.reverb.reset();
+            ch.dist.reset();
+            ch.distReverb.reset();
             ch.held = 0.0f;
         }
         primed = false;
@@ -280,6 +295,9 @@ public:
             // The random sounds belong to the sequence: they stop when it stops.
             if (!seqRunning)
                 samplePlayer.release();
+            const float distAmount = distOnSm.next(blk.distOn ? 1.0f : 0.0f);
+            const bool distRun = blk.distOn || distAmount > 1.0e-4f;
+            const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
             const float sampleSignal = samplePlayer.process() * sampleMixSm.next(blk.sampleMix);
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
@@ -315,7 +333,15 @@ public:
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
-                const float reverbOut = ch.reverb.process(y * reverbSend, revSettings);
+                const float cleanSequence = y; // the reverb hears the sequence before the distortion
+                if (distRun)
+                {
+                    const float distorted = ch.dist.process(y);
+                    y += (distorted - y) * distGate;
+                }
+                float reverbOut = ch.reverb.process(cleanSequence * reverbSend, revSettings);
+                if (distRun && blk.distReverb)
+                    reverbOut += (ch.distReverb.process(reverbOut) - reverbOut) * distAmount;
                 y *= muteGain;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
@@ -357,6 +383,7 @@ private:
         PitchShifter pitch;
         LadderFilter ladder;
         Reverb reverb;
+        Distortion dist, distReverb; // the second one distorts the reverb when the player asks for that
         float held = 0.0f;
     };
 
@@ -371,6 +398,8 @@ private:
         float mix = 1.0f;
         float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f;
         int reverbType = 0;
+        bool distOn = false, distReverb = false;
+        float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
         float sampleMix = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
         int stutterLength = 0;
@@ -390,6 +419,16 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        blk.distOn = p.distOn;
+        blk.distReverb = p.distReverb;
+        blk.distDrive = p.distDrive;
+        blk.distTone = p.distTone;
+        blk.distLevel = p.distLevel;
+        for (auto& ch : channels)
+        {
+            ch.dist.setParams(p.distDrive, p.distTone, p.distLevel);
+            ch.distReverb.setParams(p.distDrive, p.distTone, p.distLevel);
+        }
         blk.sampleMix = sampleGain(p.sampleMix);
         blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);
         blk.sampleSet = p.sampleSet;
@@ -420,6 +459,7 @@ private:
             reverbLowSm.snap(blk.reverbLowCut);
             reverbHighSm.snap(blk.reverbHighCut);
             sampleMixSm.snap(blk.sampleMix);
+            distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             primed = true;
         }
 
@@ -624,7 +664,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, sampleMixSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, sampleMixSm, distOnSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)

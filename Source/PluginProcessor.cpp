@@ -108,6 +108,13 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring" }, 0));
+    // ---- distortion on the sequenced sound (rig settings): drive, tone and level like the classic green pedal ----
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distDrive), "Distortion Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distTone), "Distortion Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distLevel), "Distortion Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::distReverb), "Distort Reverb Too", false));
+
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
@@ -241,6 +248,11 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
     pReverbType = raw(ids::reverbType);
+    pDistOn = raw(ids::distOn);
+    pDistDrive = raw(ids::distDrive);
+    pDistTone = raw(ids::distTone);
+    pDistLevel = raw(ids::distLevel);
+    pDistReverb = raw(ids::distReverb);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
     pReverbLowCut = raw(ids::reverbLowCut);
@@ -348,6 +360,11 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
     p.reverbType = roundToInt(pReverbType->load());
+    p.distOn = pDistOn->load() > 0.5f;
+    p.distDrive = pDistDrive->load();
+    p.distTone = pDistTone->load();
+    p.distLevel = pDistLevel->load();
+    p.distReverb = pDistReverb->load() > 0.5f;
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
     p.sampleSet = sampleBank.beginBlock();

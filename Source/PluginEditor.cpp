@@ -24,7 +24,8 @@ const Rectangle<int> kGlobal { 12, 544, 456, 180 };
 // Second-column panels, in face coordinates (so the first one starts level with the preset header).
 constexpr int kColY = 12 - kFaceDy;
 const Rectangle<int> kReverb { kSideX, kColY, 456, 100 };
-constexpr int kSamplesY = kColY + 108;
+const Rectangle<int> kDist { kSideX, kColY + 108, 456, 100 };
+constexpr int kSamplesY = kColY + 216;
 constexpr int kPatternY = kSamplesY + SamplePanel::kHeight + 8;
 
 // Header rows (window coordinates).
@@ -333,6 +334,16 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(reverbMixSlider, reverbMixAtt, ids::reverbMix);
     smallKnob(reverbLevelSlider, reverbLevelAtt, ids::reverbLevel);
     smallKnob(reverbLowSlider, reverbLowAtt, ids::reverbLowCut);
+    smallKnob(distDriveSlider, distDriveAtt, ids::distDrive);
+    smallKnob(distToneSlider, distToneAtt, ids::distTone);
+    smallKnob(distLevelSlider, distLevelAtt, ids::distLevel);
+    for (auto* b : { &distOnButton, &distReverbButton })
+    {
+        b->setLookAndFeel(&laf);
+        addAndMakeVisible(*b);
+    }
+    distOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distOn, distOnButton);
+    distReverbAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distReverb, distReverbButton);
     smallKnob(reverbHighSlider, reverbHighAtt, ids::reverbHighCut);
     if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::reverbType)))
         reverbTypeBox.addItemList(choice->choices, 1);
@@ -462,7 +473,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, samplePanel.get(), patternPanel.get(),
+                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, samplePanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -500,8 +511,10 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider })
+    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider })
         s->setLookAndFeel(nullptr);
+    distOnButton.setLookAndFeel(nullptr);
+    distReverbButton.setLookAndFeel(nullptr);
     reverbTypeBox.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
@@ -667,6 +680,13 @@ void BitVibeEditor::setTooltips()
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
                                "Your clean signal never gets reverb.");
     reverbLevelSlider.setTooltip("REVERB LEVEL: the volume of the reverb, from -30 dB to +6 dB. Works together with REVERB MIX.");
+    distDriveSlider.setTooltip("DRIVE: how hard the signal is pushed into the clipper. Turn right for more overdrive. "
+                               "The mids and highs are pushed harder than the lows, like the classic green overdrive pedal.");
+    distToneSlider.setTooltip("DISTORTION TONE: a low-pass after the clipper. Turn left for a darker, warmer sound, right for a brighter one.");
+    distLevelSlider.setTooltip("DISTORTION LEVEL: the volume of the distorted sound. About 80% is roughly the level it came in at.");
+    distOnButton.setTooltip("DISTORTION ON: distorts the sequenced and stuttered sound (and the random sounds). "
+                            "Your clean signal is never distorted.");
+    distReverbButton.setTooltip("REVERB TOO: tick this to distort the reverb as well. Unticked, the reverb stays clean.");
     reverbLowSlider.setTooltip("LOW CUT: a high-pass filter on the reverb only. Turn right to remove the low end from the reverb. Fully left = off.");
     reverbHighSlider.setTooltip("HIGH CUT: a low-pass filter on the reverb only. Turn left to remove the highs from the reverb. Fully right = off.");
     reverbTypeBox.setTooltip("REVERB TYPE: Room is short and tight, Hall is big and slow, Spring is the splashy, dripping sound of a spring tank.");
@@ -759,6 +779,12 @@ void BitVibeEditor::buildBackground()
     g.setColour(Colour(0xff2c2c31));
     g.drawRoundedRectangle(glob.reduced(0.5f), 10.0f, 1.0f);
 
+    const auto dist = kDist.toFloat();
+    g.setColour(Colour(0xff17171a));
+    g.fillRoundedRectangle(dist, 10.0f);
+    g.setColour(Colour(0xff2c2c31));
+    g.drawRoundedRectangle(dist.reduced(0.5f), 10.0f, 1.0f);
+
     const auto reverb = kReverb.toFloat();
     g.setColour(Colour(0xff17171a));
     g.fillRoundedRectangle(reverb, 10.0f);
@@ -806,6 +832,13 @@ void BitVibeEditor::resized()
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 4, 100, 22 }));
+
+    // distortion panel: the two switches on the caption row, three knobs below
+    distOnButton.setBounds(face({ kSideX + 266, kDist.getY() + 3, 56, 20 }));
+    distReverbButton.setBounds(face({ kSideX + 328, kDist.getY() + 3, 120, 20 }));
+    const std::array<Slider*, 3> distKnobs { &distDriveSlider, &distToneSlider, &distLevelSlider };
+    for (size_t i = 0; i < distKnobs.size(); ++i)
+        distKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 76 + (int) i * 152, kDist.getY() + 48 })));
     const std::array<Slider*, 5> reverbKnobs { &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
     for (size_t i = 0; i < reverbKnobs.size(); ++i)
         reverbKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kGlobalKnobX0 + kColDx + (int) i * kGlobalKnobDx, kReverb.getY() + 40 })));
@@ -936,6 +969,26 @@ void BitVibeEditor::paint(Graphics& g)
         g.setColour(kInkDim);
         g.setFont(plain(10.5f));
         g.drawText(entries[i].value, Rectangle<int>(100, 13).withCentre({ cx, 633 }), Justification::centred);
+    }
+
+    // Distortion panel labels
+    g.setColour(kInkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("DISTORTION (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 14, kDist.getY() + 4, 250, 12), Justification::left);
+    const std::array<Entry, 3> distEntries {{
+        { "DRIVE", String(roundToInt(rawValue(ids::distDrive) * 100.0f)) + "%" },
+        { "TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%" },
+        { "LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
+    }};
+    for (size_t i = 0; i < distEntries.size(); ++i)
+    {
+        const int cx = kSideX + 76 + (int) i * 152;
+        g.setColour(kInk);
+        g.setFont(bold(11.0f));
+        g.drawText(distEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kDist.getY() + 79 }), Justification::centred);
+        g.setColour(kInkDim);
+        g.setFont(plain(10.5f));
+        g.drawText(distEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, kDist.getY() + 92 }), Justification::centred);
     }
 
     // Reverb panel labels

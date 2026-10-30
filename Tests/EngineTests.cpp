@@ -1277,6 +1277,115 @@ void testSampleBlend()
 }
 
 // ---------------------------------------------------------------------------------------------
+// Distortion (the green-pedal overdrive) on the sequenced sound
+
+// Runs a sine through the distortion and returns the output.
+Signal distort(double hz, float amp, float drive, float tone, float level, double seconds = 0.4)
+{
+    Distortion d;
+    d.prepare(kFs);
+    d.setParams(drive, tone, level);
+    Signal in = sine(hz, seconds, amp), out(in.size());
+    for (size_t i = 0; i < in.size(); ++i)
+        out[i] = d.process(in[i]);
+    return out;
+}
+
+void testDistortion()
+{
+    std::puts("distortion: drive, tone and level (the 808-style mid-hump overdrive), only on the sequenced sound");
+
+    // Silence in, silence out; a loud input stays bounded and finite.
+    {
+        const Signal quiet = distort(440.0, 0.0f, 1.0f, 1.0f, 1.0f);
+        const Signal loud = distort(440.0, 1.0f, 1.0f, 1.0f, 1.0f);
+        double peak = 0.0;
+        bool finite = true;
+        for (float v : loud)
+        {
+            peak = std::max(peak, (double) std::abs(v));
+            finite = finite && std::isfinite(v);
+        }
+        CHECK(rms(quiet, 0.0, 0.4) < 1.0e-9 && finite && peak < 1.5, "silence stays silent, a full-scale sine stays bounded (peak %.2f)", peak);
+    }
+
+    // More drive: more harmonics (the third harmonic of a 1 kHz sine against its fundamental).
+    {
+        auto thirdOverFundamental = [](float drive)
+        {
+            const Signal o = distort(1000.0, 0.2f, drive, 1.0f, 0.8f, 0.5);
+            return tonePower(o, 0.1, 0.5, 3000.0) / std::max(1.0e-18, tonePower(o, 0.1, 0.5, 1000.0));
+        };
+        const double low = thirdOverFundamental(0.0f), high = thirdOverFundamental(1.0f);
+        CHECK(high > 4.0 * low && high > 0.01, "drive adds harmonics (3rd/1st %.4f at 0, %.4f at 1)", low, high);
+    }
+
+    // The mid hump: the lows are not pushed into the clipper as hard as the mids, so a 100 Hz sine is distorted
+    // less than a 1 kHz one of the same size.
+    {
+        auto thirdOverFundamental = [](double hz)
+        {
+            const Signal o = distort(hz, 0.2f, 0.7f, 1.0f, 0.8f, 0.6);
+            return tonePower(o, 0.2, 0.6, 3.0 * hz) / std::max(1.0e-18, tonePower(o, 0.2, 0.6, hz));
+        };
+        const double lows = thirdOverFundamental(100.0), mids = thirdOverFundamental(1000.0);
+        CHECK(mids > 2.5 * lows, "mid hump: a 1 kHz tone is distorted much more than a 100 Hz one (%.4f vs %.4f)", mids, lows);
+    }
+
+    // Tone: a bright setting keeps more of the highs than a dark one (a 5 kHz sine through it).
+    {
+        const double dark = rms(distort(5000.0, 0.05f, 0.2f, 0.0f, 0.8f), 0.2, 0.4), bright = rms(distort(5000.0, 0.05f, 0.2f, 1.0f, 0.8f), 0.2, 0.4);
+        CHECK(bright > 4.0 * dark, "tone: bright keeps the highs, dark takes them away (%.4f vs %.4f)", bright, dark);
+    }
+
+    // Level: -30 dB .. +6 dB, exactly (small input, so the circuit is linear).
+    {
+        const double lo = rms(distort(300.0, 0.002f, 0.0f, 0.5f, 0.0f), 0.2, 0.4), hi = rms(distort(300.0, 0.002f, 0.0f, 0.5f, 1.0f), 0.2, 0.4);
+        CHECK(std::abs(db(hi / lo) - 36.0) < 0.5, "level spans 36 dB (%.2f)", db(hi / lo));
+    }
+
+    // Through the engine: sequenced sound only. Six dry steps played once; the distortion changes the sound while
+    // they play and leaves the clean signal alone before and after.
+    {
+        const Signal in = quietToneWithPick();
+        Params seq = neutral();
+        seq.seqPlay = 1;
+        seq.seqMult = 0;
+        seq.tempoBpm = 600.0f;
+        seq.steps.fill(mapping::pitchStepKnob(0));
+        const Signal plain = render(seq, in);
+        Params dist = seq;
+        dist.distOn = true;
+        dist.distDrive = 1.0f;
+        const Signal with = render(dist, in);
+        CHECK(maxAbsDiff(with, plain, 0.0, 0.09) < 1.0e-6, "before the sequence starts the signal is untouched");
+        CHECK(rmsDiff(with, plain, 0.7, 1.0) > 1.0e-3, "while the sequence plays it is distorted (%g)", rmsDiff(with, plain, 0.7, 1.0));
+        CHECK(maxAbsDiff(with, plain, 1.4, 2.1) < 1.0e-6, "after the sequence the signal is clean again (%g)", maxAbsDiff(with, plain, 1.4, 2.1));
+        Params off = seq;
+        off.distDrive = 1.0f;
+        CHECK(maxAbsDiff(render(off, in), plain) == 0.0, "switched off: nothing changes");
+        Params byp = dist;
+        byp.bypass = true;
+        CHECK(maxAbsDiff(render(byp, in), in) < 1.0e-6, "bypass is clean");
+        Params mixDry = dist;
+        mixDry.mix = 0.0f;
+        CHECK(maxAbsDiff(render(mixDry, in), in) < 1.0e-6, "dry/wet mix 0 brings back the clean input");
+
+        // The reverb: left alone by default, distorted when the player asks for it.
+        Params rev = dist;
+        rev.reverbMix = 1.0f;
+        const Signal cleanReverb = render(rev, in);
+        rev.distReverb = true;
+        const Signal dirtyReverb = render(rev, in);
+        CHECK(rmsDiff(dirtyReverb, cleanReverb, 0.7, 1.0) > 1.0e-4, "the reverb is distorted too when asked (%g)", rmsDiff(dirtyReverb, cleanReverb, 0.7, 1.0));
+        Params plainReverb = seq;
+        plainReverb.reverbMix = 1.0f;
+        const Signal reverbOnly = render(plainReverb, in);
+        CHECK(rmsDiff(cleanReverb, reverbOnly, 1.5, 2.1) < 1.0e-6, "with the reverb box off the reverb tail is not distorted (%g)", rmsDiff(cleanReverb, reverbOnly, 1.5, 2.1));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
 
 // Runs an engine sample by sample (so the step can be read after every sample) and returns the step
@@ -1929,6 +2038,7 @@ int main(int argc, char** argv)
     testBeatPattern();
     testReverb();
     testSampleBlend();
+    testDistortion();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();
