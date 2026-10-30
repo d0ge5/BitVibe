@@ -1097,6 +1097,131 @@ void testReverb()
 }
 
 // ---------------------------------------------------------------------------------------------
+// Sample blend: a random picked sound joins the sequence at every step
+
+void testSampleBlend()
+{
+    std::puts("sample blend: a random sound from the picked list at each sequencer step");
+
+    // Two clips of constant level, 2000 samples long (at the engine's rate): 0.2 and 0.4.
+    SampleSet set;
+    for (float level : { 0.2f, 0.4f })
+    {
+        SampleClip c;
+        c.data.assign(2000, level);
+        c.rate = kFs;
+        set.clips.push_back(std::move(c));
+    }
+
+    // Six dry steps of 100 ms, played once after the pick at 0.1 s (see testEffectsOnTriggers).
+    const Signal in(24000 * 4, 0.0f);
+    auto sequence = [&]
+    {
+        Params p = neutral();
+        p.seqPlay = 1;
+        p.seqMult = 0;
+        p.tempoBpm = 600.0f;
+        p.steps.fill(mapping::pitchStepKnob(0));
+        p.pickTriggers = false;
+        return p;
+    };
+    // Runs the engine in 256-sample blocks with one restart event at sample 1000.
+    auto renderWithTrigger = [&](const Params& params)
+    {
+        constexpr int block = 256, eventAt = 1000;
+        Engine e;
+        e.prepare(kFs);
+        Signal out = in;
+        for (size_t pos = 0; pos < out.size(); pos += (size_t) block)
+        {
+            float* ch = out.data() + pos;
+            const int offset = eventAt - (int) pos;
+            if (offset >= 0 && offset < block)
+            {
+                const TriggerEvent ev { offset, TriggerAction::RestartSequence };
+                e.process(&ch, 1, block, params, &ev, 1);
+            }
+            else
+            {
+                e.process(&ch, 1, block, params);
+            }
+        }
+        return out;
+    };
+
+    Params p = sequence();
+    p.sampleSet = &set;
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "sample mix 0: nothing is added");
+
+    p.sampleMix = 1.0f;
+    const Signal out = renderWithTrigger(p);
+    // Each of the six steps (every 4800 samples from 1000) starts a clip: 0.2 or 0.4 for the first ~2000 samples, silence after.
+    int clipsHeard = 0;
+    bool silentBetween = true, onlyKnownLevels = true;
+    for (int step = 0; step < 6; ++step)
+    {
+        const size_t at = 1000 + (size_t) step * 4800;
+        const float level = out[at + 500];
+        onlyKnownLevels = onlyKnownLevels && (std::abs(level - 0.2f) < 1.0e-3f || std::abs(level - 0.4f) < 1.0e-3f);
+        clipsHeard += level > 0.1f ? 1 : 0;
+        silentBetween = silentBetween && std::abs(out[at + 3500]) < 1.0e-6f;
+    }
+    CHECK(clipsHeard == 6 && onlyKnownLevels, "every step brings in one of the two sounds (heard %d of 6)", clipsHeard);
+    CHECK(silentBetween && std::abs(out[500]) < 1.0e-6f && std::abs(out[1000 + 6 * 4800 + 500]) < 1.0e-6f,
+          "and only at the steps: silence before the sequence and after it");
+
+    // Over many steps both sounds turn up.
+    {
+        Params loop = sequence();
+        loop.seqPlay = 5; // loops
+        loop.sampleSet = &set;
+        loop.sampleMix = 1.0f;
+        const Signal r = render(loop, Signal(48000 * 4, 0.0f));
+        bool low = false, high = false;
+        for (size_t i = 0; i < r.size(); i += 100)
+        {
+            low = low || std::abs(r[i] - 0.2f) < 1.0e-3f;
+            high = high || std::abs(r[i] - 0.4f) < 1.0e-3f;
+        }
+        CHECK(low && high, "over a looping sequence both sounds are picked");
+    }
+
+    // Mix scales the level, chance 0 plays nothing, a muted step stays silent.
+    p.sampleMix = 0.5f;
+    {
+        const Signal half = renderWithTrigger(p);
+        const float a = half[1000 + 500];
+        CHECK(std::abs(a - 0.1f) < 1.0e-3f || std::abs(a - 0.2f) < 1.0e-3f, "mix 0.5 halves the level (%.3f)", a);
+    }
+    p.sampleMix = 1.0f;
+    p.sampleChance = 0.0f;
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "chance 0: no sound is played");
+    p.sampleChance = 1.0f;
+    p.steps.fill(1.0f); // fully right = mute
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) < 1.0e-6, "muted steps bring in no sound");
+
+    // No set, or an empty one: nothing happens.
+    p = sequence();
+    p.sampleMix = 1.0f;
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "no sounds picked: nothing is added");
+    SampleSet empty;
+    p.sampleSet = &empty;
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "an empty list adds nothing");
+
+    // A clip at half the engine's rate lasts twice as long.
+    SampleSet slow;
+    {
+        SampleClip c;
+        c.data.assign(1000, 0.3f);
+        c.rate = kFs / 2.0;
+        slow.clips.push_back(std::move(c));
+    }
+    p.sampleSet = &slow;
+    const Signal s = renderWithTrigger(p);
+    CHECK(std::abs(s[1000 + 1500] - 0.3f) < 1.0e-3f && std::abs(s[1000 + 2500]) < 1.0e-6f, "a lower-rate clip plays at the right speed");
+}
+
+// ---------------------------------------------------------------------------------------------
 // Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
 
 // Runs an engine sample by sample (so the step can be read after every sample) and returns the step
@@ -1748,6 +1873,7 @@ int main(int argc, char** argv)
     testBeatRoute();
     testBeatPattern();
     testReverb();
+    testSampleBlend();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();

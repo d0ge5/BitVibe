@@ -131,6 +131,15 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   **LEVEL** trims its volume from -30 dB to +6 dB, and **LOW CUT** (a high-pass) and **HIGH CUT** (a low-pass)
   filter the reverb only, not your sound (fully left / right = off). It is part of the effect side, so the dry/wet **MIX**
   above still brings back the clean input, and BYPASS switches it off.
+- **SAMPLE BLEND** (panel in the right-hand column) brings a random sound into the sequence: at the start of
+  every sequencer step one sound is picked at random from your list and mixed into the sequenced sound (so the
+  reverb hears it too). **CHOOSE SOUNDS** opens a menu where you tick the sounds the sequencer may pick from
+  (click as many as you like, click outside to close; *Pick all* and *Pick none* are there too). **MIX** is how
+  loud the chosen sound is (fully left = off, the default) and **CHANCE** is how often a step gets one (100% =
+  every step). Muted steps stay silent. The sounds are your own audio files (WAV, AIFF, FLAC or OGG, up to 20
+  seconds each, every one is levelled to the same peak): **OPEN SOUNDS FOLDER** opens `Documents/BitVibe/Sounds`
+  (builds from the source tree also read the `GoodSounds` folder next to the code). BitVibe ships no sounds
+  of its own. The picked list is saved with your project.
 - None of these settings is stored in a preset: like the output level, they belong to your rig and keep their
   values when you change preset.
 
@@ -309,7 +318,7 @@ gate, and the instrument/line headroom difference.
 - The morph blend law: linear in knob position, with every discrete knob switching at 50 %.
 - What a preset slot contains (see [Presets](#presets)) and the factory sounds in slots 2 to 12.
 
-**Plug-in additions** (not in the hardware): the drum map and its analysis, the beat pattern, the reverb, the mix, the trigger-only option,
+**Plug-in additions** (not in the hardware): the drum map and its analysis, the beat pattern, the reverb, the sample blend, the mix, the trigger-only option,
 presets with names, and the hover tips.
 
 **Not implemented yet:** MIDI CC and SysEx control of the presets (use your DAW's program list and
@@ -361,10 +370,10 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 327 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 337 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, the beat pattern, the reverb, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
 the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 

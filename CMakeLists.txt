@@ -81,14 +81,19 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/PluginEditor.cpp
         Source/DrumPage.cpp
         Source/PatternPanel.cpp
+        Source/SamplePanel.cpp
+        Source/SampleBank.cpp
         Source/DrumBeat.cpp)
 
     # The DRUMS tab lists the audio files in this folder (local builds only; installed copies use
     # Documents/BitVibe/Beats).
     set(BITVIBE_BEATS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/beats")
+    # The sample blend lists the sounds in this folder (local builds only; installed copies use Documents/BitVibe/Sounds).
+    set(BITVIBE_SOUNDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/GoodSounds")
 
     target_compile_definitions(BitVibe PUBLIC
         BITVIBE_BEATS_DIR="${BITVIBE_BEATS_DIR}"
+        BITVIBE_SOUNDS_DIR="${BITVIBE_SOUNDS_DIR}"
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
@@ -127,10 +132,13 @@ if(BITVIBE_BUILD_PLUGIN)
             Source/PluginEditor.cpp
             Source/DrumPage.cpp
         Source/PatternPanel.cpp
+        Source/SamplePanel.cpp
+        Source/SampleBank.cpp
             Source/DrumBeat.cpp)
         target_include_directories(BitVibeEditorSnapshot PRIVATE Source)
         target_compile_definitions(BitVibeEditorSnapshot PRIVATE
             BITVIBE_BEATS_DIR="${BITVIBE_BEATS_DIR}"
+            BITVIBE_SOUNDS_DIR="${BITVIBE_SOUNDS_DIR}"
             JucePlugin_Name="BitVibe"
             JUCE_USE_CURL=0
             JUCE_WEB_BROWSER=0)

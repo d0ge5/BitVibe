@@ -5,6 +5,7 @@
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
+#include "SampleBank.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -34,6 +35,8 @@ inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
+inline constexpr const char* sampleMix = "sampleMix";
+inline constexpr const char* sampleChance = "sampleChance";
 inline constexpr const char* reverbLowCut = "reverbLowCut";
 inline constexpr const char* reverbHighCut = "reverbHighCut";
 inline constexpr const char* beatPlay = "beatPlay";
@@ -99,6 +102,9 @@ public:
     // The drum beat of the DRUMS tab (its hits can trigger the sequencer and the stutter).
     DrumBeat& getDrumBeat() { return drumBeat; }
 
+    // The sounds the sample blend picks from at random (the player chooses the list).
+    SampleBank& getSampleBank() { return sampleBank; }
+
     // Where the beat's sound goes: the main output, the optional "Beat Monitor" output (the second output
     // bus, which the host switches on and the player routes to their headphones) or nowhere. Updated every
     // block; for the DRUMS tab's readout.
@@ -139,6 +145,7 @@ private:
 
     bitvibe::Engine engine;
     DrumBeat drumBeat;
+    SampleBank sampleBank;
     std::array<bitvibe::TriggerEvent, 256> triggerEvents {};
 
     juce::AudioProcessorParameter* bypassParam = nullptr;
@@ -166,6 +173,8 @@ private:
     std::atomic<float>* pReverbMix = nullptr;
     std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
+    std::atomic<float>* pSampleMix = nullptr;
+    std::atomic<float>* pSampleChance = nullptr;
     std::atomic<float>* pReverbLowCut = nullptr;
     std::atomic<float>* pReverbHighCut = nullptr;
     std::atomic<float>* pBeatPlay = nullptr;

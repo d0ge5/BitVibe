@@ -2,6 +2,7 @@
 
 #include "DrumPage.h"
 #include "PatternPanel.h"
+#include "SamplePanel.h"
 
 using namespace juce;
 
@@ -13,13 +14,18 @@ constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480;
 constexpr bool kShowDrumsTab = false;
-// The window is taller on the pedal page (reverb and beat pattern panels below the global panel) than on DRUMS.
-constexpr int kDrumsHeight = kTabsH + 736 + kFaceDy, kPedalHeight = kTabsH + kFaceDy + 944 + 12;
+constexpr int kHeight = kTabsH + 736 + kFaceDy;
+// The pedal page has a second column to the right of the pedal: reverb, sample blend and beat pattern panels.
+constexpr int kSideX = kWidth + 12, kPedalWidth = kWidth + 468;
+constexpr int kColDx = kSideX - 12; // how far the second column is moved right of the pedal's own coordinates
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
-const Rectangle<int> kReverb { 12, 736, 456, 100 };
-constexpr int kPatternY = 844;
+// Second-column panels, in face coordinates (so the first one starts level with the preset header).
+constexpr int kColY = 12 - kFaceDy;
+const Rectangle<int> kReverb { kSideX, kColY, 456, 100 };
+constexpr int kSamplesY = kColY + 108;
+constexpr int kPatternY = kSamplesY + SamplePanel::kHeight + 8;
 
 // Header rows (window coordinates).
 const Rectangle<int> kPrevBounds { 24, 20, 30, 26 }, kNameBox { 60, 20, 266, 26 }, kNextBounds { 332, 20, 30, 26 },
@@ -332,6 +338,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     reverbTypeBox.setLookAndFeel(&laf);
     addAndMakeVisible(reverbTypeBox);
     reverbTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::reverbType, reverbTypeBox);
+    samplePanel = std::make_unique<SamplePanel>(proc, laf);
+    addAndMakeVisible(*samplePanel);
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     addAndMakeVisible(*patternPanel);
 
@@ -438,7 +446,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, patternPanel.get(),
+                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, samplePanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -463,7 +471,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     drumPage = std::make_unique<DrumPage>(proc, laf);
     addChildComponent(*drumPage);
 
-    setSize(kWidth, kPedalHeight);
+    setSize(kPedalWidth, kHeight);
     buildBackground();
     startTimerHz(30);
 }
@@ -521,7 +529,7 @@ void BitVibeEditor::showDrums(bool on)
     if (!on)
         setAltLayer(altLayer); // puts the right layer of knobs back
     drumPage->setVisible(on);
-    setSize(kWidth, on ? kDrumsHeight : kPedalHeight);
+    setSize(on ? kWidth : kPedalWidth, kHeight);
     pedalTab.lit = !on;
     drumsTab.lit = on;
     pedalTab.repaint();
@@ -680,7 +688,7 @@ void BitVibeEditor::updateStepTooltips()
 
 void BitVibeEditor::buildBackground()
 {
-    background = Image(Image::ARGB, kWidth, kPedalHeight, true);
+    background = Image(Image::ARGB, kPedalWidth, kHeight, true);
     Graphics g(background);
 
     g.fillAll(Colour(0xff0d0d0f));
@@ -777,11 +785,12 @@ void BitVibeEditor::resized()
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
-    reverbTypeBox.setBounds(face({ 356, kReverb.getY() + 4, 100, 22 }));
+    reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 4, 100, 22 }));
     const std::array<Slider*, 5> reverbKnobs { &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
     for (size_t i = 0; i < reverbKnobs.size(); ++i)
-        reverbKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, kReverb.getY() + 40 })));
-    patternPanel->setBounds(face({ 12, kPatternY, PatternPanel::kWidth, PatternPanel::kHeight }));
+        reverbKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kGlobalKnobX0 + kColDx + (int) i * kGlobalKnobDx, kReverb.getY() + 40 })));
+    samplePanel->setBounds(face({ kSideX, kSamplesY, SamplePanel::kWidth, SamplePanel::kHeight }));
+    patternPanel->setBounds(face({ kSideX, kPatternY, PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
     for (auto* c : pedalComponents)
@@ -916,7 +925,7 @@ void BitVibeEditor::paint(Graphics& g)
     // Reverb panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(26, kReverb.getY() + 4, 260, 12), Justification::left);
+    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 14, kReverb.getY() + 4, 260, 12), Justification::left);
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 5> reverbEntries {{
         { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
@@ -927,7 +936,7 @@ void BitVibeEditor::paint(Graphics& g)
     }};
     for (size_t i = 0; i < reverbEntries.size(); ++i)
     {
-        const int cx = kGlobalKnobX0 + (int) i * kGlobalKnobDx;
+        const int cx = kGlobalKnobX0 + kColDx + (int) i * kGlobalKnobDx;
         g.setColour(kInk);
         g.setFont(bold(11.0f));
         g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kReverb.getY() + 74 }), Justification::centred);
@@ -974,6 +983,7 @@ void BitVibeEditor::timerCallback()
     }
     if (!drumsShown)
     {
+        samplePanel->refresh();
         patternPanel->refresh();
         repaint();
     }

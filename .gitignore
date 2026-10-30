@@ -18,3 +18,6 @@ beats/*
 
 # Python bytecode from the neural-helper tools
 __pycache__/
+
+# Sound effects for the sample blend: your own files, not for the public repository (see GoodSounds/README or the README)
+GoodSounds/

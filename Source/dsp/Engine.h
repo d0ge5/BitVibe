@@ -13,6 +13,7 @@
 #include "Components.h"
 #include "Mapping.h"
 #include "Reverb.h"
+#include "Samples.h"
 
 #include <array>
 #include <atomic>
@@ -81,6 +82,13 @@ struct Params
     float reverbLowCutHz = 20.0f;      // high-pass on the reverb only (20 Hz = off)
     float reverbHighCutHz = 20000.0f;  // low-pass on the reverb only (20 kHz = off)
 
+    // Sample blend: at the start of every sequencer step (with this chance) one of the picked sounds, chosen at
+    // random, is mixed into the sequenced sound at this level. 0 = off (the default). The set is owned by the caller
+    // and must stay alive while the engine may play from it (the plug-in keeps the previous set until the next block).
+    float sampleMix = 0.0f;
+    float sampleChance = 1.0f;
+    const SampleSet* sampleSet = nullptr;
+
     // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
     bool pickTriggers = true;
     // Steps move only on NextStep trigger events instead of with the tempo.
@@ -105,6 +113,7 @@ public:
         }
         for (int c = 0; c < kMaxChannels; ++c)
             channels[(size_t) c].reverb.prepare(fs, c);
+        samplePlayer.prepare(fs);
 
         srKnobSm.setTime(fs, 10.0f);
         filterKnobSm.setTime(fs, 10.0f);
@@ -121,6 +130,7 @@ public:
         reverbLevelSm.setTime(fs, 15.0f);
         reverbLowSm.setTime(fs, 15.0f);
         reverbHighSm.setTime(fs, 15.0f);
+        sampleMixSm.setTime(fs, 15.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
         fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
 
@@ -155,6 +165,7 @@ public:
         fxMix = 1.0f;
         fxInit = false;
         reverbSend = 0.0f;
+        samplePlayer.reset();
     }
 
     // Processes in place. io points at numChannels channel buffers (1 or 2). events (sorted by offset)
@@ -258,6 +269,7 @@ public:
             const float revMix = reverbMixSm.next(blk.reverbMix);
             const float revTone = reverbToneSm.next(blk.reverbTone);
             const float revLevel = reverbLevelSm.next(blk.reverbLevel);
+            const float sampleSignal = samplePlayer.process() * sampleMixSm.next(blk.sampleMix);
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
@@ -290,6 +302,7 @@ public:
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
+                y += sampleSignal; // the random sounds join the sequenced sound (and so get the reverb too)
                 const float reverbOut = ch.reverb.process(y * reverbSend, revSettings);
                 y *= muteGain;
                 y *= invHeadroom;
@@ -346,6 +359,8 @@ private:
         float mix = 1.0f;
         float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f;
         int reverbType = 0;
+        float sampleMix = 0.0f, sampleChance = 1.0f;
+        const SampleSet* sampleSet = nullptr;
         int stutterLength = 0;
     };
 
@@ -363,6 +378,14 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        blk.sampleMix = std::clamp(p.sampleMix, 0.0f, 1.0f);
+        blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);
+        blk.sampleSet = p.sampleSet;
+        if (p.sampleSet != lastSampleSet) // a new set: whatever is sounding still points into the old one
+        {
+            samplePlayer.reset();
+            lastSampleSet = p.sampleSet;
+        }
         blk.reverbLowCut = std::clamp(p.reverbLowCutHz, 20.0f, 2000.0f);
         blk.reverbHighCut = std::clamp(p.reverbHighCutHz, 200.0f, 20000.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
@@ -384,6 +407,7 @@ private:
             reverbLevelSm.snap(blk.reverbLevel);
             reverbLowSm.snap(blk.reverbLowCut);
             reverbHighSm.snap(blk.reverbHighCut);
+            sampleMixSm.snap(blk.sampleMix);
             primed = true;
         }
 
@@ -500,6 +524,20 @@ private:
         seqIdx = 0;
         seqCycles = 0;
         seqPhase = 0.0;
+        stepStarted();
+    }
+
+    // A sequencer step has just begun: maybe bring in one of the picked sounds, chosen at random. Muted steps stay silent.
+    void stepStarted()
+    {
+        if (blk.sampleMix <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
+            return;
+        if (steps[(size_t) active[(size_t) seqIdx]].kind == mapping::Step::Kind::Mute)
+            return;
+        if (blk.sampleChance < 1.0f && (float) (nextRandom() >> 8) * (1.0f / 16777216.0f) >= blk.sampleChance)
+            return;
+        const auto& clips = blk.sampleSet->clips;
+        samplePlayer.trigger(&clips[(size_t) (nextRandom() >> 4) % clips.size()]);
     }
 
     // Moves to the next active step; counts passes and stops after the last one. False when stopped.
@@ -515,6 +553,7 @@ private:
                 return false;
             }
         }
+        stepStarted();
         return true;
     }
 
@@ -573,12 +612,14 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, sampleMixSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)
     float fxMix = 1.0f, fxAttack = 1.0f, fxRelease = 1.0f;
     bool fxInit = false;
+    SamplePlayer samplePlayer;
+    const SampleSet* lastSampleSet = nullptr;
     float reverbSend = 0.0f; // 1 while a sequence or stutter plays (smoothed): the reverb hears only that
 
     // sequencer

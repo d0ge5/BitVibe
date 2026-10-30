@@ -372,6 +372,53 @@ void testReverbParams()
     check(maxDifference(idle, in) < 1.0e-5f, "no sequence or stutter running: the reverb adds nothing");
 }
 
+// The sample blend through the processor: the picked sounds reach the engine, mix and chance work, the list is saved.
+void testSampleBlendParams()
+{
+    std::puts("sample blend (processor level)");
+    const auto library = SampleBank::libraryFiles();
+    if (library.isEmpty())
+    {
+        std::puts("  (no sounds in any sounds folder: these checks are skipped)");
+        return;
+    }
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f); // a looping sequence: steps keep starting
+    setValue(*p, ids::tempo, 240.0f);
+    p->getSampleBank().selectAll();
+    check(p->getSampleBank().getNumSelected() == library.size(), "every sound in the folders is picked and decoded (" + String(p->getSampleBank().getNumSelected()) + ")");
+
+    const auto plain = run(*p, in);
+    setValue(*p, ids::sampleMix, 1.0f);
+    const auto blended = run(*p, in);
+    check(maxDifference(blended, plain) > 0.05f && isFinite(blended), "sample mix up: the sequence gets sounds (max diff " + String(maxDifference(blended, plain), 3) + ")");
+
+    p->getSampleBank().selectNone();
+    check(maxDifference(run(*p, in), plain) < 1.0e-6f, "no sounds picked: nothing is added");
+
+    p->getSampleBank().setSelected({ library[0].getFileName() });
+    check(p->getSampleBank().getNumSelected() == 1 && maxDifference(run(*p, in), plain) > 0.05f, "a list of one sound plays that sound");
+
+    setValue(*p, ids::sampleChance, 0.0f);
+    check(maxDifference(run(*p, in), plain) < 1.0e-6f, "chance 0: no step gets a sound");
+    setValue(*p, ids::sampleChance, 1.0f);
+
+    // The picked list is saved with the project; a project without one picks everything.
+    p->getSampleBank().setSelected({ library[0].getFileName(), library[library.size() - 1].getFileName() });
+    MemoryBlock state;
+    p->getStateInformation(state);
+    auto q = makeProcessor();
+    q->setStateInformation(state.getData(), (int) state.getSize());
+    check(q->getSampleBank().getSelected() == p->getSampleBank().getSelected(), "the picked list survives a state round trip");
+    MemoryBlock oldState;
+    if (auto xml = makeProcessor()->apvts.copyState().createXml())
+        AudioProcessor::copyXmlToBinary(*xml, oldState);
+    q->getSampleBank().selectNone();
+    q->setStateInformation(oldState.getData(), (int) oldState.getSize());
+    check(q->getSampleBank().getNumSelected() == library.size(), "a state from before the sample blend picks every sound");
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -582,7 +629,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 37, "37 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 39, "39 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1114,6 +1161,7 @@ int main(int argc, char** argv)
     testDrumMap();
     testBeatPatternProcessor();
     testReverbParams();
+    testSampleBlendParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

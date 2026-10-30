@@ -108,6 +108,9 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring" }, 0));
+    // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
     {
         // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
         auto hzText = [](float off, bool low)
@@ -238,6 +241,8 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
     pReverbType = raw(ids::reverbType);
+    pSampleMix = raw(ids::sampleMix);
+    pSampleChance = raw(ids::sampleChance);
     pReverbLowCut = raw(ids::reverbLowCut);
     pReverbHighCut = raw(ids::reverbHighCut);
     pBeatPlay = raw(ids::beatPlay);
@@ -343,6 +348,9 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
     p.reverbType = roundToInt(pReverbType->load());
+    p.sampleMix = pSampleMix->load();
+    p.sampleChance = pSampleChance->load();
+    p.sampleSet = sampleBank.beginBlock();
     p.reverbLowCutHz = pReverbLowCut->load();
     p.reverbHighCutHz = pReverbHighCut->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
@@ -642,6 +650,7 @@ void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
     }
     state.appendChild(bank, nullptr);
     state.appendChild(drumBeat.toState(), nullptr);
+    state.appendChild(sampleBank.toState(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -657,10 +666,12 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     const auto morphNode = state.getChildWithName("MORPH");
     const auto bank = state.getChildWithName("PRESETS");
     const auto drums = state.getChildWithName("DRUMS");
+    const auto samples = state.getChildWithName("SAMPLES");
     const int program = jlimit(0, bitvibe::kNumPresets - 1, (int) state.getProperty("program", 0));
     state.removeChild(morphNode, nullptr); // keep the parameter tree free of the extra nodes
     state.removeChild(bank, nullptr);
     state.removeChild(drums, nullptr);
+    state.removeChild(samples, nullptr);
     state.removeProperty("program", nullptr);
     apvts.replaceState(state);
 
@@ -670,6 +681,7 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
         toeDown = knobsFromTree(morphNode.getChildWithName("DOWN"), bitvibe::KnobSet {});
     }
     drumBeat.fromState(drums); // a state from before the drum map resets it
+    sampleBank.fromState(samples); // a state from before the sample blend picks every sound
 
     const ScopedLock lock(presetLock);
     for (int i = 0; i < bitvibe::kNumPresets; ++i)
