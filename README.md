@@ -84,6 +84,13 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 ## Using it
 
+**Finding your way:** hover over anything for a short description, double-click a knob to put it back to its
+default, and watch the bubble that shows a knob's value while you turn it. The thin **input meter** next to TRIGGER
+shows how hard you are playing; the white line on it is how hard a pick has to be to start the stutter and
+sequencer, and the bar lights orange when a pick is caught. The small lights next to DISTORTION / FUZZ, REVERB and
+SAMPLE BLEND come on while a sequence or stutter plays, which is when those effects act; with both the sequencer
+and the stutter off, a note under the right-hand column says so.
+
 **The window can be resized**: drag the corner at the bottom right (or let your DAW resize it). The whole plug-in
 scales up or down with its shape fixed, from 60 % to 200 % of its normal size, and the size is remembered for next
 time. Knobs also grow a little while you hold them, so you can see you have a grip on them.
@@ -412,7 +419,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 418 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 421 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

@@ -18,6 +18,7 @@ public:
 
     // Updates the buttons and the bank list (called by the editor's timer while the page is shown).
     void refresh();
+    void parentHierarchyChanged() override;
 
 private:
     using APVTS = juce::AudioProcessorValueTreeState;

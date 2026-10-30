@@ -22,6 +22,12 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     chanceAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleChance, chanceSlider);
     baseAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleBase, baseSlider);
     maxAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMax, maxSlider);
+    // double-click puts a knob back to its default
+    const std::array<std::pair<Slider*, const char*>, 4> knobIds { { { &mixSlider, ids::sampleMix }, { &chanceSlider, ids::sampleChance },
+                                                                     { &baseSlider, ids::sampleBase }, { &maxSlider, ids::sampleMax } } };
+    for (const auto& [slider, id] : knobIds)
+        if (auto* param = proc.apvts.getParameter(id))
+            slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
 
     // Letting go of the base or max knob plays one of the picked sounds at that volume (the same sound until the
     // next time a knob is picked up), so the player hears what they set.
@@ -91,6 +97,14 @@ void SamplePanel::rememberKnobs()
     levels.baseDb = rawValue(ids::sampleBase);
     levels.maxDb = rawValue(ids::sampleMax);
     bank.rememberLevels(levels);
+}
+
+// While a knob is turned, a bubble shows its value; it lives in the editor so it is not cut off by this panel.
+void SamplePanel::parentHierarchyChanged()
+{
+    if (auto* parent = getParentComponent())
+        for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider })
+            s->setPopupDisplayEnabled(true, false, parent);
 }
 
 void SamplePanel::resized()
@@ -282,11 +296,23 @@ void SamplePanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 14, 4, 290, 12, Justification::left);
+    g.drawText("SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 26, 4, 290, 12, Justification::left);
+    {
+        // lit while a sequence or stutter plays: that is when the sounds come in
+        const bool live = proc.getEngine().isEffectSideActive();
+        const Point<float> c(18.0f, 10.0f);
+        if (live)
+        {
+            g.setColour(accent.withAlpha(0.22f));
+            g.fillEllipse(c.x - 8.0f, c.y - 8.0f, 16.0f, 16.0f);
+        }
+        g.setColour(live ? accent : accent.darker(0.9f));
+        g.fillEllipse(c.x - 3.5f, c.y - 3.5f, 7.0f, 7.0f);
+    }
 
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
-    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322, 76 },
+    const Entry entries[] = { { "SAMPLE MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322, 76 },
                               { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 402, 76 },
                               { "BASE", volumeText(rawValue(ids::sampleBase)), 62, 180 },
                               { "MAX", volumeText(rawValue(ids::sampleMax)), 154, 180 } };

@@ -701,8 +701,8 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
                 break;
             }
         auto* tip = dynamic_cast<TooltipClient*>(under);
-        check(tip != nullptr && tip->getTooltip().startsWith("MIX:"),
-              "the control under the MIX knob answers with the MIX description");
+        check(tip != nullptr && tip->getTooltip().startsWith("DRY/WET:"),
+              "the control under the DRY/WET knob answers with its description");
         if (tip != nullptr)
         {
             TooltipWindow window(&ed, 600);

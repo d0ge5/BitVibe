@@ -9,7 +9,7 @@ namespace
 constexpr float kGridX = 12.0f, kGridWidth = 432.0f, kCellGap = 3.0f, kGroupGap = 6.0f, kMaxCellWidth = 23.0f;
 constexpr int kCellY = 84, kCellH = 28;
 constexpr int kLabelY = 115, kLabelH = 14;
-constexpr int kRowY = 20, kRowH = 24, kSignatureY = 50;
+constexpr int kRowY = 20, kRowH = 24, kSignatureY = 50; // the two rows of controls
 
 // What is written under a step: the beat number is a button of its own; the others are the counting syllables.
 const char* syllable(int groupSize, int offset)
@@ -99,16 +99,18 @@ PatternPanel::~PatternPanel()
 
 void PatternPanel::resized()
 {
-    actionBox.setBounds(12, kRowY, 112, kRowH);
-    int x = 128;
+    // first row: what the pattern does, the time signature, restart the bar
+    actionBox.setBounds(64, kRowY, 132, kRowH);
+    signatureBox.setBounds(262, kRowY, 66, kRowH);
+    restartButton.setBounds(336, kRowY, 108, kRowH);
+    // second row: ready-made patterns, and the lock
+    int x = 12;
     for (auto* b : { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
     {
-        b->setBounds(x, kRowY, 62, kRowH);
+        b->setBounds(x, kSignatureY, 62, 22);
         x += 64;
     }
-    signatureBox.setBounds(112, kSignatureY, 72, 22);
-    restartButton.setBounds(332, kSignatureY, 112, 22);
-    lockButton.setBounds(192, kSignatureY, 132, 22);
+    lockButton.setBounds(336, kSignatureY, 108, 22);
 }
 
 // One cell per sixteenth note of the bar, grouped into the beats of the time signature, as wide as the room allows.
@@ -238,14 +240,33 @@ void PatternPanel::paint(Graphics& g)
         textColour = accent;
     }
     else
-        text = String(proc.getEffectiveBpm(), 1) + " BPM, " + ts.name + ", one bar = " + String(ts.totalSteps) + " steps";
+    {
+        // The pattern only does something if there is a sequence (or a stutter) for it to start.
+        const bool sequenceOff = roundToInt(proc.apvts.getRawParameterValue(ids::seqPlay)->load()) == 0;
+        const bool stutterOff = mapping::stutterMode(roundToInt(proc.apvts.getRawParameterValue(ids::stutter)->load())).off;
+        const bool wantsSequence = pattern.action != DrumAction::Stutter;
+        const bool wantsStutter = pattern.action == DrumAction::Stutter || pattern.action == DrumAction::RestartAndStutter;
+        if (wantsSequence && sequenceOff && !(wantsStutter && !stutterOff))
+        {
+            text = "Turn up the SEQUENCER knob: there is no sequence to start";
+            textColour = accent;
+        }
+        else if (pattern.action == DrumAction::Stutter && stutterOff)
+        {
+            text = "Turn up the STUTTER knob: there is no stutter to fire";
+            textColour = accent;
+        }
+        else
+            text = String(proc.getEffectiveBpm(), 1) + " BPM, " + ts.name + ", one bar = " + String(ts.totalSteps) + " steps";
+    }
     g.setColour(textColour);
     g.setFont(plain(10.0f));
     g.drawText(text, 130, 4, kWidth - 144, 12, Justification::centredRight, true);
 
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("TIME SIGNATURE", 14, kSignatureY, 96, 22, Justification::centredLeft);
+    g.drawText("ACTION", 14, kRowY, 50, kRowH, Justification::centredLeft);
+    g.drawText("TIME SIG.", 204, kRowY, 58, kRowH, Justification::centredLeft);
 
     // The step the bar is at right now (the engine's own clock), so it is easy to see where a step sits in time.
     const int playing = jlimit(0, ts.totalSteps - 1, proc.getEngine().getPatternStep());

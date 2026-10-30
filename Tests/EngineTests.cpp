@@ -318,6 +318,36 @@ void testAttackDetector()
     CHECK(pickAt(0.7f, 0.0f) == 1, "lowest setting: a hard pick still triggers");
     CHECK(pickAt(0.02f, 0.5f) == 0 && pickAt(0.15f, 0.5f) == 1, "middle setting: a very soft pick (-34 dBFS) does not, a normal one does");
     CHECK(pickAt(0.02f, 1.0f) == 1 && pickAt(0.005f, 0.0f) == 0, "highest setting: a very soft pick triggers");
+
+    // What the editor shows: the loudest input since it last looked, the picks caught (even when picks may not trigger)
+    // and whether the effect side is busy.
+    {
+        Engine e;
+        e.prepare(kFs);
+        Params p = neutral();
+        p.pickTriggers = false;
+        p.stutter = 2;
+        Signal in((size_t) kFs, 0.0f);
+        for (size_t i = 0; i < 2400; ++i)
+            in[4800 + i] = 0.6f * std::sin((float) i * 0.2f) * std::exp(-(float) i / 800.0f);
+        float* ch = in.data();
+        e.process(&ch, 1, (int) in.size(), p);
+        const float peak = e.takeInputPeak();
+        CHECK(peak > 0.4f && e.takeInputPeak() == 0.0f, "the input meter sees the pick (%.2f) and starts again after each look", peak);
+        CHECK(e.getAttackCount() == 1 && !e.isEffectSideActive(), "the pick is counted for the meter light, but with picks off nothing plays");
+        p.pickTriggers = true;
+        Engine f;
+        f.prepare(kFs);
+        Signal again(in);
+        bool busy = false;
+        for (size_t pos = 0; pos < again.size(); pos += 256)
+        {
+            float* c = again.data() + pos;
+            f.process(&c, 1, 256, p);
+            busy = busy || f.isEffectSideActive();
+        }
+        CHECK(busy, "with picks on, the stutter it starts lights the effect side");
+    }
 }
 
 // A short noise burst at 0.1 s in otherwise silent audio: easy to follow through the stutter.

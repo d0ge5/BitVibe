@@ -89,6 +89,8 @@ PedalLookAndFeel::PedalLookAndFeel()
     setColour(PopupMenu::highlightedBackgroundColourId, Colour(0xff4a3410));
     setColour(PopupMenu::highlightedTextColourId, kInk);
     setColour(TooltipWindow::backgroundColourId, Colour(0xff26262b));
+    setColour(BubbleComponent::backgroundColourId, Colour(0xff26262b));
+    setColour(BubbleComponent::outlineColourId, Colour(0xff55555d));
     setColour(TooltipWindow::textColourId, kInk);
     setColour(TooltipWindow::outlineColourId, Colour(0xff55555d));
     setColour(Label::textColourId, kInk);
@@ -256,6 +258,35 @@ void FootSwitch::mouseUp(const MouseEvent&)
         onRelease();
 }
 
+void LevelMeter::set(float levelDb, float thresholdDb, bool flash)
+{
+    if (std::abs(levelDb - level) > 0.2f || std::abs(thresholdDb - threshold) > 0.05f || flash != lit)
+    {
+        level = levelDb;
+        threshold = thresholdDb;
+        lit = flash;
+        repaint();
+    }
+}
+
+void LevelMeter::paint(Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    auto toY = [&b](float db) { return b.getBottom() - b.getHeight() * jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
+    g.setColour(Colour(0xff0e0e10));
+    g.fillRoundedRectangle(b, 2.0f);
+    const float top = toY(level);
+    if (top < b.getBottom())
+    {
+        g.setColour(lit ? kAccent : (level >= threshold ? Colour(0xffd9b36a) : Colour(0xff6f9a5c)));
+        g.fillRect(b.withTop(top).reduced(1.0f, 0.0f));
+    }
+    g.setColour(kInk);
+    g.fillRect(b.getX(), toY(threshold) - 0.75f, b.getWidth(), 1.5f);
+    g.setColour(Colour(0xff3c3c42));
+    g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+}
+
 void PedalButton::paint(Graphics& g)
 {
     const auto b = getLocalBounds().toFloat().reduced(1.0f);
@@ -311,6 +342,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         k.step.getProperties().set("alt", true);
         k.frontAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, frontIds[i], k.front);
         k.stepAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::step(i), k.step);
+        addKnobHelpers(k.front, frontIds[i]);
+        addKnobHelpers(k.step, ids::step(i));
         content.addAndMakeVisible(k.front);
         content.addChildComponent(k.step);
     }
@@ -324,8 +357,12 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         s.setMouseDragSensitivity(180);
         s.setLookAndFeel(&laf);
         att = std::make_unique<APVTS::SliderAttachment>(proc.apvts, id, s);
+        addKnobHelpers(s, id);
         content.addAndMakeVisible(s);
     };
+    triggerMeter.setTooltip("INPUT METER: how hard you are playing (after INPUT). The white line is how hard a pick has to be to start the "
+                            "stutter and sequencer (set with TRIGGER); the bar lights orange when a pick is caught.");
+    content.addAndMakeVisible(triggerMeter);
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
@@ -491,7 +528,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
                         &reverbDecaySlider, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -554,6 +591,14 @@ BitVibeEditor::~BitVibeEditor()
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
+}
+
+// Every knob: double-click puts it back to its default, and while it is turned a bubble shows its value.
+void BitVibeEditor::addKnobHelpers(Slider& s, const String& paramId)
+{
+    if (auto* param = proc.apvts.getParameter(paramId))
+        s.setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
+    s.setPopupDisplayEnabled(true, false, &content);
 }
 
 void BitVibeEditor::configureKnob(Slider& s, int ticks)
@@ -744,7 +789,7 @@ void BitVibeEditor::setTooltips()
     reverbHighSlider.setTooltip("HIGH CUT: a low-pass filter on the reverb only. Turn left to remove the highs from the reverb. Fully right = off.");
     reverbTypeBox.setTooltip("REVERB TYPE: Room is short and tight, Hall is big and slow, Spring is the splashy, dripping sound of a spring tank, "
                           "Plate is dense and bright, Shimmer climbs an octave as it fades, Gated is a big room chopped off short.");
-    mixSlider.setTooltip("MIX: blends your clean input (left) with the effect (right). Fully right = effect only.");
+    mixSlider.setTooltip("DRY/WET: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
     trigSlider.setTooltip("TRIGGER: how hard you have to play to start the stutter and sequencer. Fully left only hard picks count; the middle ignores very soft playing; turn right if it misses notes and left if it fires too often.");
     syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo knob.");
@@ -909,6 +954,7 @@ void BitVibeEditor::resized()
     holdButton.setBounds(face({ 92, 654, 62, 24 }));
     headroomBox.setBounds(face({ 170, 654, 124, 24 }));
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
+    triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
@@ -1041,7 +1087,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     const std::array<Entry, 5> entries {{
         { "TEMPO", String(rawValue(ids::tempo), 1) },
         { "INPUT", String(rawValue(ids::inputGain), 1) + " dB" },
-        { "MIX", String(roundToInt(rawValue(ids::mix) * 100.0f)) + "%" },
+        { "DRY/WET", String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet" },
         { "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB" },
         { "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%" },
     }};
@@ -1055,16 +1101,45 @@ void BitVibeEditor::paintContent(Graphics& g)
         g.setFont(plain(10.5f));
         g.drawText(entries[i].value, Rectangle<int>(100, 13).withCentre({ cx, 633 }), Justification::centred);
     }
+    g.setColour(kInkDim);
+    g.setFont(bold(9.5f));
+    g.drawText("HEADROOM", Rectangle<int>(172, 641, 120, 11), Justification::left);
+    g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641, 144, 11), Justification::left);
+
+    // The lights on the right-hand panels: lit while a sequence or stutter plays, which is when they act.
+    const bool live = proc.getEngine().isEffectSideActive();
+    drawLed(g, { (float) kSideX + 18.0f, (float) kDist.getY() + 10.0f }, 3.5f, kAccent, live);
+    drawLed(g, { (float) kSideX + 18.0f, (float) kReverb.getY() + 10.0f }, 3.5f, kAccent, live);
+
+    // Under the right-hand column: why those panels may be quiet.
+    {
+        const bool sequenceOff = roundToInt(rawValue(ids::seqPlay)) == 0;
+        const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
+        const Rectangle<int> note(kSideX + 8, kPatternY + PatternPanel::kHeight + 10, 440, 40);
+        g.setFont(plain(10.5f));
+        if (sequenceOff && stutterOff)
+        {
+            g.setColour(kAccent);
+            g.drawFittedText("The sequencer and the stutter are both off, so distortion, reverb and the sample blend have nothing to act on. "
+                             "Turn up the SEQUENCER or STUTTER knob on the pedal.", note, Justification::topLeft, 3);
+        }
+        else
+        {
+            g.setColour(kInkDim);
+            g.drawFittedText("The lights next to DISTORTION and REVERB come on while the sequence or stutter plays: that is when "
+                             "these effects (and the sample blend) act on the sound.", note, Justification::topLeft, 3);
+        }
+    }
 
     // Distortion panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("DISTORTION / FUZZ", Rectangle<int>(kSideX + 14, kDist.getY() + 4, 120, 12), Justification::left);
+    g.drawText("DISTORTION / FUZZ", Rectangle<int>(kSideX + 26, kDist.getY() + 4, 110, 12), Justification::left);
     const bool fuzz = roundToInt(rawValue(ids::distType)) == 1; // the big-fuzz style calls its knobs sustain / tone / volume
     const std::array<Entry, 3> distEntries {{
         { fuzz ? "SUSTAIN" : "DRIVE", String(roundToInt(rawValue(ids::distDrive) * 100.0f)) + "%" },
-        { "TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%" },
-        { fuzz ? "VOLUME" : "LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
+        { fuzz ? "FUZZ TONE" : "DIST TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%" },
+        { fuzz ? "VOLUME" : "DIST LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
     }};
     for (size_t i = 0; i < distEntries.size(); ++i)
     {
@@ -1080,13 +1155,13 @@ void BitVibeEditor::paintContent(Graphics& g)
     // Reverb panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 14, kReverb.getY() + 4, 260, 12), Justification::left);
+    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 26, kReverb.getY() + 4, 220, 12), Justification::left);
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
-        { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
-        { "MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
-        { "LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB" },
+        { "REV TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
+        { "REV MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
+        { "REV LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB" },
         { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut) },
         { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut) },
     }};
@@ -1132,6 +1207,20 @@ void BitVibeEditor::timerCallback()
         const bool ticked = rawValue(tickIds[(size_t) type]) > 0.5f;
         if (reverbReverseButton.getToggleState() != ticked)
             reverbReverseButton.setToggleState(ticked, dontSendNotification);
+    }
+    {
+        // the input meter: falls back slowly so a pick can be read, and lights up when a pick is caught
+        const float peak = proc.getEngine().takeInputPeak();
+        const float db = peak > 1.0e-5f ? 20.0f * std::log10(peak) : -100.0f;
+        meterDb = jmax(db, meterDb - 1.5f);
+        const int attacks = proc.getEngine().getAttackCount();
+        const double nowMs = Time::getMillisecondCounterHiRes();
+        if (attacks != seenAttacks)
+        {
+            seenAttacks = attacks;
+            meterFlashUntil = nowMs + 180.0;
+        }
+        triggerMeter.set(meterDb, bitvibe::AttackDetector::floorDb(rawValue(ids::sensitivity)), nowMs < meterFlashUntil);
     }
     refreshPresetName();
     showSeqType();

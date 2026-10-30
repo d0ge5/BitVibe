@@ -89,6 +89,19 @@ public:
     }
 };
 
+// The input level next to the TRIGGER knob: the bar is how hard you are playing, the line is how hard a pick has to
+// be to count, and the bar lights up when a pick is caught.
+class LevelMeter : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    void set(float levelDb, float thresholdDb, bool flash);
+    void paint(juce::Graphics&) override;
+
+private:
+    float level = -100.0f, threshold = -30.0f;
+    bool lit = false;
+};
+
 class PatternPanel;
 class SamplePanel;
 
@@ -132,6 +145,7 @@ private:
     };
 
     void paintContent(juce::Graphics&);
+    void addKnobHelpers(juce::Slider&, const juce::String& paramId); // double-click to reset, value bubble while turning
     void applySize(); // the window size for the page that is showing, at the player's scale
     void timerCallback() override;
     void buildBackground();
@@ -147,6 +161,10 @@ private:
     bitvibe::SeqType seqType() const;
 
     Content content { *this };
+    LevelMeter triggerMeter;
+    float meterDb = -100.0f;
+    int seenAttacks = 0;
+    double meterFlashUntil = 0.0;
     juce::ComponentBoundsConstrainer constrainer;
     int baseWidth = 0, baseHeight = 0;     // the size the page that is showing is designed at
     float scale = 1.0f;                    // the window size as a multiple of that

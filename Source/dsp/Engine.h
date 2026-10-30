@@ -265,8 +265,13 @@ public:
             const float mono = nCh == 2 ? 0.5f * (x[0] + x[1]) : x[0];
 
             // ---- control: attack, sequencer ---------------------------------------------
-            if (detector.process(mono) && blk.pickTriggers)
-                onAttack();
+            inputPeak = std::max(inputPeak, std::abs(mono));
+            if (detector.process(mono))
+            {
+                ++attacksHeard; // shown on the input meter, whether or not picks are allowed to trigger
+                if (blk.pickTriggers)
+                    onAttack();
+            }
             advanceSequencer();
 
             // The crush / sample-rate / filter stage: always on, or only while a trigger effect plays.
@@ -419,10 +424,20 @@ public:
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
         patternStepOut.store(patternIdx, std::memory_order_relaxed);
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
+        if (inputPeak > inputPeakOut.load(std::memory_order_relaxed))
+            inputPeakOut.store(inputPeak, std::memory_order_relaxed);
+        inputPeak = 0.0f;
+        attackCountOut.store(attacksHeard, std::memory_order_relaxed);
+        effectsActiveOut.store(reverbSend > 0.05f, std::memory_order_relaxed);
     }
 
     // Read by the editor (relaxed atomics; purely cosmetic).
     float getBeatPhase() const { return beatPhaseOut.load(std::memory_order_relaxed); }
+    // The loudest input (what the pick detector hears) since the last call, and how many picks it has caught.
+    float takeInputPeak() { return inputPeakOut.exchange(0.0f, std::memory_order_relaxed); }
+    int getAttackCount() const { return attackCountOut.load(std::memory_order_relaxed); }
+    // True while a sequence or stutter plays, i.e. while the distortion, reverb and sample blend have something to act on.
+    bool isEffectSideActive() const { return effectsActiveOut.load(std::memory_order_relaxed); }
     int getCurrentStep() const { return stepOut.load(std::memory_order_relaxed); }
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
@@ -844,6 +859,11 @@ private:
 
     std::atomic<float> beatPhaseOut { 0.0f };
     std::atomic<int> stepOut { -1 };
+    std::atomic<float> inputPeakOut { 0.0f };
+    std::atomic<int> attackCountOut { 0 };
+    std::atomic<bool> effectsActiveOut { false };
+    float inputPeak = 0.0f;
+    int attacksHeard = 0;
     std::atomic<bool> stutterOut { false };
 };
 } // namespace bitvibe
