@@ -1933,6 +1933,94 @@ void testSequenceLoop()
     CHECK((order(hits, nexts, 6000) == std::vector<int> { 0, 1, 2, 3, 4, 5, 3, 4, 5, -1, 0, 1 }), "steps on hits follow the loop");
 }
 
+// The EQ's reference: the sound reaching the EQ can be captured as a clip (without the silence around it), played in
+// a loop through the EQ instead of the live sound, copied out, and its spectrum feed follows what the EQ hears.
+void testEqReference()
+{
+    std::puts("eq reference");
+    Engine e;
+    e.prepare(kFs);
+    auto& ref = e.getEqReference();
+    Params p = neutral(); // a clean signal: what reaches the EQ is the input
+    auto feed = [&](Signal& buf, const Params& q)
+    {
+        for (size_t pos = 0; pos < buf.size(); pos += 256)
+        {
+            float* ch = buf.data() + pos;
+            e.process(&ch, 1, (int) std::min<size_t>(256, buf.size() - pos), q);
+        }
+    };
+
+    Signal silence((size_t) (0.5 * kFs), 0.0f);
+    feed(silence, p);
+    ref.requestCapture();
+    CHECK(ref.isCapturePending(), "a capture waits for the audio thread");
+    Signal more = silence;
+    feed(more, p);
+    CHECK(!ref.isCapturePending() && ref.getClipSamples() == 0, "capturing silence gives no clip");
+
+    // half a second of silence, then one second of tone, then silence: the clip is the tone
+    Signal played((size_t) (2.0 * kFs), 0.0f);
+    const Signal tone = sine(440.0, 1.0, 0.4f);
+    std::copy(tone.begin(), tone.end(), played.begin() + (long) (0.5 * kFs));
+    feed(played, p);
+    ref.requestCapture();
+    Signal tick(256, 0.0f);
+    feed(tick, p);
+    const int n = ref.getClipSamples();
+    CHECK(std::abs(n - (int) tone.size()) < 64, "the clip is the second of tone without the silence (%d samples)", n);
+    std::vector<std::vector<float>> clip;
+    CHECK(ref.copyClip(clip) && clip.size() == 1 && clip[0].size() == (size_t) n, "the clip can be copied out");
+    float diff = 0.0f;
+    const size_t offset = (size_t) std::distance(tone.begin(), std::find_if(tone.begin(), tone.end(), [](float v) { return std::abs(v) > 1.0e-3f; }));
+    for (size_t i = 0; i < clip[0].size() && i + offset < tone.size(); ++i)
+        diff = std::max(diff, std::abs(clip[0][i] - tone[i + offset]));
+    CHECK(diff < 1.0e-5f, "and holds what reached the EQ (max diff %g)", (double) diff);
+
+    // playing the clip: it loops on its own, whatever comes in, and ignores the dry/wet mix
+    ref.setAudition(true);
+    Params dryOnly = p;
+    dryOnly.mix = 0.0f;
+    Signal heard((size_t) (2.5 * kFs), 0.0f);
+    feed(heard, dryOnly);
+    CHECK(rms(heard, 0.1, 0.9) > 0.2 && rms(heard, 1.1, 1.9) > 0.2, "the clip plays in a loop with no input (rms %.3f, %.3f)", rms(heard, 0.1, 0.9), rms(heard, 1.1, 1.9));
+    Params boosted = p;
+    boosted.eqOn = true;
+    boosted.eqBands[3].on = true;
+    boosted.eqBands[3].type = EqType::Bell;
+    boosted.eqBands[3].freq = 440.0f;
+    boosted.eqBands[3].gainDb = 12.0f;
+    Signal louder((size_t) kFs, 0.0f);
+    feed(louder, boosted);
+    CHECK(rms(louder, 0.3, 0.9) > 2.5 * rms(heard, 0.1, 0.9), "and through the EQ: +12 dB at 440 Hz makes it louder (%.3f)", rms(louder, 0.3, 0.9));
+    float before[1024], after[1024];
+    ref.readScope(before, after, 1024);
+    float peakBefore = 0.0f, peakAfter = 0.0f;
+    for (int i = 0; i < 1024; ++i)
+    {
+        peakBefore = std::max(peakBefore, std::abs(before[i]));
+        peakAfter = std::max(peakAfter, std::abs(after[i]));
+    }
+    CHECK(peakBefore > 0.3f && peakAfter > 2.5f * peakBefore, "the spectrum feed has the sound before and after the EQ (%.2f, %.2f)", (double) peakBefore, (double) peakAfter);
+    Params bypassed = boosted;
+    bypassed.bypass = true;
+    Signal input = sine(220.0, 0.5, 0.3f), bypassOut = input;
+    feed(bypassOut, bypassed);
+    CHECK(rmsDiff(bypassOut, input, 0.2, 0.5) < 1.0e-4, "bypass still gives back the input");
+
+    // stopping it gives the live sound back, and the clip stays for next time
+    ref.setAudition(false);
+    Signal live = sine(330.0, 0.5, 0.3f), liveOut = live;
+    feed(liveOut, p);
+    CHECK(rmsDiff(liveOut, live, 0.1, 0.5) < 1.0e-4 && ref.getClipSamples() == n, "stopped: the live sound again, clip kept");
+    e.reset();
+    CHECK(ref.getClipSamples() == n, "a reset keeps the clip");
+    e.prepare(kFs);
+    CHECK(ref.getClipSamples() == n, "preparing again at the same rate keeps it");
+    e.prepare(44100.0);
+    CHECK(ref.getClipSamples() == 0, "a new sample rate forgets it");
+}
+
 void testTriggerEvents()
 {
     std::puts("trigger events: restart, next step, stutter, pick triggers off, steps on hits");
@@ -2674,6 +2762,7 @@ int main(int argc, char** argv)
     testBeatRoute();
     testBeatPattern();
     testSequenceLoop();
+    testEqReference();
     testReverb();
     testSampleBlend();
     testDistortion();

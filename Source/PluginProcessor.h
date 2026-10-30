@@ -118,6 +118,10 @@ public:
     bool importPreset(const juce::XmlElement&, juce::String& message);
     static juce::File presetFolder(); // Documents/BitVibe/Presets
 
+    // The EQ's captured reference clip as a WAV file (24 bit, at the plug-in's sample rate). False, with a reason,
+    // when there is no clip yet or the file cannot be written.
+    bool saveCapturedClip(const juce::File&, juce::String& message);
+
     // Expression morph: the two knob sets the expression parameter sweeps between.
     void captureToeUp();   // stores the current knob values as the toe-up set
     void captureToeDown(); // stores the current knob values as the toe-down set

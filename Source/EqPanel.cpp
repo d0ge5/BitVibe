@@ -54,14 +54,47 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
     if (auto* param = proc.apvts.getParameter(ids::eqOutput))
         outputSlider.setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
 
+    captureButton.setTooltip("CAPTURE: keep the last few seconds (up to 4) of the sound reaching the EQ as a reference clip. "
+                             "Play a part, then press it.");
+    playButton.setTooltip("PLAY CLIP: loop the captured clip through the EQ instead of the live sound, so you can set the EQ "
+                          "with your hands free. Press again to go back to the live sound.");
+    saveClipButton.setTooltip("SAVE CLIP: save the captured clip as a WAV file (before the EQ), to use as a reference elsewhere.");
+    captureButton.onClick = [this]
+    {
+        auto& ref = proc.getEngine().getEqReference();
+        ref.setAudition(false);
+        ref.requestCapture();
+        clipStatus = "capturing...";
+        updateClipButtons();
+    };
+    playButton.onClick = [this]
+    {
+        auto& ref = proc.getEngine().getEqReference();
+        ref.setAudition(!ref.getAudition() && ref.getClipSamples() > 0);
+        updateClipButtons();
+    };
+    saveClipButton.onClick = [this] { saveClip(); };
+    for (auto* b : { &captureButton, &playButton, &saveClipButton })
+        addAndMakeVisible(*b);
+    for (int i = 0; i < kColumns; ++i)
+        levelBefore[(size_t) i] = levelAfter[(size_t) i] = -120.0f;
+    updateClipButtons();
+
     selectBand(selected);
     setSize(kWidth, kHeight); // last: resized() needs the band buttons
 }
 
 EqPanel::~EqPanel()
 {
+    proc.getEngine().getEqReference().setAudition(false); // the clip never plays without its button in sight
     for (Component* c : std::initializer_list<Component*> { &onButton, &bandOnButton, &typeBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
         c->setLookAndFeel(nullptr);
+}
+
+void EqPanel::visibilityChanged()
+{
+    if (!isVisible())
+        proc.getEngine().getEqReference().setAudition(false);
 }
 
 void EqPanel::parentHierarchyChanged()
@@ -100,6 +133,9 @@ void EqPanel::selectBand(int band)
 void EqPanel::resized()
 {
     onButton.setBounds(kWidth - 70, 3, 56, 20);
+    captureButton.setBounds(40, 2, 66, 20);
+    playButton.setBounds(110, 2, 72, 20);
+    saveClipButton.setBounds(186, 2, 72, 20);
     for (int b = 0; b < kNumEqBands; ++b)
         bandButtons[(size_t) b]->setBounds(12 + b * 25, kRowY, 23, 22);
     typeBox.setBounds(216, kRowY, 112, 22);
@@ -233,7 +269,102 @@ void EqPanel::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel
     setParam(ids::eqBand(b, "Q"), jlimit(kEqMinQ, kEqMaxQ, q));
 }
 
-void EqPanel::refresh() { repaint(); }
+void EqPanel::refresh()
+{
+    updateClipButtons();
+    updateSpectrum();
+    repaint();
+}
+
+void EqPanel::updateClipButtons()
+{
+    const auto& ref = proc.getEngine().getEqReference();
+    const bool pending = ref.isCapturePending();
+    const int samples = ref.getClipSamples();
+    if (!pending && clipStatus == "capturing...")
+        clipStatus = samples > 0 ? String() : String("heard nothing");
+    const bool has = samples > 0 && !pending;
+    if (has && clipStatus.isEmpty())
+        clipStatus = String(samples / proc.getEngine().getSampleRate(), 1) + " s clip";
+    if (!has && clipStatus.endsWith("clip"))
+        clipStatus = {};
+    const bool playing = has && ref.getAudition();
+    if (playButton.lit != playing)
+    {
+        playButton.lit = playing;
+        playButton.repaint();
+    }
+    for (auto* b : { &playButton, &saveClipButton })
+    {
+        b->setEnabled(has);
+        b->setAlpha(has ? 1.0f : 0.4f);
+    }
+}
+
+void EqPanel::saveClip()
+{
+    auto folder = File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Clips");
+    folder.createDirectory();
+    clipChooser = std::make_unique<FileChooser>("Save the reference clip", folder.getChildFile("BitVibe clip.wav"), "*.wav");
+    Component::SafePointer<EqPanel> safe(this);
+    clipChooser->launchAsync(FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
+                             [safe](const FileChooser& chooser)
+                             {
+                                 if (safe == nullptr)
+                                     return;
+                                 auto file = chooser.getResult();
+                                 if (file == File())
+                                     return;
+                                 if (!file.hasFileExtension(".wav"))
+                                     file = file.withFileExtension(".wav");
+                                 String message;
+                                 const bool ok = safe->proc.saveCapturedClip(file, message);
+                                 AlertWindow::showMessageBoxAsync(ok ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
+                                                                  ok ? "Clip saved" : "Could not save the clip", message);
+                             });
+}
+
+// The spectrum of the latest samples before and after the EQ (Hann window), one level per column of the graph: the
+// loudest bin in the column's frequency range. Levels rise at once and fall back slowly, so the picture is readable.
+void EqPanel::updateSpectrum()
+{
+    scopeBefore.resize((size_t) kFftSize);
+    scopeAfter.resize((size_t) kFftSize);
+    frame.resize((size_t) kFftSize);
+    proc.getEngine().getEqReference().readScope(scopeBefore.data(), scopeAfter.data(), kFftSize);
+    const double rate = proc.getEngine().getSampleRate();
+    const double binHz = rate / (double) kFftSize;
+    const float toDb = 20.0f * std::log10(4.0f / (float) kFftSize); // a full-scale sine reads 0 dBFS
+    const auto area = graphArea();
+    auto analyse = [&](const std::vector<float>& samples, std::array<float, kColumns>& levels)
+    {
+        for (int i = 0; i < kFftSize; ++i)
+            frame[(size_t) i] = samples[(size_t) i] * (0.5f - 0.5f * std::cos(MathConstants<float>::twoPi * (float) i / (float) kFftSize));
+        fft.powerSpectrum(frame.data(), power);
+        for (int col = 0; col < kColumns; ++col)
+        {
+            const float hzLo = hzForX(area.getX() + area.getWidth() * (float) col / (float) kColumns);
+            const float hzHi = hzForX(area.getX() + area.getWidth() * (float) (col + 1) / (float) kColumns);
+            const int k0 = jlimit(1, kFftSize / 2, (int) std::floor(hzLo / binHz));
+            const int k1 = jlimit(k0, kFftSize / 2, (int) std::ceil(hzHi / binHz));
+            double loudest = 0.0;
+            for (int k = k0; k <= k1; ++k)
+                loudest = std::max(loudest, power[(size_t) k]);
+            const float db = loudest > 0.0 ? 10.0f * (float) std::log10(loudest) + toDb : -120.0f;
+            auto& level = levels[(size_t) col];
+            level = db > level ? db : std::max(db, level - 1.5f);
+        }
+    };
+    analyse(scopeBefore, levelBefore);
+    analyse(scopeAfter, levelAfter);
+}
+
+// The spectrum's scale: 0 dBFS at the top of the graph, -84 dBFS at the bottom.
+float EqPanel::yForLevel(float dbfs) const
+{
+    const auto g = graphArea();
+    return g.getBottom() - g.getHeight() * jlimit(0.0f, 1.0f, (dbfs + 84.0f) / 84.0f);
+}
 
 void EqPanel::paint(Graphics& g)
 {
@@ -244,7 +375,9 @@ void EqPanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("EQ (LAST ON THE SEQUENCED SOUND)", 14, 4, 300, 12, Justification::left);
+    g.drawText("EQ", 14, 4, 24, 12, Justification::left);
+    g.setFont(plain(10.0f));
+    g.drawText(clipStatus, 262, 4, 112, 14, Justification::left);
 
     const bool on = rawValue(ids::eqOn) > 0.5f;
     const auto bands = currentBands();
@@ -270,6 +403,32 @@ void EqPanel::paint(Graphics& g)
         {
             g.setColour(inkDim.withAlpha(0.6f));
             g.drawText(hz >= 1000.0f ? String((int) (hz / 1000.0f)) + "k" : String((int) hz), roundToInt(xForHz(hz)) + 2, roundToInt(area.getBottom()) - 11, 30, 10, Justification::left);
+        }
+    }
+
+    // the spectrum behind the curve: before the EQ filled in grey, after it as an orange line
+    {
+        Graphics::ScopedSaveState save(g);
+        g.reduceClipRegion(area.toNearestInt());
+        Path before, after;
+        before.startNewSubPath(area.getX(), area.getBottom());
+        for (int col = 0; col < kColumns; ++col)
+        {
+            const float x = area.getX() + area.getWidth() * ((float) col + 0.5f) / (float) kColumns;
+            before.lineTo(x, yForLevel(levelBefore[(size_t) col]));
+            if (col == 0)
+                after.startNewSubPath(x, yForLevel(levelAfter[(size_t) col]));
+            else
+                after.lineTo(x, yForLevel(levelAfter[(size_t) col]));
+        }
+        before.lineTo(area.getRight(), area.getBottom());
+        before.closeSubPath();
+        g.setColour(inkDim.withAlpha(0.16f));
+        g.fillPath(before);
+        if (on)
+        {
+            g.setColour(accent.withAlpha(0.45f));
+            g.strokePath(after, PathStrokeType(1.2f));
         }
     }
 

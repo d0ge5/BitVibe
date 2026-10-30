@@ -781,6 +781,38 @@ bool isSharedEffect(const String& id)
 }
 } // namespace
 
+bool BitVibeProcessor::saveCapturedClip(const File& file, String& message)
+{
+    std::vector<std::vector<float>> clip;
+    if (!engine.getEqReference().copyClip(clip) || clip.empty() || clip[0].empty())
+    {
+        message = "There is no captured clip yet: play something, then press CAPTURE.";
+        return false;
+    }
+    AudioBuffer<float> buffer((int) clip.size(), (int) clip[0].size());
+    for (size_t c = 0; c < clip.size(); ++c)
+        buffer.copyFrom((int) c, 0, clip[c].data(), (int) clip[c].size());
+
+    file.deleteFile();
+    std::unique_ptr<OutputStream> out = std::make_unique<FileOutputStream>(file);
+    if (static_cast<FileOutputStream*>(out.get())->failedToOpen())
+    {
+        message = "BitVibe could not write " + file.getFullPathName() + ".";
+        return false;
+    }
+    auto writer = WavAudioFormat().createWriterFor(out, AudioFormatWriterOptions()
+                                                            .withSampleRate(engine.getSampleRate())
+                                                            .withNumChannels(buffer.getNumChannels())
+                                                            .withBitsPerSample(24));
+    if (writer == nullptr || !writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples()))
+    {
+        message = "BitVibe could not write " + file.getFullPathName() + ".";
+        return false;
+    }
+    message = "Saved " + String(buffer.getNumSamples() / engine.getSampleRate(), 1) + " s to " + file.getFullPathName() + ".";
+    return true;
+}
+
 File BitVibeProcessor::presetFolder()
 {
     return File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Presets");

@@ -43,7 +43,8 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
   reverse option for each type.
 - **Sample blend:** a random sound from your own audio files joins each step, crushed along with the sequence.
   Pick sounds, save them as banks, and set a base and a maximum volume.
-- **EQ:** an eight-band equalizer with a draggable curve (ADVANCED mode).
+- **EQ:** an eight-band equalizer with a draggable curve and a live spectrum (ADVANCED mode). Capture a few
+  seconds of the sequenced sound and loop it through the EQ as a reference while you set it, or save it as a WAV.
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need.
@@ -132,7 +133,12 @@ belong to your rig, so they stay put when you change preset.
   volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
   picks and banks are remembered between sessions.
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for
-  Q, and double-click to switch a band on or off.
+  Q, and double-click to switch a band on or off. Behind the curve is the spectrum of the sound reaching the EQ
+  (grey) and, with the EQ on, of what comes out (orange). **CAPTURE** keeps the last few seconds (up to 4) of the
+  sound reaching the EQ; **PLAY CLIP** loops that clip through the EQ instead of the live sound, so you can set the
+  EQ with your hands free (press it again to go back); **SAVE CLIP** writes the clip to a WAV file
+  (`Documents/BitVibe/Clips` by default). The clip lasts until you capture again or the sample rate changes, and
+  is not saved with the project.
 - **Beat pattern:** click the steps of the bar where the sequence should trigger, choose a time signature and an
   action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
   up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence.
@@ -193,7 +199,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 449 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 462 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

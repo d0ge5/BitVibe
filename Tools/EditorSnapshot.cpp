@@ -7,6 +7,7 @@
 // Exit code 0 means every check passed.
 
 #include "PluginEditor.h"
+#include "EqPanel.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
 
@@ -704,6 +705,89 @@ void testSequenceLoopParams()
     check(maxDifference(run(*p, in), looped) < 1.0e-5f, "and sounds the same");
     const auto text = p->exportPreset()->toString();
     check(text.contains("loopOn") && text.contains("loopRepeats"), "a preset file holds the loop");
+}
+
+// The EQ's reference clip through the processor: captured after playing, kept when the host prepares again, played
+// through the EQ, and saved as a WAV file that reads back with the right length and rate.
+void testEqReferenceClip()
+{
+    std::puts("eq reference clip (processor level)");
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f);
+    run(*p, makeInput(48000));
+    auto& ref = p->getEngine().getEqReference();
+    MidiBuffer midi;
+    auto process = [&](int samples)
+    {
+        AudioBuffer<float> buffer(2, samples);
+        buffer.clear();
+        for (int pos = 0; pos < samples; pos += 512)
+        {
+            AudioBuffer<float> block(buffer.getArrayOfWritePointers(), 2, pos, jmin(512, samples - pos));
+            p->processBlock(block, midi);
+        }
+        return buffer;
+    };
+    ref.requestCapture();
+    process(512);
+    const int n = ref.getClipSamples();
+    check(n > 4800 && n <= 4 * 48000, "CAPTURE keeps what was just played (" + String(n) + " samples)");
+    p->prepareToPlay(48000.0, 512);
+    check(ref.getClipSamples() == n, "the host preparing again keeps the clip");
+
+    ref.setAudition(true);
+    const auto heard = process(48000);
+    check(heard.getMagnitude(0, 48000) > 0.01f, "PLAY CLIP plays it with nothing coming in (peak " + String(heard.getMagnitude(0, 48000), 3) + ")");
+    ref.setAudition(false);
+    check(process(4800).getMagnitude(0, 4800) < 1.0e-3f, "stopped: silence in, silence out");
+
+    const auto file = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_clip_test.wav");
+    String message;
+    const bool saved = p->saveCapturedClip(file, message);
+    check(saved, "SAVE CLIP writes a WAV: " + message);
+    AudioFormatManager formats;
+    formats.registerBasicFormats();
+    if (auto reader = std::unique_ptr<AudioFormatReader>(formats.createReaderFor(file)))
+        check(reader->lengthInSamples == n && reader->numChannels == 2 && reader->sampleRate == 48000.0 && reader->bitsPerSample == 24,
+              "and it reads back: " + String(reader->lengthInSamples) + " samples, " + String(reader->numChannels) + " channels, 24 bit");
+    else
+        check(false, "the saved clip could not be read back");
+    file.deleteFile();
+    {
+        // the EQ panel's spectrum: a 1 kHz tone shows up as a peak behind the curve
+        auto q = makeProcessor();
+        setValue(*q, ids::seqPlay, 0.0f);
+        setValue(*q, ids::eqOn, 1.0f);
+        q->prepareToPlay(48000.0, 512);
+        PedalLookAndFeel lookAndFeel;
+        EqPanel quiet(*q, lookAndFeel);
+        quiet.refresh();
+        const auto silent = quiet.createComponentSnapshot(quiet.getLocalBounds(), true, 2.0f);
+        AudioBuffer<float> tone(2, 8192);
+        for (int i = 0; i < tone.getNumSamples(); ++i)
+            tone.setSample(0, i, 0.25f * std::sin(MathConstants<float>::twoPi * 1000.0f * (float) i / 48000.0f));
+        tone.copyFrom(1, 0, tone, 0, 0, tone.getNumSamples());
+        MidiBuffer none;
+        for (int pos = 0; pos < tone.getNumSamples(); pos += 512)
+        {
+            AudioBuffer<float> block(tone.getArrayOfWritePointers(), 2, pos, 512);
+            q->processBlock(block, none);
+        }
+        EqPanel panel(*q, lookAndFeel);
+        panel.refresh();
+        const auto shown = panel.createComponentSnapshot(panel.getLocalBounds(), true, 2.0f);
+        int changed = 0;
+        for (int y = 0; y < shown.getHeight(); ++y)
+            for (int x = 0; x < shown.getWidth(); ++x)
+                changed += shown.getPixelAt(x, y) != silent.getPixelAt(x, y) ? 1 : 0;
+        check(changed > 200, "the EQ panel draws the spectrum of what reaches the EQ (" + String(changed) + " pixels change with a tone)");
+        const auto spectrumFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_eq_spectrum.png");
+        spectrumFile.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(spectrumFile.createOutputStream()))
+            PNGImageFormat().writeImageToStream(shown, *out);
+    }
+    auto fresh = makeProcessor();
+    check(!fresh->saveCapturedClip(file, message) && message.isNotEmpty() && !file.exists(), "with no clip there is nothing to save");
 }
 
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
@@ -1534,6 +1618,7 @@ int main(int argc, char** argv)
     testDistortionParams();
     testEqParams();
     testSequenceLoopParams();
+    testEqReferenceClip();
     testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

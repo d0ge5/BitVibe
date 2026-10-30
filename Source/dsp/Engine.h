@@ -12,6 +12,7 @@
 
 #include "Components.h"
 #include "Distortion.h"
+#include "EqReference.h"
 #include "Equalizer.h"
 #include "Fuzz.h"
 #include "Mapping.h"
@@ -175,6 +176,7 @@ public:
     {
         fs = sampleRate;
         detector.prepare(fs);
+        eqReference.prepare(fs);
 
         const int snippetCapacity = (int) (fs * 60.0 / kMinTempoBpm) + 64;
         for (auto& ch : channels)
@@ -272,6 +274,8 @@ public:
         beginBlock(p);
         for (auto& ch : channels)
             ch.eq.setBands(p.eqBands, p.eqOutputDb, numSamples);
+        eqReference.beginBlock(nCh);
+        const bool audition = eqReference.isAuditioning(); // the captured clip plays through the EQ instead
         int nextEvent = 0;
 
         for (int n = 0; n < numSamples; ++n)
@@ -396,6 +400,7 @@ public:
             const float bypassMix = bypassSm.next(blk.bypass ? 0.0f : 1.0f);
 
             // ---- per-channel audio path --------------------------------------------------
+            float beforeEqSum = 0.0f, afterEqSum = 0.0f;
             for (int c = 0; c < nCh; ++c)
             {
                 auto& ch = channels[(size_t) c];
@@ -431,11 +436,19 @@ public:
                 y *= muteGain;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
-                if (eqRun) // the EQ comes last, on everything the sequenced sound has become
+                // The EQ comes last, on everything the sequenced sound has become. What reaches it is kept as the
+                // reference the player can capture; while the captured clip plays, the clip goes through it instead.
+                if (audition)
+                    y = eqReference.clipSample(c);
+                else
+                    eqReference.record(c, y);
+                beforeEqSum += y;
+                if (eqRun)
                 {
                     const float equalized = ch.eq.process(y);
                     y += (equalized - y) * eqAmount;
                 }
+                afterEqSum += y;
 
                 if (!std::isfinite(y))
                 {
@@ -443,11 +456,14 @@ public:
                     ch.ladder.reset();
                 }
 
-                y = lerpExact(dry[(size_t) c], y, mixAmount);
+                if (!audition) // the clip is heard on its own, without the clean signal
+                    y = lerpExact(dry[(size_t) c], y, mixAmount);
                 y *= outGain;
 
                 io[c][n] = lerpExact(dry[(size_t) c], y, bypassMix);
             }
+
+            eqReference.endSample(beforeEqSum / (float) nCh, afterEqSum / (float) nCh);
 
             beatPhase += 1.0 / beatSamples;
             if (beatPhase >= 1.0)
@@ -478,6 +494,11 @@ public:
     int getCurrentStep() const { return stepOut.load(std::memory_order_relaxed); }
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
+
+    // The EQ's reference sound: capture, the clip playing through the EQ, the spectrum feed (see EqReference.h).
+    EqReference& getEqReference() { return eqReference; }
+    const EqReference& getEqReference() const { return eqReference; }
+    double getSampleRate() const { return fs; }
 
     // Starts the pattern's bar again from its first step, on the next sample (any thread). While the pattern is
     // following the host the host's position wins and puts the bar back.
@@ -903,6 +924,7 @@ private:
     float fxMix = 1.0f, fxAttack = 1.0f, fxRelease = 1.0f;
     bool fxInit = false;
     SamplePlayer samplePlayer;
+    EqReference eqReference;
 
     // the beat pattern's clock: the step the bar is at and how far into it (in samples)
     int patternIdx = 0;
