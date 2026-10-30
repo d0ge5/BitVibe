@@ -77,6 +77,9 @@ struct Params
     float reverbMix = 0.0f;
     float reverbTone = 0.5f;
     float reverbLevelDb = 0.0f;
+    int reverbType = 0;                // ReverbType: room, hall or spring
+    float reverbLowCutHz = 20.0f;      // high-pass on the reverb only (20 Hz = off)
+    float reverbHighCutHz = 20000.0f;  // low-pass on the reverb only (20 kHz = off)
 
     // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
     bool pickTriggers = true;
@@ -116,6 +119,8 @@ public:
         reverbMixSm.setTime(fs, 15.0f);
         reverbToneSm.setTime(fs, 15.0f);
         reverbLevelSm.setTime(fs, 15.0f);
+        reverbLowSm.setTime(fs, 15.0f);
+        reverbHighSm.setTime(fs, 15.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
         fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
 
@@ -253,6 +258,11 @@ public:
             const float revMix = reverbMixSm.next(blk.reverbMix);
             const float revTone = reverbToneSm.next(blk.reverbTone);
             const float revLevel = reverbLevelSm.next(blk.reverbLevel);
+            ReverbSettings revSettings;
+            revSettings.type = (ReverbType) blk.reverbType;
+            revSettings.tone = revTone;
+            revSettings.lowCutHz = reverbLowSm.next(blk.reverbLowCut);
+            revSettings.highCutHz = reverbHighSm.next(blk.reverbHighCut);
             // The reverb only hears the sound while a sequence or stutter is playing; its tail rings on afterwards.
             const float sendTarget = (seqRunning || channels[0].stutter.isActive()) ? 1.0f : 0.0f;
             reverbSend += (sendTarget - reverbSend) * (sendTarget > reverbSend ? fxAttack : fxRelease);
@@ -280,7 +290,7 @@ public:
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
-                const float reverbOut = ch.reverb.process(y * reverbSend, revTone);
+                const float reverbOut = ch.reverb.process(y * reverbSend, revSettings);
                 y *= muteGain;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
@@ -334,7 +344,8 @@ private:
         bool fxOnlyOnTriggers = false;
         bool pickTriggers = true, stepsOnHits = false;
         float mix = 1.0f;
-        float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f;
+        float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f;
+        int reverbType = 0;
         int stutterLength = 0;
     };
 
@@ -351,6 +362,9 @@ private:
         blk.reverbMix = std::clamp(p.reverbMix, 0.0f, 1.0f);
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
+        blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        blk.reverbLowCut = std::clamp(p.reverbLowCutHz, 20.0f, 2000.0f);
+        blk.reverbHighCut = std::clamp(p.reverbHighCutHz, 200.0f, 20000.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
 
         if (!primed)
@@ -368,6 +382,8 @@ private:
             reverbMixSm.snap(blk.reverbMix);
             reverbToneSm.snap(blk.reverbTone);
             reverbLevelSm.snap(blk.reverbLevel);
+            reverbLowSm.snap(blk.reverbLowCut);
+            reverbHighSm.snap(blk.reverbHighCut);
             primed = true;
         }
 
@@ -557,7 +573,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)

@@ -107,6 +107,27 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring" }, 0));
+    {
+        // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
+        auto hzText = [](float off, bool low)
+        {
+            return [off, low](float v, int)
+            {
+                if (low ? v <= off + 0.5f : v >= off - 50.0f)
+                    return String("Off");
+                return v >= 1000.0f ? String(v / 1000.0f, 1) + " kHz" : String(roundToInt(v)) + " Hz";
+            };
+        };
+        NormalisableRange<float> lowRange(20.0f, 2000.0f);
+        lowRange.setSkewForCentre(200.0f);
+        NormalisableRange<float> highRange(200.0f, 20000.0f);
+        highRange.setSkewForCentre(3000.0f);
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbLowCut), "Reverb Low Cut", lowRange, 20.0f,
+                                                         AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbHighCut), "Reverb High Cut", highRange, 20000.0f,
+                                                         AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
+    }
 
     // ---- drum beat (DRUMS tab) -----------------------------------------------------------
     // Also rig settings, not stored in preset slots.
@@ -216,6 +237,9 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbTone = raw(ids::reverbTone);
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
+    pReverbType = raw(ids::reverbType);
+    pReverbLowCut = raw(ids::reverbLowCut);
+    pReverbHighCut = raw(ids::reverbHighCut);
     pBeatPlay = raw(ids::beatPlay);
     pBeatLevel = raw(ids::beatLevel);
     pBeatOutput = raw(ids::beatOutput);
@@ -318,6 +342,9 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
+    p.reverbType = roundToInt(pReverbType->load());
+    p.reverbLowCutHz = pReverbLowCut->load();
+    p.reverbHighCutHz = pReverbHighCut->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
     p.stepsOnHits = roundToInt(pStepClock->load()) == 1;
     return p;

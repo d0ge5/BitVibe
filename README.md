@@ -124,11 +124,12 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   The stutter and the sequencer themselves (the repeats, the pitch steps, the muting) work as usual either
   way. With the Sequencer knob on *LOOP* the sequencer never stops, so the effects stay on, and with both the
   sequencer and the stutter off nothing ever triggers, so the signal passes through clean.
-- **REVERB** (panel under GLOBAL) is a basic room reverb that only hears the **sequenced and stuttered**
+- **REVERB** (panel under GLOBAL) is a basic reverb, **Room**, **Hall** or **Spring**, that only hears the **sequenced and stuttered**
   sound: while a sequence or stutter plays it feeds the reverb, and its tail rings on afterwards. Your clean
   signal never gets reverb, and neither does anything when no sequence or stutter is running. **TONE** goes
-  from a dark to a bright reverb, **MIX** sets how much reverb is added (fully left = none, the default) and
-  **LEVEL** trims its volume from -30 dB to +6 dB. It is part of the effect side, so the dry/wet **MIX**
+  from a dark to a bright reverb, **MIX** sets how much reverb is added (fully left = none, the default),
+  **LEVEL** trims its volume from -30 dB to +6 dB, and **LOW CUT** (a high-pass) and **HIGH CUT** (a low-pass)
+  filter the reverb only, not your sound (fully left / right = off). It is part of the effect side, so the dry/wet **MIX**
   above still brings back the clean input, and BYPASS switches it off.
 - None of these settings is stored in a preset: like the output level, they belong to your rig and keep their
   values when you change preset.
@@ -356,7 +357,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 315 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 327 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

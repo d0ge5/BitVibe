@@ -128,8 +128,10 @@ private:
     juce::ComboBox headroomBox, stutterLenBox;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
-    juce::Slider reverbToneSlider, reverbMixSlider, reverbLevelSlider;
-    std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt;
+    juce::Slider reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
+    std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
+    juce::ComboBox reverbTypeBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 

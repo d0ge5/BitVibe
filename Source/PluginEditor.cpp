@@ -13,13 +13,12 @@ constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480;
 // The window is taller on the pedal page (reverb and beat pattern panels below the global panel) than on DRUMS.
-constexpr int kDrumsHeight = kTabsH + 736 + kFaceDy, kPedalHeight = kTabsH + kFaceDy + 916 + 12;
+constexpr int kDrumsHeight = kTabsH + 736 + kFaceDy, kPedalHeight = kTabsH + kFaceDy + 944 + 12;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
-const Rectangle<int> kReverb { 12, 736, 456, 72 };
-constexpr int kPatternY = 816;
-constexpr int kReverbKnobX0 = 24, kReverbKnobDx = 152; // left edge of the first reverb knob and the spacing
+const Rectangle<int> kReverb { 12, 736, 456, 100 };
+constexpr int kPatternY = 844;
 
 // Header rows (window coordinates).
 const Rectangle<int> kPrevBounds { 24, 20, 30, 26 }, kNameBox { 60, 20, 266, 26 }, kNextBounds { 332, 20, 30, 26 },
@@ -325,6 +324,13 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(reverbToneSlider, reverbToneAtt, ids::reverbTone);
     smallKnob(reverbMixSlider, reverbMixAtt, ids::reverbMix);
     smallKnob(reverbLevelSlider, reverbLevelAtt, ids::reverbLevel);
+    smallKnob(reverbLowSlider, reverbLowAtt, ids::reverbLowCut);
+    smallKnob(reverbHighSlider, reverbHighAtt, ids::reverbHighCut);
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::reverbType)))
+        reverbTypeBox.addItemList(choice->choices, 1);
+    reverbTypeBox.setLookAndFeel(&laf);
+    addAndMakeVisible(reverbTypeBox);
+    reverbTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::reverbType, reverbTypeBox);
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     addAndMakeVisible(*patternPanel);
 
@@ -431,7 +437,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, patternPanel.get(),
+                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -464,8 +470,9 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider })
+    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider })
         s->setLookAndFeel(nullptr);
+    reverbTypeBox.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
     fxTrigButton.setLookAndFeel(nullptr);
@@ -629,6 +636,9 @@ void BitVibeEditor::setTooltips()
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
                                "Your clean signal never gets reverb.");
     reverbLevelSlider.setTooltip("REVERB LEVEL: the volume of the reverb, from -30 dB to +6 dB. Works together with REVERB MIX.");
+    reverbLowSlider.setTooltip("LOW CUT: a high-pass filter on the reverb only. Turn right to remove the low end from the reverb. Fully left = off.");
+    reverbHighSlider.setTooltip("HIGH CUT: a low-pass filter on the reverb only. Turn left to remove the highs from the reverb. Fully right = off.");
+    reverbTypeBox.setTooltip("REVERB TYPE: Room is short and tight, Hall is big and slow, Spring is the splashy, dripping sound of a spring tank.");
     mixSlider.setTooltip("MIX: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
     trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
@@ -760,10 +770,11 @@ void BitVibeEditor::resized()
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 
-    // reverb panel: three knobs with their name and value to the right
-    const std::array<Slider*, 3> reverbKnobs { &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider };
+    // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
+    reverbTypeBox.setBounds(face({ 356, kReverb.getY() + 4, 100, 22 }));
+    const std::array<Slider*, 5> reverbKnobs { &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
     for (size_t i = 0; i < reverbKnobs.size(); ++i)
-        reverbKnobs[i]->setBounds(face({ kReverbKnobX0 + (int) i * kReverbKnobDx, kReverb.getY() + 20, 48, 48 }));
+        reverbKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, kReverb.getY() + 40 })));
     patternPanel->setBounds(face({ 12, kPatternY, PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
@@ -899,21 +910,24 @@ void BitVibeEditor::paint(Graphics& g)
     // Reverb panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("REVERB (ON THE SEQUENCED SOUND ONLY)", Rectangle<int>(26, kReverb.getY() + 4, 300, 12), Justification::left);
-    const std::array<Entry, 3> reverbEntries {{
+    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(26, kReverb.getY() + 4, 260, 12), Justification::left);
+    const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
+    const std::array<Entry, 5> reverbEntries {{
         { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
         { "MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
         { "LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB" },
+        { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut) },
+        { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut) },
     }};
     for (size_t i = 0; i < reverbEntries.size(); ++i)
     {
-        const int x = kReverbKnobX0 + (int) i * kReverbKnobDx + 56;
+        const int cx = kGlobalKnobX0 + (int) i * kGlobalKnobDx;
         g.setColour(kInk);
         g.setFont(bold(11.0f));
-        g.drawText(reverbEntries[i].name, Rectangle<int>(x, kReverb.getY() + 30, 80, 14), Justification::left);
+        g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kReverb.getY() + 74 }), Justification::centred);
         g.setColour(kInkDim);
         g.setFont(plain(10.5f));
-        g.drawText(reverbEntries[i].value, Rectangle<int>(x, kReverb.getY() + 46, 80, 13), Justification::left);
+        g.drawText(reverbEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, kReverb.getY() + 88 }), Justification::centred);
     }
 }
 

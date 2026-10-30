@@ -901,45 +901,122 @@ void testEffectsOnTriggers()
 
 void testReverb()
 {
-    std::puts("reverb: added to the sequenced sound only, with tone, mix and level");
+    std::puts("reverb: room, hall and spring, added to the sequenced sound only, with tone, mix, level and cuts");
 
-    // The reverb alone: a unit click rings out and dies away, and stays finite.
+    // Each character on its own: a unit click rings out and dies away, noise passes at about unity.
+    for (int type = 0; type < kNumReverbTypes; ++type)
     {
-        Reverb r;
-        r.prepare(kFs, 0);
-        double early = 0.0, late = 0.0;
-        bool finite = true;
-        for (int i = 0; i < (int) (6.0 * kFs); ++i)
+        ReverbSettings rs;
+        rs.type = (ReverbType) type;
+        rs.tone = 1.0f;
         {
-            const float y = r.process(i == 0 ? 1.0f : 0.0f, 0.5f);
-            finite = finite && std::isfinite(y);
-            if (i < (int) (0.5 * kFs))
-                early += (double) y * y;
-            else if (i >= (int) (5.0 * kFs))
-                late += (double) y * y;
+            Reverb r;
+            r.prepare(kFs, 0);
+            for (int i = 0; i < 600; ++i) // let a change of type finish (it fades out and back in over ~16 ms)
+                r.process(0.0f, rs);
+            double early = 0.0, late = 0.0;
+            bool finite = true;
+            for (int i = 0; i < (int) (8.0 * kFs); ++i)
+            {
+                const float y = r.process(i == 0 ? 1.0f : 0.0f, rs);
+                finite = finite && std::isfinite(y);
+                if (i < (int) (0.5 * kFs))
+                    early += (double) y * y;
+                else if (i >= (int) (7.0 * kFs))
+                    late += (double) y * y;
+            }
+            CHECK(finite && early > 1.0e-6, "%s: an impulse produces a tail (energy %g)", reverbTypeName(rs.type), early);
+            CHECK(late < early * 1.0e-3, "%s: the tail decays (late %g vs early %g)", reverbTypeName(rs.type), late, early);
         }
-        CHECK(finite && early > 1.0e-6, "an impulse produces a tail (energy %g)", early);
-        CHECK(late < early * 1.0e-3, "and the tail decays (late %g vs early %g)", late, early);
+        {
+            Reverb r;
+            r.prepare(kFs, 0);
+            Rng rng(5);
+            double in2 = 0.0, out2 = 0.0;
+            for (int i = 0; i < (int) (4.0 * kFs); ++i)
+            {
+                const float x = 0.3f * rng.next();
+                const float y = r.process(x, rs);
+                if (i > (int) (2.0 * kFs))
+                {
+                    in2 += (double) x * x;
+                    out2 += (double) y * y;
+                }
+            }
+            const double gainDb = db(std::sqrt(out2 / in2));
+            CHECK(gainDb > -6.0 && gainDb < 6.0, "%s: steady noise passes at about unity (%.1f dB)", reverbTypeName(rs.type), gainDb);
+        }
     }
 
-    // Level calibration: noise through the reverb comes out about as loud as it went in.
+    // The three characters sound different, and Hall rings longer than Room.
+    {
+        auto tailEnergy = [](ReverbType type, double t0, double t1)
+        {
+            ReverbSettings rs;
+            rs.type = type;
+            rs.tone = 1.0f;
+            Reverb r;
+            r.prepare(kFs, 0);
+            for (int i = 0; i < 600; ++i)
+                r.process(0.0f, rs);
+            double e = 0.0;
+            for (int i = 0; i < (int) (t1 * kFs); ++i)
+            {
+                const float y = r.process(i == 0 ? 1.0f : 0.0f, rs);
+                if (i >= (int) (t0 * kFs))
+                    e += (double) y * y;
+            }
+            return e;
+        };
+        const double roomLate = tailEnergy(ReverbType::Room, 1.0, 3.0), hallLate = tailEnergy(ReverbType::Hall, 1.0, 3.0);
+        CHECK(hallLate > roomLate * 3.0, "hall rings longer than room (%g vs %g)", hallLate, roomLate);
+        CHECK(tailEnergy(ReverbType::Spring, 0.0, 1.0) != tailEnergy(ReverbType::Room, 0.0, 1.0), "spring is its own sound");
+    }
+
+    // Low cut and high cut shape the reverb: a 1 kHz sine passes with the filters open, but a high low-cut
+    // removes the lows and a low high-cut removes the highs.
+    {
+        auto level = [](double hz, float lowCut, float highCut)
+        {
+            ReverbSettings rs;
+            rs.type = ReverbType::Room;
+            rs.tone = 1.0f;
+            rs.lowCutHz = lowCut;
+            rs.highCutHz = highCut;
+            Reverb r;
+            r.prepare(kFs, 0);
+            double e = 0.0;
+            for (int i = 0; i < (int) (2.0 * kFs); ++i)
+            {
+                const float y = r.process(0.3f * (float) std::sin(2.0 * 3.14159265358979 * hz * (double) i / kFs), rs);
+                if (i > (int) kFs)
+                    e += (double) y * y;
+            }
+            return std::sqrt(e / kFs);
+        };
+        const double open = level(100.0, 20.0f, 20000.0f);
+        CHECK(level(100.0, 1000.0f, 20000.0f) < open * 0.2, "low cut at 1 kHz removes a 100 Hz tone");
+        const double openHigh = level(8000.0, 20.0f, 20000.0f);
+        CHECK(level(8000.0, 20.0f, 1000.0f) < openHigh * 0.1, "high cut at 1 kHz removes an 8 kHz tone");
+        CHECK(level(1000.0, 100.0f, 10000.0f) > level(1000.0, 20.0f, 20000.0f) * 0.7, "a tone between the cuts passes");
+    }
+
+    // Changing the type does not click: the output stays smooth through the switch.
     {
         Reverb r;
         r.prepare(kFs, 0);
-        Rng rng(5);
-        double in2 = 0.0, out2 = 0.0;
-        for (int i = 0; i < (int) (3.0 * kFs); ++i)
+        ReverbSettings rs;
+        rs.tone = 1.0f;
+        float last = 0.0f, worstStep = 0.0f;
+        for (int i = 0; i < (int) kFs; ++i)
         {
-            const float x = 0.3f * rng.next();
-            const float y = r.process(x, 1.0f);
-            if (i > (int) kFs)
-            {
-                in2 += (double) x * x;
-                out2 += (double) y * y;
-            }
+            rs.type = i < 24000 ? ReverbType::Room : ReverbType::Spring;
+            const float y = r.process(0.3f * (float) std::sin(2.0 * 3.14159265358979 * 200.0 * (double) i / kFs), rs); // a smooth input
+            if (i > 1000)
+                worstStep = std::max(worstStep, std::abs(y - last));
+            last = y;
         }
-        const double gainDb = db(std::sqrt(out2 / in2));
-        CHECK(gainDb > -6.0 && gainDb < 6.0, "steady noise passes at about unity (%.1f dB)", gainDb);
+        CHECK(worstStep < 0.1f && std::isfinite(last), "switching type stays smooth (largest step %.3f)", worstStep);
     }
 
     // A sequence plays once from a pick; steps are dry, so only the reverb can change the sound.

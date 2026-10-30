@@ -344,6 +344,19 @@ void testReverbParams()
     const auto reverbed = run(*p, in);
     check(maxDifference(reverbed, plain) > 0.01, "reverb mix up: the sequenced sound gets reverb (max diff " + String(maxDifference(reverbed, plain), 4) + ")");
 
+    setValue(*p, ids::reverbType, 1.0f);
+    const auto hall = run(*p, in);
+    setValue(*p, ids::reverbType, 2.0f);
+    const auto spring = run(*p, in);
+    check(maxDifference(hall, reverbed) > 0.01f && maxDifference(spring, hall) > 0.01f && isFinite(spring), "room, hall and spring sound different");
+    setValue(*p, ids::reverbType, 0.0f);
+    setValue(*p, ids::reverbLowCut, 2000.0f);
+    setValue(*p, ids::reverbHighCut, 200.0f);
+    const auto cut = run(*p, in);
+    check(maxDifference(cut, plain) < maxDifference(reverbed, plain) * 0.5f, "low cut and high cut thin the reverb right out");
+    setValue(*p, ids::reverbLowCut, 20.0f);
+    setValue(*p, ids::reverbHighCut, 20000.0f);
+
     setValue(*p, ids::reverbLevel, -30.0f);
     const auto quiet = run(*p, in);
     check(maxDifference(quiet, plain) < maxDifference(reverbed, plain) * 0.2f, "reverb level -30 dB: almost nothing is added");
@@ -426,7 +439,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 39 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 39 and 0)");
+    check(controls == 42 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 42 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -569,7 +582,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 34, "34 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 37, "37 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

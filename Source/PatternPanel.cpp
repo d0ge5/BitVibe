@@ -167,7 +167,7 @@ void PatternPanel::paint(Graphics& g)
     String text;
     Colour textColour = inkDim;
     if (!model.loaded)
-        text = "Load a beat on the DRUMS tab: the pattern follows its tempo";
+        text = "Load a beat first: the pattern follows its tempo";
     else if (numSteps == 0)
         text = "The beat's tempo is not known yet";
     else if (!active)
