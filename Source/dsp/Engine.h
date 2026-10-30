@@ -94,6 +94,11 @@ struct Params
     float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
     bool distReverb = false;
 
+    // On / off switches (both on by default): with the reverb off nothing is fed to it and nothing is added; with the
+    // sample blend off no random sounds start (the preview of the volume range still plays).
+    bool reverbOn = true;
+    bool sampleOn = true;
+
     // Sample blend: at the start of every sequencer step (with this chance) one of the picked sounds, chosen at
     // random, is mixed into the sequenced sound. The volume is set by two levels and the MIX knob between them:
     // sampleMix 0 plays at sampleBaseDb, 1 at sampleMaxDb (a base at the bottom, -60 dB, means silence). The set is
@@ -192,6 +197,8 @@ public:
         reverbDecaySm.setTime(fs, 40.0f);
         sampleMixSm.setTime(fs, 15.0f);
         distOnSm.setTime(fs, 10.0f);
+        reverbOnSm.setTime(fs, 15.0f);
+        sampleOnSm.setTime(fs, 15.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
         fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
 
@@ -340,17 +347,21 @@ public:
 
             const float outGain = outGainSm.next(outGainTarget);
             const float mixAmount = mixSm.next(blk.mix);
-            const float revMix = reverbMixSm.next(blk.reverbMix);
+            const float reverbOnGain = reverbOnSm.next(blk.reverbOn ? 1.0f : 0.0f);
+            const float sampleOnGain = sampleOnSm.next(blk.sampleOn ? 1.0f : 0.0f);
+            const float revMix = reverbMixSm.next(blk.reverbMix) * reverbOnGain;
             const float revTone = reverbToneSm.next(blk.reverbTone);
             const float revLevel = reverbLevelSm.next(blk.reverbLevel);
             // The random sounds belong to the sequence: they stop when it stops.
             if (!seqRunning)
                 samplePlayer.release();
+            if (!blk.sampleOn)
+                samplePlayer.release(); // switched off: what is sounding fades out
             const float distAmount = distOnSm.next(blk.distOn ? 1.0f : 0.0f);
             const bool distRun = blk.distOn || distAmount > 1.0e-4f;
             const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
             const auto heard = samplePlayer.process();
-            const float sampleSignal = heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.preview;
+            const float sampleSignal = heard.sequence * sampleMixSm.next(blk.sampleGain) * sampleOnGain + heard.preview;
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
@@ -393,7 +404,7 @@ public:
                     const float distorted = blk.distType == 1 ? ch.fuzz.process(y) : ch.dist.process(y);
                     y += (distorted - y) * distGate;
                 }
-                float reverbOut = ch.reverb.process(cleanSequence * reverbSend, revSettings);
+                float reverbOut = ch.reverb.process(cleanSequence * reverbSend * reverbOnGain, revSettings);
                 if (distRun && blk.distReverb)
                     reverbOut += ((blk.distType == 1 ? ch.fuzzReverb.process(reverbOut) : ch.distReverb.process(reverbOut)) - reverbOut) * distAmount;
                 y *= muteGain;
@@ -471,6 +482,7 @@ private:
         int reverbType = 0;
         bool reverbReverse = false;
         bool distOn = false, distReverb = false;
+        bool reverbOn = true, sampleOn = true;
         int distType = 0;
         bool patternOn = false;
         bool patternLock = false;
@@ -512,6 +524,8 @@ private:
         if (patternIdx >= blk.patternBarSteps)
             patternIdx = 0;
         blk.distOn = p.distOn;
+        blk.reverbOn = p.reverbOn;
+        blk.sampleOn = p.sampleOn;
         blk.distType = std::clamp(p.distType, 0, 1);
         blk.distReverb = p.distReverb;
         blk.distDrive = p.distDrive;
@@ -556,6 +570,8 @@ private:
             reverbDecaySm.snap(blk.reverbDecay);
             sampleMixSm.snap(blk.sampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
+            reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
+            sampleOnSm.snap(blk.sampleOn ? 1.0f : 0.0f);
             primed = true;
         }
 
@@ -741,7 +757,7 @@ private:
     // A sequencer step has just begun: maybe bring in one of the picked sounds, chosen at random. Muted steps stay silent.
     void stepStarted()
     {
-        if (blk.sampleGain <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
+        if (!blk.sampleOn || blk.sampleGain <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
             return;
         if (steps[(size_t) active[(size_t) seqIdx]].kind == mapping::Step::Kind::Mute)
             return;
@@ -823,7 +839,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm, reverbOnSm, sampleOnSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)

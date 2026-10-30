@@ -46,6 +46,8 @@ private:
     KnobSlider mixSlider, chanceSlider, baseSlider, maxSlider;
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
+    juce::ToggleButton onButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> onAtt;
     std::uint32_t previewPick = 0; // which of the picked sounds the preview plays (new each time the player starts a preview)
     int numAvailable = 0;
     juce::String shownButtonText, shownBankState;

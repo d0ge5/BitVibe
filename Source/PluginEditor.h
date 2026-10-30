@@ -231,6 +231,8 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> reverbDecayAtt, reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
     juce::ComboBox reverbTypeBox;
     juce::ToggleButton reverbReverseButton { "REVERSE" }; // each type of reverb remembers its own tick
+    juce::ToggleButton reverbOnButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> reverbOnAtt;
 
     // distortion on the sequenced sound: drive, tone and level, an on switch and a "reverb too" switch
     KnobSlider distDriveSlider, distToneSlider, distLevelSlider;

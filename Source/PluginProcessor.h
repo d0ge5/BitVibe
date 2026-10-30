@@ -35,6 +35,8 @@ inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
+inline constexpr const char* reverbOn = "reverbOn";
+inline constexpr const char* sampleOn = "sampleOn";
 inline constexpr const char* reverbDecay = "reverbDecay";
 inline constexpr const char* reverbReverseRoom = "reverbRevRoom";
 inline constexpr const char* reverbReverseHall = "reverbRevHall";
@@ -202,6 +204,8 @@ private:
     std::atomic<float>* pReverbMix = nullptr;
     std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
+    std::atomic<float>* pReverbOn = nullptr;
+    std::atomic<float>* pSampleOn = nullptr;
     std::atomic<float>* pReverbDecay = nullptr;
     std::array<std::atomic<float>*, 6> pReverbReverse {}; // one per type of reverb, in the order of the types
     std::atomic<float>* pDistOn = nullptr;

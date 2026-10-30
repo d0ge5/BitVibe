@@ -38,6 +38,10 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     }
     previewButton.onClick = [this] { previewBoth(); };
     addAndMakeVisible(previewButton);
+    onButton.setLookAndFeel(&laf);
+    onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleOn, onButton);
+    onButton.setTooltip("SAMPLES ON: switches the random sounds on or off. Off, no sound is added to the sequence. Your list, banks and volumes stay as they are.");
+    addAndMakeVisible(onButton);
 
     bankBox.setLookAndFeel(&laf);
     bankBox.onChange = [this]
@@ -81,6 +85,7 @@ SamplePanel::~SamplePanel()
 {
     mixSlider.setLookAndFeel(nullptr);
     chanceSlider.setLookAndFeel(nullptr);
+    onButton.setLookAndFeel(nullptr);
     bankBox.setLookAndFeel(nullptr);
 }
 
@@ -118,6 +123,7 @@ void SamplePanel::setAdvanced(bool on)
 
 void SamplePanel::resized()
 {
+    onButton.setBounds(kWidth - 70, 3, 56, 20);
     bankBox.setBounds(12, 24, advanced ? 108 : 238, 24);
     saveButton.setBounds(124, 24, 60, 24);
     deleteButton.setBounds(188, 24, 62, 24);

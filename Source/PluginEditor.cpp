@@ -499,6 +499,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(reverbToneSlider, reverbToneAtt, ids::reverbTone);
     reverbReverseButton.setLookAndFeel(&laf);
     content.addAndMakeVisible(reverbReverseButton);
+    reverbOnButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(reverbOnButton);
+    reverbOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::reverbOn, reverbOnButton);
     reverbReverseButton.onClick = [this]
     {
         // the tick belongs to the type of reverb that is showing
@@ -654,7 +657,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbDecaySlider, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -731,6 +734,7 @@ BitVibeEditor::~BitVibeEditor()
     distReverbButton.setLookAndFeel(nullptr);
     reverbTypeBox.setLookAndFeel(nullptr);
     reverbReverseButton.setLookAndFeel(nullptr);
+    reverbOnButton.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
     fxTrigButton.setLookAndFeel(nullptr);
@@ -953,6 +957,7 @@ void BitVibeEditor::setTooltips()
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
     reverbDecaySlider.setTooltip("REVERB DECAY: how long the reverb rings. Left = short, middle = normal, right = long (up to four times as long). "
                                  "With REVERSE on it sets how long the swell takes.");
+    reverbOnButton.setTooltip("REVERB ON: switches the reverb on or off (it only ever hears the sequenced and stuttered sound). Off, there is no reverb and the tail stops; your settings stay.");
     reverbReverseButton.setTooltip("REVERSE: tick this to play the reverb backwards: the sound swells up after the note instead of dying away. "
                                    "Every type of reverb remembers its own tick.");
     reverbToneSlider.setTooltip("REVERB TONE: the colour of the reverb, from dark (left) to bright (right).");
@@ -1145,6 +1150,7 @@ void BitVibeEditor::resized()
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 3, 100, 20 }));
     reverbReverseButton.setBounds(face({ kSideX + 250, kReverb.getY() + 3, 88, 20 }));
+    reverbOnButton.setBounds(face({ kSideX + 120, kReverb.getY() + 3, 56, 20 }));
 
     // distortion panel: the two switches on the caption row, three knobs below
     distTypeBox.setBounds(face({ kSideX + 136, kDist.getY() + 3, 118, 20 }));
@@ -1379,7 +1385,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     // Reverb panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 26, kReverb.getY() + 4, 220, 12), Justification::left);
+    g.drawText("REVERB", Rectangle<int>(kSideX + 26, kReverb.getY() + 4, 90, 12), Justification::left);
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },

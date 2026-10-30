@@ -1240,6 +1240,16 @@ void testReverb()
         CHECK(maxAbsDiff(render(rev, in), plain) == 0.0, "reverse with the reverb mix at 0 adds nothing");
     }
 
+    {
+        Params off = wet;
+        off.reverbOn = false;
+        CHECK(maxAbsDiff(render(off, in), plain) == 0.0, "reverb switched off: nothing is added, whatever the mix says");
+        Params later = wet;
+        const Signal switched = render(later, in, [](Params& q, size_t pos) { q.reverbOn = pos < 50000; });
+        CHECK(rmsDiff(switched, plain, 0.7, 1.0) > 1.0e-4 && maxAbsDiff(switched, plain, 1.4, 2.1) < 1.0e-5,
+              "switching the reverb off mid-way stops the tail (%g)", maxAbsDiff(switched, plain, 1.4, 2.1));
+    }
+
     // Nothing is sequenced: the reverb hears nothing, so the signal is untouched (the clean signal is never reverbed).
     Params idle = neutral();
     idle.reverbMix = 1.0f;
@@ -1414,6 +1424,17 @@ void testSampleBlend()
     p.sampleChance = 1.0f;
     p.steps.fill(1.0f); // fully right = mute
     CHECK(maxAbsDiff(renderWithTrigger(p), in) < 1.0e-6, "muted steps bring in no sound");
+
+    {
+        Params off = sequence();
+        off.sampleSet = &set;
+        off.sampleMix = 1.0f;
+        off.sampleOn = false;
+        CHECK(maxAbsDiff(renderWithTrigger(off), in) == 0.0, "sample blend switched off: no sound is added");
+        Params on = off;
+        on.sampleOn = true;
+        CHECK(maxAbsDiff(renderWithTrigger(on), in) > 0.05, "and switched on it plays again");
+    }
 
     // No set, or an empty one: nothing happens.
     p = sequence();

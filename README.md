@@ -160,6 +160,8 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   the swell takes). Every type remembers its own REVERSE tick, so you can have a reversed hall
   and a normal room and just switch the type. The reverse reverb is built as a swell of echoes that get louder and
   sparser towards the end, like a reversed room, rather than by recording and flipping audio, so it adds no delay.
+  The **ON** button next to the REVERB title switches the whole reverb on or off without touching its settings (it is
+  on by default; the reverb mix starts at 0, so nothing is heard until you turn it up).
   The reverb is part of the effect side, so the dry/wet **MIX** above still brings back the clean input, and BYPASS
   switches it off.
 - **DISTORTION / FUZZ** (the top panel of the right-hand column) is an overdrive or a fuzz for the sequenced sound
@@ -176,7 +178,7 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   compressed note), then a tone stack that crossfades a low-pass and a high-pass, which leaves the famous scoop in
   the middle with TONE at noon, then VOLUME. Both run their clippers at twice the sample rate to keep aliasing
   down. They are modelled from the circuits' published values, not copied from any hardware or software.
-- **SAMPLE BLEND** (panel in the right-hand column) brings a random sound into the sequence: at the start of
+- **SAMPLE BLEND** (panel in the right-hand column) has an **ON** button in its top corner that switches the random sounds on or off without touching the list, banks or volumes. brings a random sound into the sequence: at the start of
   every sequencer step one sound is picked at random from your list and fed into the signal before the pitch
   shifter and the bit-crush, sample-rate and filter stage, so it is shifted by the sequence's pitch steps and
   crushed along with everything else (and the reverb hears it). The sounds only play while the sequencer is
@@ -429,7 +431,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 421 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 425 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
