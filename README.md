@@ -19,6 +19,11 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 > BitVibe is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
 > the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
+**New in 0.2.0:** a column of effects on the sequenced sound (distortion / fuzz, six reverbs, a random sample
+blend, an 8-band EQ with a reference clip), a beat pattern, a loop section for the sequencer, a mode per step,
+SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
+[release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.2.0).
+
 [Features](#features) · [Install](#install) · [Using it](#using-it) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
 
 ## Features
@@ -97,6 +102,8 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 
 ### The pedal
 
+<img src="artifacts/editor_alt_filter.png" align="right" width="300" alt="The ALT layer: the six step knobs, each with a menu for what it controls">
+
 | Knob | What it does | Alt layer |
 | --- | --- | --- |
 | **Sample** | Sample-rate reduction (fully clockwise = off) | Step 1 |
@@ -124,8 +131,9 @@ It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean
 
 ### The right-hand side
 
-All of it hears only the sequenced and stuttered sound. Each section has an **ON** button, and its settings
-belong to your rig, so they stay put when you change preset.
+All of it hears only the sequenced and stuttered sound. The distortion, reverb, sample blend and EQ each have an
+**ON** button. These settings belong to your rig, so they stay put when you change preset slot (an exported preset
+file does carry them).
 
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
