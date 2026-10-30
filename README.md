@@ -124,7 +124,13 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   The stutter and the sequencer themselves (the repeats, the pitch steps, the muting) work as usual either
   way. With the Sequencer knob on *LOOP* the sequencer never stops, so the effects stay on, and with both the
   sequencer and the stutter off nothing ever triggers, so the signal passes through clean.
-- Neither setting is stored in a preset: like the output level, they belong to your rig and keep their
+- **REVERB** (panel under GLOBAL) is a basic room reverb that only hears the **sequenced and stuttered**
+  sound: while a sequence or stutter plays it feeds the reverb, and its tail rings on afterwards. Your clean
+  signal never gets reverb, and neither does anything when no sequence or stutter is running. **TONE** goes
+  from a dark to a bright reverb, **MIX** sets how much reverb is added (fully left = none, the default) and
+  **LEVEL** trims its volume from -30 dB to +6 dB. It is part of the effect side, so the dry/wet **MIX**
+  above still brings back the clean input, and BYPASS switches it off.
+- None of these settings is stored in a preset: like the output level, they belong to your rig and keep their
   values when you change preset.
 
 ### Hover tips
@@ -202,12 +208,14 @@ what each drum does when it hits hard enough.
   dashed Min level line or belong to a drum that is off, crossed ones are excluded. Hits flash as they fire,
   and the six lights show the sequencer's step. **Click** a hit to exclude it (or include it again);
   **right-click** it to move it to another drum or delete it. RE-ANALYSE starts again and discards these edits.
-- **BEAT PATTERN** (bottom of the tab): trigger on *where* you are in the bar instead of on how hard a drum
-  hits. Pick what the pattern does (restart the sequence, next step, stutter, or restart and stutter), then
-  click the 16 sixteenth-note steps of one bar to light the ones that fire; CLEAR, BEATS, OFFBEATS and
-  BACKBEAT fill in common patterns. The pattern repeats every bar of the loop, stays locked to the beat's
-  tempo (the /2 and x2 buttons move it), and works alongside the drum hits, or alone when the drums are
-  set to Off. The window grows taller while the DRUMS tab is open to make room.
+- **BEAT PATTERN** (bottom of the PEDAL tab, so it is at hand while you play): trigger on *where* you are in
+  the bar instead of on how hard a drum hits. Pick what the pattern does (restart the sequence, next step,
+  stutter, or restart and stutter), then click the 16 sixteenth-note steps of one bar to light the ones that
+  fire; CLEAR, BEATS, OFFBEATS and BACKBEAT fill in common patterns. **RANDOM** makes a new random pattern
+  (the first step of a beat is the likeliest to fire); click the beat numbers 1 to 4 under the steps to choose
+  which beats RANDOM may change, the others keep their steps. The pattern repeats every bar of the loop,
+  stays locked to the beat's tempo (the /2 and x2 buttons move it), and works alongside the drum hits, or
+  alone when the drums are set to Off. A beat has to be loaded (DRUMS tab) for the pattern to have a tempo.
 - The beat file, its hits (with your edits), the pattern and the drum settings are saved with your project. If the file
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
   belongs to your rig and is not part of the presets. Your host's **bypass** silences the beat and its
@@ -296,7 +304,7 @@ gate, and the instrument/line headroom difference.
 - The morph blend law: linear in knob position, with every discrete knob switching at 50 %.
 - What a preset slot contains (see [Presets](#presets)) and the factory sounds in slots 2 to 12.
 
-**Plug-in additions** (not in the hardware): the drum map and its analysis, the beat pattern, the mix, the trigger-only option,
+**Plug-in additions** (not in the hardware): the drum map and its analysis, the beat pattern, the reverb, the mix, the trigger-only option,
 presets with names, and the hover tips.
 
 **Not implemented yet:** MIDI CC and SysEx control of the presets (use your DAW's program list and
@@ -348,10 +356,10 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 299 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 315 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, the beat pattern, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+trigger events, the drum-map scheduler, the beat pattern, the reverb, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
 the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 

@@ -330,6 +330,35 @@ void testPresetsAndMorph()
     }
 }
 
+// The reverb parameters reach the engine: reverb only on the sequenced sound, never on the clean signal.
+void testReverbParams()
+{
+    std::puts("reverb (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f); // continuous sequencer: everything is sequenced
+    setValue(*p, ids::tempo, 120.0f);
+
+    const auto plain = run(*p, in);
+    setValue(*p, ids::reverbMix, 1.0f);
+    const auto reverbed = run(*p, in);
+    check(maxDifference(reverbed, plain) > 0.01, "reverb mix up: the sequenced sound gets reverb (max diff " + String(maxDifference(reverbed, plain), 4) + ")");
+
+    setValue(*p, ids::reverbLevel, -30.0f);
+    const auto quiet = run(*p, in);
+    check(maxDifference(quiet, plain) < maxDifference(reverbed, plain) * 0.2f, "reverb level -30 dB: almost nothing is added");
+
+    setValue(*p, ids::reverbLevel, 0.0f);
+    setValue(*p, ids::mix, 0.0f);
+    const auto clean = run(*p, in);
+    check(maxDifference(clean, in) < 1.0e-5f, "dry/wet mix 0: the clean signal comes back without reverb");
+
+    setValue(*p, ids::mix, 1.0f);
+    setValue(*p, ids::seqPlay, 0.0f);
+    const auto idle = run(*p, in);
+    check(maxDifference(idle, in) < 1.0e-5f, "no sequence or stutter running: the reverb adds nothing");
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -397,7 +426,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 36 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 36 and 0)");
+    check(controls == 39 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 39 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -540,7 +569,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 31, "31 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 34, "34 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1071,6 +1100,7 @@ int main(int argc, char** argv)
     testMixAndTriggerOnly();
     testDrumMap();
     testBeatPatternProcessor();
+    testReverbParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

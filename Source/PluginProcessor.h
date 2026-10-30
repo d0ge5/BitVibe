@@ -30,6 +30,9 @@ inline constexpr const char* expression = "expression";
 inline constexpr const char* morph = "morph";
 inline constexpr const char* mix = "mix";
 inline constexpr const char* fxTriggers = "fxTriggers";
+inline constexpr const char* reverbTone = "reverbTone";
+inline constexpr const char* reverbMix = "reverbMix";
+inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* beatPlay = "beatPlay";
 inline constexpr const char* beatLevel = "beatLevel";
 inline constexpr const char* pickTriggers = "pickTriggers";
@@ -61,7 +64,7 @@ public:
 
     // Sixteen preset slots. A slot holds the sound (knobs, tempo, stutter length, morph set-up) but not
     // the settings that belong to the player's rig or the moment: bypass, stutter hold, host sync, the
-    // expression position, input / output gain, headroom, trigger sensitivity, the dry/wet mix and the
+    // expression position, input / output gain, headroom, trigger sensitivity, the dry/wet mix, the reverb and the
     // "effects only on triggers" option keep their values when a preset is recalled.
     int getNumPrograms() override { return bitvibe::kNumPresets; }
     int getCurrentProgram() override { return currentProgram.load(); }
@@ -156,6 +159,9 @@ private:
     std::atomic<float>* pMorph = nullptr;
     std::atomic<float>* pMix = nullptr;
     std::atomic<float>* pFxTriggers = nullptr;
+    std::atomic<float>* pReverbTone = nullptr;
+    std::atomic<float>* pReverbMix = nullptr;
+    std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pBeatPlay = nullptr;
     std::atomic<float>* pBeatLevel = nullptr;
     std::atomic<float>* pPickTriggers = nullptr;

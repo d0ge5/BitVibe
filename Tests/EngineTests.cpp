@@ -897,6 +897,129 @@ void testEffectsOnTriggers()
 }
 
 // ---------------------------------------------------------------------------------------------
+// Reverb on the sequenced sound
+
+void testReverb()
+{
+    std::puts("reverb: added to the sequenced sound only, with tone, mix and level");
+
+    // The reverb alone: a unit click rings out and dies away, and stays finite.
+    {
+        Reverb r;
+        r.prepare(kFs, 0);
+        double early = 0.0, late = 0.0;
+        bool finite = true;
+        for (int i = 0; i < (int) (6.0 * kFs); ++i)
+        {
+            const float y = r.process(i == 0 ? 1.0f : 0.0f, 0.5f);
+            finite = finite && std::isfinite(y);
+            if (i < (int) (0.5 * kFs))
+                early += (double) y * y;
+            else if (i >= (int) (5.0 * kFs))
+                late += (double) y * y;
+        }
+        CHECK(finite && early > 1.0e-6, "an impulse produces a tail (energy %g)", early);
+        CHECK(late < early * 1.0e-3, "and the tail decays (late %g vs early %g)", late, early);
+    }
+
+    // Level calibration: noise through the reverb comes out about as loud as it went in.
+    {
+        Reverb r;
+        r.prepare(kFs, 0);
+        Rng rng(5);
+        double in2 = 0.0, out2 = 0.0;
+        for (int i = 0; i < (int) (3.0 * kFs); ++i)
+        {
+            const float x = 0.3f * rng.next();
+            const float y = r.process(x, 1.0f);
+            if (i > (int) kFs)
+            {
+                in2 += (double) x * x;
+                out2 += (double) y * y;
+            }
+        }
+        const double gainDb = db(std::sqrt(out2 / in2));
+        CHECK(gainDb > -6.0 && gainDb < 6.0, "steady noise passes at about unity (%.1f dB)", gainDb);
+    }
+
+    // A sequence plays once from a pick; steps are dry, so only the reverb can change the sound.
+    const Signal in = quietToneWithPick();
+    Params seq = neutral();
+    seq.seqPlay = 1;
+    seq.seqMult = 0;
+    seq.tempoBpm = 600.0f;
+    seq.steps.fill(mapping::pitchStepKnob(0));
+    const Signal plain = render(seq, in);
+
+    Params wet = seq;
+    wet.reverbMix = 1.0f;
+    CHECK(maxAbsDiff(render(seq, in), plain) == 0.0 && maxAbsDiff(render(wet, in), plain, 0.0, 0.09) < 1.0e-6,
+          "reverb mix 0 changes nothing, and nothing is heard before the pick");
+    const Signal withReverb = render(wet, in);
+    CHECK(rmsDiff(withReverb, plain, 0.7, 1.0) > 1.0e-4, "reverb mix 1: the sequenced sound gets a reverb (%g)", rmsDiff(withReverb, plain, 0.7, 1.0));
+    CHECK(rmsDiff(withReverb, plain, 1.4, 2.1) > 1.0e-5, "the tail rings on after the sequence has finished (%g)", rmsDiff(withReverb, plain, 1.4, 2.1));
+
+    // Nothing is sequenced: the reverb hears nothing, so the signal is untouched (the clean signal is never reverbed).
+    Params idle = neutral();
+    idle.reverbMix = 1.0f;
+    CHECK(maxAbsDiff(render(idle, in), in) < 1.0e-6, "with no sequence or stutter running the signal is untouched");
+
+    // Mix 0 on the blend (clean input only) leaves the reverb out of the output: the reverb is part of the effect side.
+    Params dryOnly = wet;
+    dryOnly.mix = 0.0f;
+    CHECK(maxAbsDiff(render(dryOnly, in), in) < 1.0e-6, "dry/wet mix 0 returns the clean input, with no reverb in it");
+
+    // Level: -6.02 dB halves the reverb, +0 dB is the full one (the reverb part is the difference to the plain sound).
+    Params half = wet;
+    half.reverbLevelDb = -6.0206f;
+    double worst = 0.0;
+    const Signal halfOut = render(half, in);
+    for (size_t i = 0; i < plain.size(); ++i)
+        worst = std::max(worst, (double) std::abs((halfOut[i] - plain[i]) - 0.5f * (withReverb[i] - plain[i])));
+    CHECK(worst < 1.0e-4, "level -6 dB halves the reverb (deviation %g)", worst);
+
+    // Mix is the amount added: 0.5 gives half the reverb.
+    Params mid = wet;
+    mid.reverbMix = 0.5f;
+    const Signal midOut = render(mid, in);
+    worst = 0.0;
+    for (size_t i = 0; i < plain.size(); ++i)
+        worst = std::max(worst, (double) std::abs((midOut[i] - plain[i]) - 0.5f * (withReverb[i] - plain[i])));
+    CHECK(worst < 1.0e-4, "mix 0.5 adds half the reverb (deviation %g)", worst);
+
+    // Tone: the dark setting leaves less high-frequency energy in the reverb than the bright one.
+    // A looping dry sequence keeps the noise "sequenced" the whole time.
+    {
+        Params loop = seq;
+        loop.seqPlay = 5;
+        const Signal src = noise(2.0, 0.3f, 7);
+        const Signal base = render(loop, src);
+        auto highShare = [&](float tone)
+        {
+            Params q = loop;
+            q.reverbMix = 1.0f;
+            q.reverbTone = tone;
+            const Signal o = render(q, src);
+            double hf = 0.0, all = 0.0;
+            for (size_t i = (size_t) (0.5 * kFs) + 1; i < o.size(); ++i)
+            {
+                const double v = (double) o[i] - base[i], v0 = (double) o[i - 1] - base[i - 1];
+                hf += (v - v0) * (v - v0);
+                all += v * v;
+            }
+            return hf / std::max(all, 1.0e-12);
+        };
+        const double dark = highShare(0.0f), bright = highShare(1.0f);
+        CHECK(dark < 0.25 * bright, "tone: dark has far less treble than bright (%g vs %g)", dark, bright);
+    }
+
+    // Bypass is still clean, and the engine copes with a reset mid-tail.
+    Params byp = wet;
+    byp.bypass = true;
+    CHECK(maxAbsDiff(render(byp, in), in) < 1.0e-6, "bypass is clean with the reverb on");
+}
+
+// ---------------------------------------------------------------------------------------------
 // Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
 
 // Runs an engine sample by sample (so the step can be read after every sample) and returns the step
@@ -1494,6 +1617,32 @@ void testBeatPattern()
               "on a tie the drum hit comes first");
     }
 
+    // RANDOM: only the chosen beats change, the rest keep their steps, and the same seed gives the same pattern.
+    {
+        bool onlyChosen = true, deterministic = true, neverEmpty = true, varied = false;
+        uint32_t first = patternRandom(0xA5A5u, 0x6u, 1u);
+        for (uint32_t seed = 1; seed <= 200; ++seed)
+        {
+            const uint32_t base = 0xA5A5u;
+            const uint32_t r = patternRandom(base, 0x6u, seed); // beats 2 and 3
+            onlyChosen = onlyChosen && (r & 0xF00Fu) == (base & 0xF00Fu) && r <= kPatternMask;
+            deterministic = deterministic && r == patternRandom(base, 0x6u, seed);
+            neverEmpty = neverEmpty && (r & 0x0FF0u) != 0u;
+            varied = varied || r != first;
+        }
+        CHECK(onlyChosen, "random: beats that are not chosen keep their steps");
+        CHECK(deterministic && neverEmpty && varied, "random: repeatable per seed, different between seeds, never empty");
+        CHECK(patternRandom(0x1234u, 0u, 7u) == 0x1234u, "random with no beat chosen changes nothing");
+        int firstStepLit = 0, inBetweenLit = 0;
+        for (uint32_t seed = 1; seed <= 400; ++seed)
+        {
+            const uint32_t r = patternRandom(0u, 0xFu, seed);
+            firstStepLit += (int) (r & 1u);
+            inBetweenLit += (int) ((r >> 1) & 1u);
+        }
+        CHECK(firstStepLit > inBetweenLit, "random: the first sixteenth of a beat fires more often than the second (%d vs %d)", firstStepLit, inBetweenLit);
+    }
+
     // A full list drops pattern events rather than overrunning it.
     {
         std::array<TriggerEvent, 3> out {};
@@ -1521,6 +1670,7 @@ int main(int argc, char** argv)
     testEffectsOnTriggers();
     testBeatRoute();
     testBeatPattern();
+    testReverb();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();

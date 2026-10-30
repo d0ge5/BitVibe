@@ -594,6 +594,7 @@ DrumPattern DrumBeat::getPattern() const
     DrumPattern p;
     p.action = (DrumAction) jlimit(0, kNumDrumActions - 1, patternAction.load());
     p.steps = patternSteps.load() & kPatternMask;
+    p.randomBeats = patternRandomBeats.load() & 0xFu;
     return p;
 }
 
@@ -601,6 +602,7 @@ void DrumBeat::setPattern(const DrumPattern& p)
 {
     patternAction = jlimit(0, kNumDrumActions - 1, (int) p.action);
     patternSteps = p.steps & kPatternMask;
+    patternRandomBeats = p.randomBeats & 0xFu;
 }
 
 DrumBeat::AnalysisMode DrumBeat::getAnalysisMode() const
@@ -698,6 +700,7 @@ ValueTree DrumBeat::toState() const
     const auto pattern = getPattern();
     t.setProperty("patternAction", (int) pattern.action, nullptr);
     t.setProperty("patternSteps", (int) pattern.steps, nullptr);
+    t.setProperty("patternRandomBeats", (int) pattern.randomBeats, nullptr);
     const auto settings = getSettings();
     for (int d = 0; d < kNumDrums; ++d)
     {
@@ -728,6 +731,7 @@ void DrumBeat::fromState(const ValueTree& t)
         DrumPattern pattern;
         pattern.action = (DrumAction) jlimit(0, kNumDrumActions - 1, (int) t.getProperty("patternAction", 0));
         pattern.steps = (uint32_t) (int) t.getProperty("patternSteps", 0) & kPatternMask;
+        pattern.randomBeats = (uint32_t) (int) t.getProperty("patternRandomBeats", 0xF) & 0xFu;
         setPattern(pattern);
     }
 

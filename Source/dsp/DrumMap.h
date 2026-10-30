@@ -203,9 +203,49 @@ struct DrumPattern
 {
     DrumAction action = DrumAction::Off;
     uint32_t steps = 0; // bit n set = step n of the bar fires (step 0 = the first sixteenth of the bar)
+    uint32_t randomBeats = 0xFu; // which of the four beats RANDOM may change (bit 0 = beat 1); the audio ignores it
 
-    bool operator==(const DrumPattern& o) const { return action == o.action && steps == o.steps; }
+    bool operator==(const DrumPattern& o) const { return action == o.action && steps == o.steps && randomBeats == o.randomBeats; }
 };
+
+// RANDOM: a new random pattern inside the chosen beats (beatMask bit b = beat b+1); the other beats keep their
+// steps. The first sixteenth of a beat is the likeliest to fire, then the "and", then the two in-between ones.
+// At least one step in the chosen beats is lit. A beat mask of 0 changes nothing. Pure and portable: the same
+// seed always gives the same pattern.
+inline uint32_t patternRandom(uint32_t steps, uint32_t beatMask, uint32_t seed)
+{
+    beatMask &= 0xFu;
+    if (beatMask == 0)
+        return steps & kPatternMask;
+    uint32_t state = seed * 2654435761u + 0x9E3779B9u;
+    auto next = [&state]
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return (int) (state % 100u);
+    };
+    static constexpr int kChance[4] { 55, 20, 40, 20 }; // percent, for the first..fourth sixteenth of a beat
+    uint32_t result = steps & kPatternMask;
+    uint32_t lit = 0;
+    for (int beat = 0; beat < 4; ++beat)
+    {
+        if (((beatMask >> beat) & 1u) == 0u)
+            continue;
+        result &= ~(0xFu << (beat * 4));
+        for (int s = 0; s < 4; ++s)
+            if (next() < kChance[s])
+                lit |= 1u << (beat * 4 + s);
+    }
+    if (lit == 0) // never leave the chosen beats empty: light the first step of one of them
+    {
+        int pick = next() % 4;
+        while (((beatMask >> pick) & 1u) == 0u)
+            pick = (pick + 1) % 4;
+        lit = 1u << (pick * 4);
+    }
+    return (result | lit) & kPatternMask;
+}
 
 // Ready-made patterns for the buttons next to the grid (0 = clear).
 inline uint32_t patternPreset(int which)

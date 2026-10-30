@@ -96,6 +96,18 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
 
+    // ---- reverb on the sequenced sound (rig settings too). Mix 0 = off. -------------------
+    auto percent = AudioParameterFloatAttributes()
+                       .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
+                       .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); });
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbTone), "Reverb Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbMix), "Reverb Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        id(ids::reverbLevel), "Reverb Level", NormalisableRange<float>(-30.0f, 6.0f, 0.1f), 0.0f,
+        AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
+            .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
+
     // ---- drum beat (DRUMS tab) -----------------------------------------------------------
     // Also rig settings, not stored in preset slots.
     layout.add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
@@ -115,7 +127,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 namespace
 {
 // Parameters a preset slot stores, in this order. Bypass, stutter hold, host sync, the expression
-// position, the input / output / headroom / trigger settings, the mix and the effects-on-triggers
+// position, the input / output / headroom / trigger settings, the mix, the reverb and the effects-on-triggers
 // option are left out on purpose (see the comment in the header).
 std::vector<String> presetParameterIds()
 {
@@ -201,6 +213,9 @@ BitVibeProcessor::BitVibeProcessor()
     pMorph = raw(ids::morph);
     pMix = raw(ids::mix);
     pFxTriggers = raw(ids::fxTriggers);
+    pReverbTone = raw(ids::reverbTone);
+    pReverbMix = raw(ids::reverbMix);
+    pReverbLevel = raw(ids::reverbLevel);
     pBeatPlay = raw(ids::beatPlay);
     pBeatLevel = raw(ids::beatLevel);
     pBeatOutput = raw(ids::beatOutput);
@@ -300,6 +315,9 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.mix = pMix->load();
     p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
+    p.reverbTone = pReverbTone->load();
+    p.reverbMix = pReverbMix->load();
+    p.reverbLevelDb = pReverbLevel->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
     p.stepsOnHits = roundToInt(pStepClock->load()) == 1;
     return p;

@@ -73,6 +73,8 @@ private:
     bool pressed = false;
 };
 
+class PatternPanel;
+
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -124,6 +126,11 @@ private:
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ComboBox headroomBox, stutterLenBox;
+
+    // reverb on the sequenced sound, and the beat pattern panel below it
+    juce::Slider reverbToneSlider, reverbMixSlider, reverbLevelSlider;
+    std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt;
+    std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 
     // footswitches and buttons

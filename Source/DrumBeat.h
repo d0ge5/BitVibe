@@ -208,6 +208,7 @@ private:
     std::array<std::atomic<float>, bitvibe::kNumDrums> minLevels, minConfidences;
     std::atomic<int> patternAction { 0 };
     std::atomic<uint32_t> patternSteps { 0 };
+    std::atomic<uint32_t> patternRandomBeats { 0xF };
 
     HandOver<HitData> hitSlot;
     HandOver<AudioData> audioSlot;

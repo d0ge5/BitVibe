@@ -80,6 +80,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/DrumPage.cpp
+        Source/PatternPanel.cpp
         Source/DrumBeat.cpp)
 
     # The DRUMS tab lists the audio files in this folder (local builds only; installed copies use
@@ -125,6 +126,7 @@ if(BITVIBE_BUILD_PLUGIN)
             Source/PluginProcessor.cpp
             Source/PluginEditor.cpp
             Source/DrumPage.cpp
+        Source/PatternPanel.cpp
             Source/DrumBeat.cpp)
         target_include_directories(BitVibeEditorSnapshot PRIVATE Source)
         target_compile_definitions(BitVibeEditorSnapshot PRIVATE
