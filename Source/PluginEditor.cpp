@@ -477,7 +477,8 @@ void HelpOverlay::paint(Graphics& g)
         "2.  Turn up SEQUENCER (how many times the six-step sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
         "the steps change: pitch, filter or sample rate. The coloured bars above TEMPO are the steps: click one to see its knob, "
         "drag across them to loop those steps.",
-        "3.  SAMPLE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal; OUTPUT sets the level.",
+        "3.  SAMPLE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
+        "signal and sends out only the sequenced sound); OUTPUT sets the level.",
         "4.  On the right, the BEAT PATTERN can start the sequence on chosen steps of a bar. Below it, the numbered panels work on "
         "the sequenced sound only, in that order: random sounds, distortion or fuzz, reverb, EQ. Their ON lights glow while they act.",
         "5.  Hover over anything for a short description. Double-click a knob to reset it. Drag the bottom-right corner to resize the window.",
@@ -700,7 +701,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     content.addAndMakeVisible(*patternPanel);
 
-    for (auto* b : { &syncButton, &holdButton, &fxTrigButton })
+    for (auto* b : { &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton })
     {
         b->setLookAndFeel(&laf);
         content.addAndMakeVisible(*b);
@@ -708,6 +709,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     syncAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::tempoSync, syncButton);
     holdAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::hold, holdButton);
     fxTrigAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::fxTriggers, fxTrigButton);
+    seqOnlyAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::seqOnly, seqOnlyButton);
 
     auto fillCombo = [this](ComboBox& box, const char* id)
     {
@@ -847,7 +849,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     refreshPresetName();
     setTooltips();
 
-    pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
+    pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
@@ -938,6 +940,7 @@ BitVibeEditor::~BitVibeEditor()
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
     fxTrigButton.setLookAndFeel(nullptr);
+    seqOnlyButton.setLookAndFeel(nullptr);
     morphButton.setLookAndFeel(nullptr);
     expressionSlider.setLookAndFeel(nullptr);
     presetLabel.setLookAndFeel(nullptr);
@@ -1249,6 +1252,8 @@ void BitVibeEditor::setTooltips()
     trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
     syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo knob.");
     holdButton.setTooltip("HOLD: freeze the stutter on the current (or next) note until you switch this off.");
+    seqOnlyButton.setTooltip("SEQ ONLY: cut your clean signal and send out only the sequenced sound. Between sequences the plug-in is "
+                             "silent (the reverb still rings out); DRY/WET has no effect while this is on.");
     fxTrigButton.setTooltip("FX ONLY ON TRIGGERS: when on, the sample-rate, bit and filter effects only act while the stutter or "
                             "sequencer is playing; the rest of the time your signal stays clean. A sequencer set to LOOP is always playing.");
     headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths.");
@@ -1481,6 +1486,7 @@ void BitVibeEditor::resized()
     triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
     stepStrip.setBounds(face({ 186, 352, 140, 28 }));
     fxTrigButton.setBounds(face({ 24, 686, 156, 24 }));
+    seqOnlyButton.setBounds(face({ 186, 480, 108, 24 })); // the middle of the pedal, under the tempo
     loopButton.setBounds(face({ 188, 686, 50, 24 }));
     loopFromBox.setBounds(face({ 242, 686, 44, 24 }));   // "TO" is painted between the two step boxes
     loopToBox.setBounds(face({ 308, 686, 44, 24 }));
@@ -1666,7 +1672,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     const std::array<Entry, 5> entries {{
         { "TEMPO", String(rawValue(ids::tempo), 1) },
         { "INPUT", String(rawValue(ids::inputGain), 1) + " dB" },
-        { "DRY/WET", String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet" },
+        { "DRY/WET", rawValue(ids::seqOnly) > 0.5f ? String("SEQ ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet" },
         { "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB" },
         { "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%" },
     }};
@@ -1821,6 +1827,7 @@ void BitVibeEditor::updateLiveState()
         }
     }
     {
+        mixSlider.setAlpha(rawValue(ids::seqOnly) > 0.5f ? kOffAlpha : 1.0f); // SEQ ONLY makes DRY/WET do nothing
         // the power buttons glow while their effect acts; a switched-off panel's controls are dimmed
         const bool live = proc.getEngine().isEffectSideActive();
         setPowerActive(distOnButton, live);

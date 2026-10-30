@@ -38,8 +38,8 @@ SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
-- **Mix**, tempo **sync** to your DAW, input and output gain, and an option to apply the effects **only while
-  the stutter or sequencer plays**.
+- **Mix**, tempo **sync** to your DAW, input and output gain, an option to apply the effects **only while
+  the stutter or sequencer plays**, and **SEQ ONLY** to send out nothing but the sequenced sound.
 
 **The right-hand side** (works only on the sequenced and stuttered sound; your clean signal is left alone)
 
@@ -130,6 +130,9 @@ while you turn it. You can drag the bottom-right corner to resize the window.
   sweep going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
 - **MIX** blends your clean input with the effect. **FX ONLY ON TRIGGERS** applies the crush and filter only
   while a stutter or sequence plays, so your playing stays clean in between.
+- **SEQ ONLY** (in the middle of the pedal, under the tempo) cuts your clean signal so only the sequenced sound
+  leaves the plug-in: it is silent between sequences, the reverb still rings out, and DRY/WET does nothing while it
+  is on. Handy on a parallel track or with the clean guitar on another channel.
 
 It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean signal.
 
@@ -222,7 +225,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 474 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 480 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

@@ -1895,6 +1895,59 @@ void testStepTypes()
     CHECK(rmsDiff(render(rateStep, in), pitchOnly, 2.1, 2.9) > 0.01, "a SAMPLE step crushes the sample rate");
 }
 
+// SEQ ONLY: the clean signal is cut and the effect side only sounds while a sequence or stutter plays; the reverb
+// still rings out after it.
+void testSeqOnly()
+{
+    std::puts("sequence only");
+    const Signal in = sine(330.0, 2.0, 0.3f);
+    Params idle = neutral(); // no sequence, no stutter
+    idle.seqOnly = true;
+    CHECK(rms(render(idle, in), 0.2, 1.9) < 1.0e-6, "nothing playing: silence (%g)", rms(render(idle, in), 0.2, 1.9));
+    idle.mix = 0.0f;
+    CHECK(rms(render(idle, in), 0.2, 1.9) < 1.0e-6, "the clean signal is cut even with DRY/WET fully dry");
+
+    Params running = neutral();
+    running.seqPlay = 5; // continuous
+    running.pickTriggers = false;
+    Params runningOnly = running;
+    runningOnly.seqOnly = true;
+    runningOnly.mix = 0.3f; // no effect while SEQ ONLY is on
+    CHECK(rmsDiff(render(runningOnly, in), render(running, in), 0.2, 1.9) < 1.0e-4, "while the sequence plays, the sequenced sound as usual (fully wet)");
+
+    // one pass of six 100 ms steps from the start, then the sequence stops: silence after, except the reverb's tail
+    Params once = neutral();
+    once.seqPlay = 1;
+    once.seqMult = 0;
+    once.tempoBpm = 600.0f;
+    once.steps.fill(mapping::pitchStepKnob(0));
+    once.pickTriggers = false;
+    once.seqOnly = true;
+    auto play = [&](const Params& q)
+    {
+        Engine e;
+        e.prepare(kFs);
+        Signal out = in;
+        for (size_t pos = 0; pos < out.size(); pos += 256)
+        {
+            float* ch = out.data() + pos;
+            const TriggerEvent start { 0, TriggerAction::RestartSequence };
+            e.process(&ch, 1, (int) std::min<size_t>(256, out.size() - pos), q, pos == 0 ? &start : nullptr, pos == 0 ? 1 : 0);
+        }
+        return out;
+    };
+    const auto dryTail = play(once);
+    CHECK(rms(dryTail, 0.1, 0.5) > 0.1 && rms(dryTail, 0.8, 1.9) < 1.0e-5,
+          "the sequence sounds (%.3f) and then the plug-in goes silent (%g)", rms(dryTail, 0.1, 0.5), rms(dryTail, 0.8, 1.9));
+    Params withReverb = once;
+    withReverb.reverbMix = 0.8f;
+    const auto wetTail = play(withReverb);
+    CHECK(rms(wetTail, 0.65, 0.9) > 1.0e-3, "the reverb still rings out after the sequence (%g)", rms(wetTail, 0.65, 0.9));
+    Params bypassed = idle;
+    bypassed.bypass = true;
+    CHECK(rmsDiff(render(bypassed, in), in, 0.2, 1.9) < 1.0e-6, "bypass still gives back the clean input");
+}
+
 void testSequenceLoop()
 {
     std::puts("sequence loop");
@@ -2873,6 +2926,7 @@ int main(int argc, char** argv)
     testBeatRoute();
     testBeatPattern();
     testStepTypes();
+    testSeqOnly();
     testSequenceLoop();
     testLoopSectionSamples();
     testEqReference();

@@ -303,6 +303,8 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> tempoAtt, inAtt, mixAtt, outAtt, trigAtt;
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
+    juce::ToggleButton seqOnlyButton { "SEQ ONLY" };
+    std::unique_ptr<APVTS::ButtonAttachment> seqOnlyAtt;
     juce::ComboBox headroomBox, stutterLenBox;
     juce::ToggleButton loopButton { "LOOP" };
     std::unique_ptr<APVTS::ButtonAttachment> loopAtt;

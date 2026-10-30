@@ -130,6 +130,14 @@ public:
         return out;
     }
 
+    bool isPreviewing() const
+    {
+        for (const auto& v : voices)
+            if (v.clip != nullptr && v.preview)
+                return true;
+        return false;
+    }
+
     bool isPlaying() const
     {
         for (const auto& v : voices)

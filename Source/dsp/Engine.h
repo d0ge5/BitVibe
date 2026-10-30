@@ -87,6 +87,11 @@ struct Params
     // signal passes that stage untouched.
     bool fxOnlyOnTriggers = false;
 
+    // When on, only the sequenced sound leaves the plug-in: the clean signal is cut (as if mix were fully wet) and the
+    // effect side is silent except while a sequence or stutter plays (and while a sample preview sounds). Its reverb
+    // and the EQ after it still ring out when the sequence stops.
+    bool seqOnly = false;
+
     // Reverb on the sequenced / stuttered sound only (never on the clean signal that MIX blends back in).
     // reverbMix = how much reverb is added (0 = none, the default); tone 0 = dark .. 1 = bright; level trims the reverb's output.
     float reverbMix = 0.0f;
@@ -267,6 +272,7 @@ public:
         fxMix = 1.0f;
         fxInit = false;
         reverbSend = 0.0f;
+        seqOnlyGate = 0.0f;
         patternIdx = 0;
         patternPhase = 0.0;
         patternFresh = true;
@@ -411,6 +417,11 @@ public:
             const float sendTarget = (seqRunning || channels[0].stutter.isActive()) ? 1.0f : 0.0f;
             reverbSend += (sendTarget - reverbSend) * (sendTarget > reverbSend ? fxAttack : fxRelease);
             const float bypassMix = bypassSm.next(blk.bypass ? 0.0f : 1.0f);
+            // SEQ ONLY: the sequenced sound only, with the same quick fade in and out as the reverb's send
+            const float seqTarget = (seqRunning || channels[0].stutter.isActive() || samplePlayer.isPreviewing()) ? 1.0f : 0.0f;
+            seqOnlyGate += (seqTarget - seqOnlyGate) * (seqTarget > seqOnlyGate ? fxAttack : fxRelease);
+            const float seqGate = blk.seqOnly ? seqOnlyGate : 1.0f;
+            const float wetAmount = blk.seqOnly ? 1.0f : mixAmount;
 
             // ---- per-channel audio path --------------------------------------------------
             float beforeEqSum = 0.0f, afterEqSum = 0.0f;
@@ -446,7 +457,7 @@ public:
                 float reverbOut = ch.reverb.process(cleanSequence * reverbSend * reverbOnGain, revSettings);
                 if (distRun && blk.distReverb)
                     reverbOut += ((blk.distType == 1 ? ch.fuzzReverb.process(reverbOut) : ch.distReverb.process(reverbOut)) - reverbOut) * distAmount;
-                y *= muteGain;
+                y *= muteGain * seqGate;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
                 // The EQ comes last, on everything the sequenced sound has become. What reaches it is kept as the
@@ -470,7 +481,7 @@ public:
                 }
 
                 if (!audition) // the clip is heard on its own, without the clean signal
-                    y = lerpExact(dry[(size_t) c], y, mixAmount);
+                    y = lerpExact(dry[(size_t) c], y, wetAmount);
                 y *= outGain;
 
                 io[c][n] = lerpExact(dry[(size_t) c], y, bypassMix);
@@ -537,6 +548,7 @@ private:
         mapping::StutterMode stutter;
         bool bypass = false;
         bool fxOnlyOnTriggers = false;
+        bool seqOnly = false;
         bool pickTriggers = true, stepsOnHits = false;
         float mix = 1.0f;
         float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f, reverbDecay = 0.5f;
@@ -565,6 +577,7 @@ private:
         blk.bits = p.bits;
         blk.bypass = p.bypass;
         blk.fxOnlyOnTriggers = p.fxOnlyOnTriggers;
+        blk.seqOnly = p.seqOnly;
         blk.pickTriggers = p.pickTriggers;
         blk.stepsOnHits = p.stepsOnHits;
         blk.mix = std::clamp(p.mix, 0.0f, 1.0f);
@@ -962,6 +975,7 @@ private:
     const SampleSet* lastSampleSet = nullptr;
     const SampleSet* lastLoopSampleSet = nullptr;
     float reverbSend = 0.0f; // 1 while a sequence or stutter plays (smoothed): the reverb hears only that
+    float seqOnlyGate = 0.0f; // the same, plus a sounding preview: what SEQ ONLY lets out
 
     // sequencer
     std::array<mapping::Step, kNumSteps> steps {};

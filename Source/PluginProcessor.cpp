@@ -111,6 +111,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "% effect"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
+    // only the sequenced sound leaves the plug-in (a rig setting, like the mix)
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::seqOnly), "Sequence Only", false));
 
     // ---- reverb on the sequenced sound (rig settings too). Mix 0 = off. -------------------
     auto percent = AudioParameterFloatAttributes()
@@ -326,6 +328,7 @@ BitVibeProcessor::BitVibeProcessor()
     pMorph = raw(ids::morph);
     pMix = raw(ids::mix);
     pFxTriggers = raw(ids::fxTriggers);
+    pSeqOnly = raw(ids::seqOnly);
     pReverbTone = raw(ids::reverbTone);
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
@@ -506,6 +509,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.mix = pMix->load();
     p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
+    p.seqOnly = pSeqOnly->load() > 0.5f;
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
@@ -819,7 +823,7 @@ bool isSharedEffect(const String& id)
     for (const char* prefix : { "reverb", "dist", "sample", "eq" })
         if (id.startsWith(prefix))
             return true;
-    return id == ids::mix || id == ids::fxTriggers || id == ids::patternLock;
+    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
 }
 } // namespace
 

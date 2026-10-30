@@ -35,6 +35,7 @@ inline constexpr const char* expression = "expression";
 inline constexpr const char* morph = "morph";
 inline constexpr const char* mix = "mix";
 inline constexpr const char* fxTriggers = "fxTriggers";
+inline constexpr const char* seqOnly = "seqOnly";
 inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
@@ -236,6 +237,7 @@ private:
     std::atomic<float>* pMorph = nullptr;
     std::atomic<float>* pMix = nullptr;
     std::atomic<float>* pFxTriggers = nullptr;
+    std::atomic<float>* pSeqOnly = nullptr;
     std::atomic<float>* pReverbTone = nullptr;
     std::atomic<float>* pReverbMix = nullptr;
     std::atomic<float>* pReverbLevel = nullptr;
