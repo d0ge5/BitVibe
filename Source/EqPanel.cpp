@@ -16,8 +16,10 @@ constexpr std::array<float, 7> kClipLengths { 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f
 EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), laf(lookAndFeel)
 {
     onButton.setLookAndFeel(&laf);
+    makePowerButton(onButton);
     onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::eqOn, onButton);
-    onButton.setTooltip("EQ ON: switches the EQ on or off. It is the last thing the sequenced sound goes through; your clean signal never does.");
+    onButton.setTooltip("EQ ON: switches the EQ on or off. It is the last thing the sequenced sound goes through; your clean signal never does. "
+                        "The light glows while the sequence or stutter plays.");
     addAndMakeVisible(onButton);
 
     bandOnButton.setLookAndFeel(&laf);
@@ -159,11 +161,11 @@ void EqPanel::selectBand(int band)
 
 void EqPanel::resized()
 {
-    onButton.setBounds(kWidth - 70, 3, 56, 20);
-    captureButton.setBounds(34, 2, 62, 20);
-    lengthBox.setBounds(99, 2, 54, 20);
-    playButton.setBounds(157, 2, 68, 20);
-    saveClipButton.setBounds(229, 2, 68, 20);
+    onButton.setBounds(8, 3, 50, 19);
+    captureButton.setBounds(106, 2, 62, 20);
+    lengthBox.setBounds(171, 2, 52, 20);
+    playButton.setBounds(226, 2, 68, 20);
+    saveClipButton.setBounds(297, 2, 68, 20);
     for (int b = 0; b < kNumEqBands; ++b)
         bandButtons[(size_t) b]->setBounds(12 + b * 25, kRowY, 23, 22);
     typeBox.setBounds(216, kRowY, 112, 22);
@@ -299,6 +301,15 @@ void EqPanel::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel
 
 void EqPanel::refresh()
 {
+    setPowerActive(onButton, proc.getEngine().isEffectSideActive());
+    {
+        // switched off: the band settings dim (the reference clip still works, to hear the sound without the EQ)
+        const float alpha = rawValue(ids::eqOn) > 0.5f ? 1.0f : kOffAlpha;
+        for (Component* c : std::initializer_list<Component*> { &bandOnButton, &typeBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
+            c->setAlpha(alpha);
+        for (auto& b : bandButtons)
+            b->setAlpha(alpha);
+    }
     updateClipButtons();
     updateSpectrum();
     repaint();
@@ -407,9 +418,10 @@ void EqPanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("EQ", 14, 4, 24, 12, Justification::left);
+    drawPanelTitle(g, kPanelTitleX, 4, 4, "EQ");
+    g.setColour(inkDim);
     g.setFont(plain(10.0f));
-    g.drawText(clipStatus, 301, 4, 84, 14, Justification::left);
+    g.drawText(clipStatus, 369, 4, 80, 14, Justification::left);
 
     const bool on = rawValue(ids::eqOn) > 0.5f;
     const auto bands = currentBands();

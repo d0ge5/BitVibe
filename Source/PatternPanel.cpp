@@ -235,7 +235,7 @@ void PatternPanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("BEAT PATTERN", 14, 4, 200, 12, Justification::left);
+    g.drawText("BEAT PATTERN: WHEN THE SEQUENCE FIRES", 14, 4, 260, 12, Justification::left);
 
     const auto& ts = timeSignature(pattern.signature);
     const bool active = pattern.action != DrumAction::Off;

@@ -17,6 +17,33 @@ inline const juce::Colour panel { 0xff17171a };
 inline const juce::Colour panelEdge { 0xff2c2c31 };
 inline juce::Font bold(float h) { return juce::Font(juce::FontOptions(h, juce::Font::bold)); }
 inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(h, juce::Font::plain)); }
+
+// The right-hand column's effect panels are numbered in the order the sequenced sound goes through them. Draws the
+// number in a small badge at (x, y) and the title after it (y is the top of the title row).
+void drawPanelTitle(juce::Graphics&, int x, int y, int number, const juce::String& title);
+inline constexpr int kPanelTitleX = 64; // where a numbered title starts, right of the power button
+
+// A panel's power button: a ToggleButton with this property set is drawn as a pill with a light (lit when on, glowing
+// while the property "active" is set, i.e. while the effect is acting on the sound) and ON / OFF.
+inline const juce::Identifier powerProperty { "power" }, activeProperty { "active" };
+inline void makePowerButton(juce::ToggleButton& b) { b.getProperties().set(powerProperty, true); }
+// Sets the glow; repaints only on a change.
+inline void setPowerActive(juce::ToggleButton& b, bool active)
+{
+    if ((bool) b.getProperties().getWithDefault(activeProperty, false) != active)
+    {
+        b.getProperties().set(activeProperty, active);
+        b.repaint();
+    }
+}
+inline constexpr float kOffAlpha = 0.4f; // a switched-off panel's controls
+
+// What a sequencer step controls, in one colour each: pitch, filter, sample rate.
+inline juce::Colour stepTypeColour(int type)
+{
+    static const juce::Colour colours[3] { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) };
+    return colours[juce::jlimit(0, 2, type)];
+}
 } // namespace pedalstyle
 
 // Dark, brushed look shared by every control in the editor.
@@ -103,8 +130,10 @@ private:
     bool lit = false;
 };
 
-// A small picture of the six sequencer steps on the front of the pedal: one bar per step (its knob position), skipped
-// steps drawn as a dash, muted ones as a cross, and the step that is playing lit. Clicking it shows the step knobs.
+// A small picture of the six sequencer steps on the front of the pedal, and the quickest way to set the sequence up:
+// one bar per step (its knob position) in the colour of what the step controls, skipped steps drawn as a dash, muted
+// ones as a cross, the playing step outlined and the loop section framed. Click a step to see its knob, drag across
+// steps to make them the loop section, right-click a step for its menu.
 class StepStrip : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -112,16 +141,41 @@ public:
     {
         float knob = 0.5f;
         int kind = 2; // 0 = skip, 1 = mute, 2 = plays
+        int type = 0; // what it controls: 0 = pitch, 1 = filter, 2 = sample rate
     };
-    std::function<void()> onClick;
+    std::function<void(int step)> onStepClick;
+    std::function<void(int first, int last)> onLoopDrag; // while dragging; first <= last
+    std::function<void()> onLoopDragEnd;
+    std::function<void(int step)> onStepMenu;
+
     void set(const std::array<Step, 6>& steps, int playing, int loopFrom = -1, int loopTo = -1); // loop: -1 = none
+    int stepAt(float x) const; // the step under x (clamped to the strip)
     void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
 
 private:
     std::array<Step, 6> shown {};
     int current = -1;
     int loopLo = -1, loopHi = -1;
+    int downStep = -1;
+    bool dragged = false, menuClick = false;
+};
+
+// On the Alt layer, next to each step's name: P, F and S, what the step controls. A lit letter is the step's own
+// choice; with none lit the step follows the SEQ TYPE buttons, and the letter in use is outlined. Clicking the lit
+// letter again goes back to following.
+class StepTypeTags : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    std::function<void(int choice)> onPick; // 0 = follow SEQ TYPE, 1..3 = pitch, filter, sample rate
+    void set(int own, int effective);       // own: 0..3 as above; effective: 0..2
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+
+private:
+    int own = 0, effective = 0;
 };
 
 // The quick-start guide: what to do first and where the sound goes. Opens by itself the first time, and with the
@@ -185,8 +239,17 @@ private:
     void addKnobHelpers(juce::Slider&, const juce::String& paramId); // double-click to reset, value bubble while turning
     void applySize(); // the window size for the page that is showing, at the player's scale
     void applyRightMode();
-    int patternTop() const; // where the beat pattern panel starts (the sample panel above it changes height with the mode)
+    // The right-hand column, top to bottom: the beat pattern (when the sequence fires), then the effects in the order the
+    // sequenced sound goes through them: sample blend, distortion / fuzz, reverb and (ADVANCED) the EQ. The sample panel
+    // changes height with the mode, so everything below it moves.
+    int patternTop() const;
+    int samplesTop() const;
+    juce::Rectangle<int> distArea() const;
+    juce::Rectangle<int> reverbArea() const;
+    int eqTop() const;
+    int columnBottom() const;
     void timerCallback() override;
+    void updateLiveState();
     void buildBackground();
     void setTooltips();        // plain-language hover text for every control
     void updateStepTooltips(); // the text of the step knobs depends on the sequencer type
@@ -226,9 +289,14 @@ private:
     juce::Image background;
 
     std::array<Knob, kKnobs> knobs;
-    // on the Alt layer, in place of each step's name: what the step controls
-    std::array<juce::ComboBox, kKnobs> stepTypeBoxes;
-    std::array<std::unique_ptr<APVTS::ComboBoxAttachment>, kKnobs> stepTypeAtts;
+    // on the Alt layer, next to each step's name: what the step controls
+    std::array<StepTypeTags, kKnobs> stepTypeTags;
+    void setStepType(int step, int choice); // 0 = follow SEQ TYPE, 1..3 = pitch, filter, sample rate
+    void showStepMenu(int step);
+    void setLoopFromStrip(int first, int last);
+    bool loopDragging = false;
+    int flashStep = -1;        // the step whose knob the strip pointed at, ringed for a moment
+    double flashStepUntil = 0.0;
 
     // global panel
     KnobSlider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;

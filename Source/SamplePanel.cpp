@@ -30,8 +30,10 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     previewButton.onClick = [this] { previewBoth(); };
     addAndMakeVisible(previewButton);
     onButton.setLookAndFeel(&laf);
+    makePowerButton(onButton);
     onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleOn, onButton);
-    onButton.setTooltip("SAMPLES ON: switches the random sounds on or off. Off, no sound is added to the sequence. Your list, banks and volumes stay as they are.");
+    onButton.setTooltip("SAMPLES ON: switches the random sounds on or off. Off, no sound is added to the sequence. Your list, banks and volumes "
+                        "stay as they are. The light glows while the sequence plays, which is when the sounds come in.");
     addAndMakeVisible(onButton);
 
     bankBox.setLookAndFeel(&laf);
@@ -190,9 +192,9 @@ void SamplePanel::setAdvanced(bool on)
 
 void SamplePanel::resized()
 {
-    onButton.setBounds(kWidth - 70, 3, 56, 20);
-    mainButton.setBounds(196, 2, 56, 20);
-    loopButton.setBounds(256, 2, 56, 20);
+    onButton.setBounds(8, 3, 50, 19);
+    mainButton.setBounds(318, 2, 60, 20);
+    loopButton.setBounds(382, 2, 60, 20);
     // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
     folderButton.setVisible(advanced && !editingLoop());
     ownLevelsButton.setVisible(editingLoop());
@@ -211,6 +213,13 @@ void SamplePanel::resized()
 
 void SamplePanel::refresh()
 {
+    setPowerActive(onButton, proc.getEngine().isEffectSideActive());
+    {
+        const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
+        for (auto* c : getChildren())
+            if (c != &onButton)
+                c->setAlpha(alpha);
+    }
     // MAIN and LOOP are there while the sequence has a loop section
     const bool loopOn = proc.apvts.getRawParameterValue(ids::loopOn)->load() > 0.5f;
     if (loopOn != loopShown)
@@ -406,21 +415,8 @@ void SamplePanel::paint(Graphics& g)
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(inkDim);
-    g.setFont(bold(10.0f));
-    g.drawText(loopShown ? "SAMPLE BLEND" : "SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 26, 4, 290, 12, Justification::left);
-    {
-        // lit while a sequence or stutter plays: that is when the sounds come in
-        const bool live = proc.getEngine().isEffectSideActive();
-        const Point<float> c(18.0f, 10.0f);
-        if (live)
-        {
-            g.setColour(accent.withAlpha(0.22f));
-            g.fillEllipse(c.x - 8.0f, c.y - 8.0f, 16.0f, 16.0f);
-        }
-        g.setColour(live ? accent : accent.darker(0.9f));
-        g.fillEllipse(c.x - 3.5f, c.y - 3.5f, 7.0f, 7.0f);
-    }
+    drawPanelTitle(g, kPanelTitleX, 4, 1, loopShown ? "SAMPLE BLEND" : "SAMPLE BLEND (A RANDOM SOUND ON EACH STEP)");
+    const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
 
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
@@ -430,17 +426,17 @@ void SamplePanel::paint(Graphics& g)
                               { "MAX", volumeText(rawValue(maxId())), 154, 180 } };
     for (const auto& e : entries)
     {
-        g.setColour(ink);
+        g.setColour(ink.withMultipliedAlpha(alpha));
         g.setFont(bold(11.0f));
         g.drawText(e.name, Rectangle<int>(80, 14).withCentre({ e.cx, e.y }), Justification::centred);
-        g.setColour(inkDim);
+        g.setColour(inkDim.withMultipliedAlpha(alpha));
         g.setFont(plain(10.5f));
         g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
     }
 
     if (!advanced)
         return; // SIMPLE: no volume range row
-    g.setColour(inkDim);
+    g.setColour(inkDim.withMultipliedAlpha(alpha));
     g.setFont(bold(10.0f));
     g.drawText("VOLUME RANGE: THE MIX KNOB MOVES BETWEEN BASE AND MAX", 14, 116, 428, 12, Justification::left);
     g.setFont(plain(10.0f));

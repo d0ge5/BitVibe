@@ -114,13 +114,17 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 | **Seq Mult** | Sequencer speed as a multiple of the tempo | Step 6 |
 
 - **ALT** swaps the knobs for the six sequencer steps. A step at minimum is skipped, at maximum muted.
-- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate. On the ALT layer each step's
-  name is a menu: leave it on **SEQ TYPE** to follow those buttons, or pick PITCH, FILTER or SAMPLE for that step
-  alone (for example pitch jumps on the first steps and a filter sweep on the rest). It is saved with the preset.
+- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate. On the ALT layer each step
+  has **P**, **F** and **S** tags next to its name: with none lit it follows those buttons; click one to make that step
+  change pitch, the filter or the sample rate on its own (click it again to follow the buttons). Steps are drawn in
+  the colour of what they control: blue for pitch, green for filter, purple for sample rate. It is saved with the preset.
+- **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step, the playing step
+  outlined, the loop section framed. Click a step to see its knob, **drag across steps** to make them the loop
+  section, and **right-click** a step to set what it controls or to loop it alone.
 - **TAP** sets the tempo (or click the big BPM number and type one). Holding it, or the HOLD button, freezes the stutter.
 - **BYPASS** switches the effect off. **TRIGGER** sets how easily picked notes start the stutter and sequencer.
 - **LOOP** (under the global knobs) repeats part of the sequence. Choose its first and last step and how often it
-  plays (2 to 16 times, or forever); the looped steps are framed on the little step strip. Each time the sequence
+  plays (2 to 16 times, or forever), or drag across the step strip; the looped steps are framed on it. Each time the sequence
   restarts (a hard pick or the beat pattern), it plays from step 1 again, so the steps before the loop come back
   once and then the loop takes over. For example, loop steps 4 to 6 forever on a filter sequence to keep the
   sweep going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
@@ -131,14 +135,16 @@ It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean
 
 ### The right-hand side
 
-All of it hears only the sequenced and stuttered sound. The distortion, reverb, sample blend and EQ each have an
-**ON** button. These settings belong to your rig, so they stay put when you change preset slot (an exported preset
-file does carry them).
+At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
+stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** reverb,
+**4** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
+light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
+These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
+them).
 
-- **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
-  (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
-- **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
-  of fading it.
+- **Beat pattern:** click the steps of the bar where the sequence should trigger, choose a time signature and an
+  action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
+  up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence.
 - **Sample blend:** put your own WAV, AIFF, FLAC or OGG files (up to 20 seconds) in `Documents/BitVibe/Sounds`
   (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. **MIX** moves between the **BASE**
   and **MAX** volumes, **CHANCE** is how often a step gets a sound, and **PREVIEW** plays one so you can set the
@@ -147,6 +153,10 @@ file does carry them).
   buttons appear: LOOP sets up the loop section's steps. Its bank list starts on **Same as MAIN**; pick a bank or
   choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own SAMPLE
   MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
+- **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
+  (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
+- **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
+  of fading it.
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for
   Q, and double-click to switch a band on or off. Behind the curve is the spectrum of the sound reaching the EQ
   (grey) and, with the EQ on, of what comes out (orange). **CAPTURE** keeps the last few seconds (up to 8) of the
@@ -155,9 +165,6 @@ file does carry them).
   EQ with your hands free (press it again to go back); **SAVE CLIP** writes the clip to a WAV file
   (`Documents/BitVibe/Clips` by default). The clip lasts until you capture again or the sample rate changes, and
   is not saved with the project.
-- **Beat pattern:** click the steps of the bar where the sequence should trigger, choose a time signature and an
-  action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
-  up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence.
 
 ### Presets and morph
 

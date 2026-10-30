@@ -38,9 +38,22 @@ float getValue(BitVibeProcessor& p, const char* id)
     return prm->convertFrom0to1(prm->getValue());
 }
 
+// Renders a component into a software image. Component::createComponentSnapshot uses the platform's native image type
+// (Direct2D on Windows), and a graphics-driver hang there once left this tool stuck in the driver for good, so the tests
+// keep to the CPU.
+Image snapshot(Component& c, float scale)
+{
+    Image img(Image::ARGB, jmax(1, roundToInt((float) c.getWidth() * scale)), jmax(1, roundToInt((float) c.getHeight() * scale)), true,
+              SoftwareImageType());
+    Graphics g(img);
+    g.addTransform(AffineTransform::scale(scale));
+    c.paintEntireComponent(g, true);
+    return img;
+}
+
 void save(BitVibeEditor& ed, const File& file)
 {
-    auto img = ed.createComponentSnapshot(ed.getLocalBounds(), true, 1.5f);
+    auto img = snapshot(ed, 1.5f);
     file.deleteFile();
     PNGImageFormat png;
     if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
@@ -598,7 +611,7 @@ void testResizing()
     ed->setSize(w * 3 / 2, h * 3 / 2);
     const auto scaleNow = ed->getContent().getTransform().getScaleFactor();
     check(std::abs(scaleNow - 1.5f) < 0.01f && ed->getContent().getWidth() == w, "at 150% the pane is drawn 1.5 times bigger (scale " + String(scaleNow, 3) + ")");
-    auto big = ed->createComponentSnapshot(ed->getLocalBounds(), true, 1.0f);
+    auto big = snapshot(*ed, 1.0f);
     check(big.getWidth() == w * 3 / 2 && big.getHeight() == h * 3 / 2, "and it renders at the new size");
     // the content really fills the bigger window: the bottom right of the pedal's global panel is drawn, not empty
     check(big.getPixelAt(big.getWidth() / 4, big.getHeight() - 40).getBrightness() > 0.04f, "the scaled content reaches the bottom of the window");
@@ -763,7 +776,7 @@ void testEqReferenceClip()
         PedalLookAndFeel lookAndFeel;
         EqPanel quiet(*q, lookAndFeel);
         quiet.refresh();
-        const auto silent = quiet.createComponentSnapshot(quiet.getLocalBounds(), true, 2.0f);
+        const auto silent = snapshot(quiet, 2.0f);
         AudioBuffer<float> tone(2, 8192);
         for (int i = 0; i < tone.getNumSamples(); ++i)
             tone.setSample(0, i, 0.25f * std::sin(MathConstants<float>::twoPi * 1000.0f * (float) i / 48000.0f));
@@ -776,7 +789,7 @@ void testEqReferenceClip()
         }
         EqPanel panel(*q, lookAndFeel);
         panel.refresh();
-        const auto shown = panel.createComponentSnapshot(panel.getLocalBounds(), true, 2.0f);
+        const auto shown = snapshot(panel, 2.0f);
         int changed = 0;
         for (int y = 0; y < shown.getHeight(); ++y)
             for (int x = 0; x < shown.getWidth(); ++x)
@@ -841,7 +854,7 @@ void testLoopSectionSounds()
         SamplePanel panel(*p, lookAndFeel);
         panel.refresh();
         panel.showSection(SampleBank::kLoop);
-        const auto image = panel.createComponentSnapshot(panel.getLocalBounds(), true, 2.0f);
+        const auto image = snapshot(panel, 2.0f);
         const auto file = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_sample_loop.png");
         file.deleteFile();
         if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
@@ -954,7 +967,8 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         auto* c = pane.getChildComponent(i);
         const bool interactive = dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr
                                  || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<Label*>(c) != nullptr
-                                 || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr;
+                                 || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr
+                                 || dynamic_cast<StepTypeTags*>(c) != nullptr || dynamic_cast<StepStrip*>(c) != nullptr;
         if (!interactive)
             continue;
         ++controls;
@@ -967,7 +981,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 67 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 67 and 0)");
+    check(controls == 68 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 68 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1615,14 +1629,45 @@ int main(int argc, char** argv)
     setValue(processor, "hold", 1.0f);
     setValue(processor, ids::loopOn, 1.0f); // steps 4 to 6 looping forever
     {
+        // the strip's mouse: a click shows a step, a drag across steps loops them, a right-click opens the step's menu
+        StepStrip strip;
+        strip.setSize(138, 28);
+        int clicked = -1, menuFor = -1, first = -1, last = -1;
+        bool ended = false;
+        strip.onStepClick = [&](int s) { clicked = s; };
+        strip.onStepMenu = [&](int s) { menuFor = s; };
+        strip.onLoopDrag = [&](int a, int b) { first = a; last = b; };
+        strip.onLoopDragEnd = [&] { ended = true; };
+        auto mouse = [&](float x, bool right, bool wasDragged)
+        {
+            const auto now = Time::getCurrentTime();
+            return MouseEvent(Desktop::getInstance().getMainMouseSource(), { x, 14.0f },
+                              right ? ModifierKeys(ModifierKeys::rightButtonModifier) : ModifierKeys(ModifierKeys::leftButtonModifier),
+                              1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &strip, &strip, now, { x, 14.0f }, now, 1, wasDragged);
+        };
+        const float cell = 138.0f / 6.0f;
+        strip.mouseDown(mouse(cell * 2.5f, false, false));
+        strip.mouseUp(mouse(cell * 2.5f, false, false));
+        check(clicked == 2 && first < 0, "a click on step 3 of the strip shows that step");
+        clicked = -1;
+        strip.mouseDown(mouse(cell * 4.5f, false, false));
+        strip.mouseDrag(mouse(cell * 1.5f, false, true));
+        strip.mouseUp(mouse(cell * 1.5f, false, true));
+        check(first == 1 && last == 4 && ended && clicked < 0, "a drag from step 5 back to step 2 loops steps 2 to 5");
+        strip.mouseDown(mouse(cell * 5.5f, true, false));
+        strip.mouseUp(mouse(cell * 5.5f, true, false));
+        check(menuFor == 5 && clicked < 0, "a right-click on step 6 opens its menu");
+        check(strip.stepAt(-5.0f) == 0 && strip.stepAt(500.0f) == 5, "outside the strip counts as its end steps");
+    }
+    {
         // the step strip frames the loop section
         StepStrip strip;
         strip.setSize(100, 24);
         std::array<StepStrip::Step, 6> steps {};
         strip.set(steps, 4);
-        const auto without = strip.createComponentSnapshot(strip.getLocalBounds(), true, 2.0f);
+        const auto without = snapshot(strip, 2.0f);
         strip.set(steps, 4, 5, 3);
-        const auto with = strip.createComponentSnapshot(strip.getLocalBounds(), true, 2.0f);
+        const auto with = snapshot(strip, 2.0f);
         const auto framed = with.getPixelAt(2 * 52, 3), plainPx = without.getPixelAt(2 * 52, 3), outside = with.getPixelAt(2 * 20, 3);
         check(framed != plainPx && outside == without.getPixelAt(2 * 20, 3), "the step strip frames steps 4 to 6 (given either way round) and nothing else");
         const auto stripFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_step_loop.png");
