@@ -137,6 +137,8 @@ private:
     juce::Slider distDriveSlider, distToneSlider, distLevelSlider;
     std::unique_ptr<APVTS::SliderAttachment> distDriveAtt, distToneAtt, distLevelAtt;
     juce::ToggleButton distOnButton { "ON" }, distReverbButton { "REVERB TOO" };
+    juce::ComboBox distTypeBox; // overdrive or fuzz
+    std::unique_ptr<APVTS::ComboBoxAttachment> distTypeAtt;
     std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;

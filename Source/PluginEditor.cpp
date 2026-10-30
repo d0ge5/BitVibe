@@ -23,8 +23,8 @@ const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
 // Second-column panels, in face coordinates (so the first one starts level with the preset header).
 constexpr int kColY = 12 - kFaceDy;
-const Rectangle<int> kReverb { kSideX, kColY, 456, 100 };
-const Rectangle<int> kDist { kSideX, kColY + 108, 456, 100 };
+const Rectangle<int> kReverb { kSideX, kColY + 108, 456, 100 };
+const Rectangle<int> kDist { kSideX, kColY, 456, 100 };
 constexpr int kSamplesY = kColY + 216;
 constexpr int kPatternY = kSamplesY + SamplePanel::kHeight + 8;
 
@@ -342,6 +342,11 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         b->setLookAndFeel(&laf);
         addAndMakeVisible(*b);
     }
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::distType)))
+        distTypeBox.addItemList(choice->choices, 1);
+    distTypeBox.setLookAndFeel(&laf);
+    addAndMakeVisible(distTypeBox);
+    distTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::distType, distTypeBox);
     distOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distOn, distOnButton);
     distReverbAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distReverb, distReverbButton);
     smallKnob(reverbHighSlider, reverbHighAtt, ids::reverbHighCut);
@@ -473,7 +478,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, samplePanel.get(), patternPanel.get(),
+                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -514,6 +519,7 @@ BitVibeEditor::~BitVibeEditor()
     for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider })
         s->setLookAndFeel(nullptr);
     distOnButton.setLookAndFeel(nullptr);
+    distTypeBox.setLookAndFeel(nullptr);
     distReverbButton.setLookAndFeel(nullptr);
     reverbTypeBox.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
@@ -680,10 +686,13 @@ void BitVibeEditor::setTooltips()
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
                                "Your clean signal never gets reverb.");
     reverbLevelSlider.setTooltip("REVERB LEVEL: the volume of the reverb, from -30 dB to +6 dB. Works together with REVERB MIX.");
-    distDriveSlider.setTooltip("DRIVE: how hard the signal is pushed into the clipper. Turn right for more overdrive. "
-                               "The mids and highs are pushed harder than the lows, like the classic green overdrive pedal.");
-    distToneSlider.setTooltip("DISTORTION TONE: a low-pass after the clipper. Turn left for a darker, warmer sound, right for a brighter one.");
-    distLevelSlider.setTooltip("DISTORTION LEVEL: the volume of the distorted sound. About 80% is roughly the level it came in at.");
+    distDriveSlider.setTooltip("DRIVE (overdrive) / SUSTAIN (fuzz): how hard the signal is pushed into the clippers. Turn right for more. "
+                               "The overdrive pushes the mids and highs harder than the lows; the fuzz gets longer, squarer and more compressed.");
+    distToneSlider.setTooltip("TONE: overdrive = a low-pass after the clipper (left darker, right brighter). Fuzz = a blend from a dark, bassy sound (left) "
+                              "to a bright, thin one (right) with the middle scooped out.");
+    distLevelSlider.setTooltip("LEVEL (overdrive) / VOLUME (fuzz): the volume of the distorted sound. About 80% is roughly the level it came in at.");
+    distTypeBox.setTooltip("DISTORTION TYPE: Overdrive is a smooth mid-boosting overdrive; Fuzz is a thick, sustaining fuzz. Both only act on the sequenced "
+                           "and stuttered sound (and the random sounds), never on your clean signal.");
     distOnButton.setTooltip("DISTORTION ON: distorts the sequenced and stuttered sound (and the random sounds). "
                             "Your clean signal is never distorted.");
     distReverbButton.setTooltip("REVERB TOO: tick this to distort the reverb as well. Unticked, the reverb stays clean.");
@@ -834,6 +843,7 @@ void BitVibeEditor::resized()
     reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 4, 100, 22 }));
 
     // distortion panel: the two switches on the caption row, three knobs below
+    distTypeBox.setBounds(face({ kSideX + 136, kDist.getY() + 3, 118, 20 }));
     distOnButton.setBounds(face({ kSideX + 266, kDist.getY() + 3, 56, 20 }));
     distReverbButton.setBounds(face({ kSideX + 328, kDist.getY() + 3, 120, 20 }));
     const std::array<Slider*, 3> distKnobs { &distDriveSlider, &distToneSlider, &distLevelSlider };
@@ -974,11 +984,12 @@ void BitVibeEditor::paint(Graphics& g)
     // Distortion panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("DISTORTION (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 14, kDist.getY() + 4, 250, 12), Justification::left);
+    g.drawText("DISTORTION / FUZZ", Rectangle<int>(kSideX + 14, kDist.getY() + 4, 120, 12), Justification::left);
+    const bool fuzz = roundToInt(rawValue(ids::distType)) == 1; // the big-fuzz style calls its knobs sustain / tone / volume
     const std::array<Entry, 3> distEntries {{
-        { "DRIVE", String(roundToInt(rawValue(ids::distDrive) * 100.0f)) + "%" },
+        { fuzz ? "SUSTAIN" : "DRIVE", String(roundToInt(rawValue(ids::distDrive) * 100.0f)) + "%" },
         { "TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%" },
-        { "LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
+        { fuzz ? "VOLUME" : "LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
     }};
     for (size_t i = 0; i < distEntries.size(); ++i)
     {

@@ -131,15 +131,20 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   **LEVEL** trims its volume from -30 dB to +6 dB, and **LOW CUT** (a high-pass) and **HIGH CUT** (a low-pass)
   filter the reverb only, not your sound (fully left / right = off). It is part of the effect side, so the dry/wet **MIX**
   above still brings back the clean input, and BYPASS switches it off.
-- **DISTORTION** (panel in the right-hand column) is an overdrive for the sequenced sound only: the sequence, its
-  stutters and the random sounds, never your clean signal. It is modelled on the classic green mid-hump overdrive
-  circuit (the 808-style Tube Screamer design) and has the same three knobs: **DRIVE**, **TONE** and **LEVEL**.
+- **DISTORTION / FUZZ** (the top panel of the right-hand column) is an overdrive or a fuzz for the sequenced sound
+  only: the sequence, its stutters and the random sounds, never your clean signal. The selector next to the
+  title picks **Overdrive** or **Fuzz**; both have three knobs (DRIVE / TONE / LEVEL on the overdrive,
+  SUSTAIN / TONE / VOLUME on the fuzz) and the same **ON** and **REVERB TOO** switches. The overdrive is modelled
+  on the classic green mid-hump overdrive circuit (the 808-style Tube Screamer design):
   The gain stage has unity gain below about 720 Hz and a lot more above it, so the mids and highs are pushed
   into a soft diode clipper much harder than the lows (more DRIVE = more gain and a duller top end), TONE is a
   low-pass after the clipper, and LEVEL is the output volume. Switch it on with **ON**. The reverb stays clean
   unless you tick **REVERB TOO**. It only works while a sequence or stutter plays, and fades in and out with it.
-  The clipper runs at twice the sample rate to keep aliasing down. It is modelled from the circuit's published
-  values, not copied from any hardware or software.
+  The fuzz is modelled on the classic "big" fuzz pedal (the Big Muff Pi design): an input boost, then two
+  diode-clipping stages in series (SUSTAIN is the gain into the first, so more sustain is a longer, squarer, more
+  compressed note), then a tone stack that crossfades a low-pass and a high-pass, which leaves the famous scoop in
+  the middle with TONE at noon, then VOLUME. Both run their clippers at twice the sample rate to keep aliasing
+  down. They are modelled from the circuits' published values, not copied from any hardware or software.
 - **SAMPLE BLEND** (panel in the right-hand column) brings a random sound into the sequence: at the start of
   every sequencer step one sound is picked at random from your list and fed into the signal before the pitch
   shifter and the bit-crush, sample-rate and filter stage, so it is shifted by the sequence's pitch steps and
@@ -381,10 +386,10 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 355 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 363 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
-trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
+trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
 the demo beat). It
 also passes under MSVC AddressSanitizer and runs on macOS in CI.
 

@@ -110,6 +110,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring" }, 0));
     // ---- distortion on the sequenced sound (rig settings): drive, tone and level like the classic green pedal ----
     layout.add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::distType), "Distortion Type", StringArray { "Overdrive", "Fuzz" }, 0));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::distDrive), "Distortion Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::distTone), "Distortion Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::distLevel), "Distortion Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
@@ -249,6 +250,7 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbLevel = raw(ids::reverbLevel);
     pReverbType = raw(ids::reverbType);
     pDistOn = raw(ids::distOn);
+    pDistType = raw(ids::distType);
     pDistDrive = raw(ids::distDrive);
     pDistTone = raw(ids::distTone);
     pDistLevel = raw(ids::distLevel);
@@ -361,6 +363,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbLevelDb = pReverbLevel->load();
     p.reverbType = roundToInt(pReverbType->load());
     p.distOn = pDistOn->load() > 0.5f;
+    p.distType = roundToInt(pDistType->load());
     p.distDrive = pDistDrive->load();
     p.distTone = pDistTone->load();
     p.distLevel = pDistLevel->load();

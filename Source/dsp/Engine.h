@@ -12,6 +12,7 @@
 
 #include "Components.h"
 #include "Distortion.h"
+#include "Fuzz.h"
 #include "Mapping.h"
 #include "Reverb.h"
 #include "Samples.h"
@@ -86,6 +87,7 @@ struct Params
     // Distortion on the sequenced sound (the sequence, its stutters and the random sounds; never the clean signal):
     // drive / tone / level, 0..1 each. distReverb also distorts the reverb. Off by default.
     bool distOn = false;
+    int distType = 0; // 0 = overdrive, 1 = fuzz (drive = sustain, level = volume)
     float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
     bool distReverb = false;
 
@@ -133,6 +135,8 @@ public:
         {
             ch.dist.prepare(fs);
             ch.distReverb.prepare(fs);
+            ch.fuzz.prepare(fs);
+            ch.fuzzReverb.prepare(fs);
         }
 
         srKnobSm.setTime(fs, 10.0f);
@@ -172,6 +176,8 @@ public:
             ch.reverb.reset();
             ch.dist.reset();
             ch.distReverb.reset();
+            ch.fuzz.reset();
+            ch.fuzzReverb.reset();
             ch.held = 0.0f;
         }
         primed = false;
@@ -336,12 +342,12 @@ public:
                 const float cleanSequence = y; // the reverb hears the sequence before the distortion
                 if (distRun)
                 {
-                    const float distorted = ch.dist.process(y);
+                    const float distorted = blk.distType == 1 ? ch.fuzz.process(y) : ch.dist.process(y);
                     y += (distorted - y) * distGate;
                 }
                 float reverbOut = ch.reverb.process(cleanSequence * reverbSend, revSettings);
                 if (distRun && blk.distReverb)
-                    reverbOut += (ch.distReverb.process(reverbOut) - reverbOut) * distAmount;
+                    reverbOut += ((blk.distType == 1 ? ch.fuzzReverb.process(reverbOut) : ch.distReverb.process(reverbOut)) - reverbOut) * distAmount;
                 y *= muteGain;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
@@ -384,6 +390,7 @@ private:
         LadderFilter ladder;
         Reverb reverb;
         Distortion dist, distReverb; // the second one distorts the reverb when the player asks for that
+        Fuzz fuzz, fuzzReverb;       // the same two jobs for the fuzz setting
         float held = 0.0f;
     };
 
@@ -399,6 +406,7 @@ private:
         float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f;
         int reverbType = 0;
         bool distOn = false, distReverb = false;
+        int distType = 0;
         float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
         float sampleMix = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
@@ -420,6 +428,7 @@ private:
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
         blk.distOn = p.distOn;
+        blk.distType = std::clamp(p.distType, 0, 1);
         blk.distReverb = p.distReverb;
         blk.distDrive = p.distDrive;
         blk.distTone = p.distTone;
@@ -428,6 +437,8 @@ private:
         {
             ch.dist.setParams(p.distDrive, p.distTone, p.distLevel);
             ch.distReverb.setParams(p.distDrive, p.distTone, p.distLevel);
+            ch.fuzz.setParams(p.distDrive, p.distTone, p.distLevel);
+            ch.fuzzReverb.setParams(p.distDrive, p.distTone, p.distLevel);
         }
         blk.sampleMix = sampleGain(p.sampleMix);
         blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);

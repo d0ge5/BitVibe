@@ -36,6 +36,7 @@ inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
 inline constexpr const char* distOn = "distOn";
+inline constexpr const char* distType = "distType";
 inline constexpr const char* distDrive = "distDrive";
 inline constexpr const char* distTone = "distTone";
 inline constexpr const char* distLevel = "distLevel";
@@ -179,6 +180,7 @@ private:
     std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
     std::atomic<float>* pDistOn = nullptr;
+    std::atomic<float>* pDistType = nullptr;
     std::atomic<float>* pDistDrive = nullptr;
     std::atomic<float>* pDistTone = nullptr;
     std::atomic<float>* pDistLevel = nullptr;

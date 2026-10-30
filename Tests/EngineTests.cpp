@@ -1385,6 +1385,97 @@ void testDistortion()
     }
 }
 
+// Runs a sine through the fuzz.
+Signal fuzzed(double hz, float amp, float sustain, float tone, float volume, double seconds = 0.4)
+{
+    Fuzz f;
+    f.prepare(kFs);
+    f.setParams(sustain, tone, volume);
+    Signal in = sine(hz, seconds, amp), out(in.size());
+    for (size_t i = 0; i < in.size(); ++i)
+        out[i] = f.process(in[i]);
+    return out;
+}
+
+void testFuzz()
+{
+    std::puts("fuzz: sustain, tone and volume (the big-fuzz style pedal)");
+
+    {
+        const Signal quiet = fuzzed(440.0, 0.0f, 1.0f, 0.5f, 1.0f);
+        const Signal loud = fuzzed(440.0, 1.0f, 1.0f, 0.5f, 1.0f);
+        double peak = 0.0;
+        bool finite = true;
+        for (float v : loud)
+        {
+            peak = std::max(peak, (double) std::abs(v));
+            finite = finite && std::isfinite(v);
+        }
+        CHECK(rms(quiet, 0.0, 0.4) < 1.0e-9 && finite && peak < 2.5, "silence stays silent, a full-scale sine stays bounded (peak %.2f)", peak);
+    }
+
+    // Sustain: at full sustain a quiet and a loud note come out nearly the same size (heavy compression),
+    // at no sustain the louder one is clearly louder.
+    {
+        auto spread = [](float sustain)
+        {
+            const double a = rms(fuzzed(440.0, 0.02f, sustain, 0.5f, 0.8f, 0.5), 0.2, 0.5), b = rms(fuzzed(440.0, 0.4f, sustain, 0.5f, 0.8f, 0.5), 0.2, 0.5);
+            return db(b / a);
+        };
+        const double low = spread(0.0f), high = spread(1.0f);
+        CHECK(high < low - 6.0 && high < 12.0, "sustain compresses: a 26 dB louder note is only %.1f dB louder at full sustain (%.1f dB at none)", high, low);
+    }
+
+    // Square-ish: more sustain, more odd harmonics.
+    {
+        auto thirdOverFundamental = [](float sustain)
+        {
+            const Signal o = fuzzed(500.0, 0.2f, sustain, 0.5f, 0.8f, 0.5);
+            return tonePower(o, 0.1, 0.5, 1500.0) / std::max(1.0e-18, tonePower(o, 0.1, 0.5, 500.0));
+        };
+        const double low = thirdOverFundamental(0.0f), high = thirdOverFundamental(1.0f);
+        CHECK(high > low && high > 0.02, "sustain adds harmonics (3rd/1st %.4f at 0, %.4f at 1)", low, high);
+    }
+
+    // Tone: dark keeps the lows, bright keeps the highs; the middle is scooped.
+    {
+        const double darkLow = rms(fuzzed(150.0, 0.05f, 0.3f, 0.0f, 0.8f), 0.2, 0.4), brightLow = rms(fuzzed(150.0, 0.05f, 0.3f, 1.0f, 0.8f), 0.2, 0.4);
+        const double darkHigh = rms(fuzzed(4000.0, 0.05f, 0.3f, 0.0f, 0.8f), 0.2, 0.4), brightHigh = rms(fuzzed(4000.0, 0.05f, 0.3f, 1.0f, 0.8f), 0.2, 0.4);
+        CHECK(darkLow > 2.0 * brightLow && brightHigh > 2.0 * darkHigh, "tone: left keeps the lows, right keeps the highs");
+    }
+
+    // Volume: 36 dB range (small input, linear region: sustain 0 gives 0.6 x 3 x 6 = 11 x before the clippers,
+    // so keep the input tiny).
+    {
+        const double lo = rms(fuzzed(300.0, 0.0002f, 0.0f, 0.5f, 0.0f), 0.2, 0.4), hi = rms(fuzzed(300.0, 0.0002f, 0.0f, 0.5f, 1.0f), 0.2, 0.4);
+        CHECK(std::abs(db(hi / lo) - 36.0) < 0.5, "volume spans 36 dB (%.2f)", db(hi / lo));
+    }
+
+    // Through the engine, in place of the overdrive: sequenced sound only, and different from the overdrive.
+    {
+        const Signal in = quietToneWithPick();
+        Params seq = neutral();
+        seq.seqPlay = 1;
+        seq.seqMult = 0;
+        seq.tempoBpm = 600.0f;
+        seq.steps.fill(mapping::pitchStepKnob(0));
+        const Signal plain = render(seq, in);
+        Params od = seq;
+        od.distOn = true;
+        od.distDrive = 1.0f;
+        Params fz = od;
+        fz.distType = 1;
+        const Signal withFuzz = render(fz, in), withOd = render(od, in);
+        CHECK(maxAbsDiff(withFuzz, plain, 0.0, 0.09) < 1.0e-6 && maxAbsDiff(withFuzz, plain, 1.4, 2.1) < 1.0e-5,
+              "fuzz leaves the signal clean before and after the sequence (%g, %g)", maxAbsDiff(withFuzz, plain, 0.0, 0.09), maxAbsDiff(withFuzz, plain, 1.4, 2.1));
+        CHECK(rmsDiff(withFuzz, plain, 0.7, 1.0) > 1.0e-3 && rmsDiff(withFuzz, withOd, 0.7, 1.0) > 1.0e-3,
+              "while the sequence plays it is fuzzed, differently from the overdrive");
+        Params byp = fz;
+        byp.bypass = true;
+        CHECK(maxAbsDiff(render(byp, in), in) < 1.0e-6, "bypass is clean");
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
 
@@ -2039,6 +2130,7 @@ int main(int argc, char** argv)
     testReverb();
     testSampleBlend();
     testDistortion();
+    testFuzz();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();
