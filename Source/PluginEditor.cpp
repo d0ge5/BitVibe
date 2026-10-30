@@ -21,7 +21,6 @@ constexpr bool kShowDrumsTab = false;
 constexpr int kHeight = kTabsH + 736 + kFaceDy;
 // The pedal page has a second column to the right of the pedal: reverb, sample blend and beat pattern panels.
 constexpr int kSideX = kWidth + 12, kPedalWidth = kWidth + 468;
-constexpr int kColDx = kSideX - 12; // how far the second column is moved right of the pedal's own coordinates
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
 const Rectangle<int> kGlobal { 12, 544, 456, 180 };
@@ -1306,13 +1305,13 @@ void BitVibeEditor::resized()
     distOnButton.setBounds(face({ kSideX + 266, kDist.getY() + 3, 56, 20 }));
     distReverbButton.setBounds(face({ kSideX + 328, kDist.getY() + 3, 120, 20 }));
     // the knobs that are showing (SIMPLE hides some) share the width of their panel evenly
-    auto spread = [this](std::initializer_list<std::pair<Slider*, bool>> knobs, int size, int y)
+    auto spread = [this](std::initializer_list<std::pair<Slider*, bool>> row, int size, int y)
     {
         int shown = 0;
-        for (const auto& k : knobs)
+        for (const auto& k : row)
             shown += (advancedRight || !k.second) ? 1 : 0;
         int index = 0;
-        for (const auto& k : knobs)
+        for (const auto& k : row)
             if (advancedRight || !k.second)
             {
                 const int cx = kSideX + (int) std::lround(456.0 * ((double) index++ + 0.5) / (double) shown);

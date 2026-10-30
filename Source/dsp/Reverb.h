@@ -129,7 +129,7 @@ public:
             fade = std::min(1.0f, fade + fadeStep());
         }
 
-        float sum;
+        float sum = 0.0f;
         if (currentReverse)
         {
             sum = processReverse(in);
@@ -143,7 +143,8 @@ public:
                 case ReverbType::Plate: sum = processPlate(in); break;
                 case ReverbType::Shimmer: sum = processShimmer(in); break;
                 case ReverbType::Gated: sum = processGated(in); break;
-                default: sum = processRoom(in); break;
+                case ReverbType::Room:
+                case ReverbType::Hall: sum = processRoom(in); break; // the same comb network, with the type's settings
             }
         }
 
