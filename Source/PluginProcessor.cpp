@@ -54,8 +54,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
 
     // ---- tempo, switches ---------------------------------------------------------------
-    NormalisableRange<float> tempoRange(kMinTempoBpm, kMaxTempoBpm, 0.1f);
-    tempoRange.setSkewForCentre(140.0f);
+    NormalisableRange<float> tempoRange(kMinTempoBpm, kMaxTempoKnobBpm, 0.1f);
+    tempoRange.setSkewForCentre(110.0f);
     layout.add(std::make_unique<AudioParameterFloat>(
         id(ids::tempo), "Tempo", tempoRange, 120.0f,
         withText([](float v, int) { return String(v, 1) + " BPM"; })));
@@ -410,7 +410,7 @@ void BitVibeProcessor::tapTempo()
     tapAverageMs = tapCount == 0 ? interval : 0.5 * (tapAverageMs + interval);
     ++tapCount;
 
-    const float bpm = jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoBpm, (float) (60000.0 / tapAverageMs));
+    const float bpm = jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoKnobBpm, (float) (60000.0 / tapAverageMs));
     if (auto* param = apvts.getParameter(ids::tempo))
         param->setValueNotifyingHost(param->convertTo0to1(bpm));
 }

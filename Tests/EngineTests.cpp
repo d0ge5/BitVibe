@@ -1103,12 +1103,18 @@ void testSampleBlend()
 {
     std::puts("sample blend: a random sound from the picked list at each sequencer step");
 
-    // Two clips of constant level, 2000 samples long (at the engine's rate): 0.2 and 0.4.
+    // The knob is a gentle curve (a quarter of the level at half way); the clips here are made louder by the curve's
+    // gain at full mix, so that the output at mix 1 is exactly 0.2 or 0.4 and so on.
+    const float full = Engine::sampleGain(1.0f);
+    CHECK(std::abs(full - 0.5f) < 1.0e-6f && Engine::sampleGain(0.0f) == 0.0f && std::abs(Engine::sampleGain(0.5f) - 0.125f) < 1.0e-6f,
+          "the sample knob is a curve: off, an eighth of full level half way, half at the top");
+
+    // Two clips of constant level, 2000 samples long (at the engine's rate): 0.2 and 0.4 after the knob.
     SampleSet set;
     for (float level : { 0.2f, 0.4f })
     {
         SampleClip c;
-        c.data.assign(2000, level);
+        c.data.assign(2000, level / full);
         c.rate = kFs;
         set.clips.push_back(std::move(c));
     }
@@ -1186,12 +1192,12 @@ void testSampleBlend()
         CHECK(low && high, "over a looping sequence both sounds are picked");
     }
 
-    // Mix scales the level, chance 0 plays nothing, a muted step stays silent.
+    // Mix follows the curve, chance 0 plays nothing, a muted step stays silent.
     p.sampleMix = 0.5f;
     {
         const Signal half = renderWithTrigger(p);
         const float a = half[1000 + 500];
-        CHECK(std::abs(a - 0.1f) < 1.0e-3f || std::abs(a - 0.2f) < 1.0e-3f, "mix 0.5 halves the level (%.3f)", a);
+        CHECK(std::abs(a - 0.05f) < 1.0e-3f || std::abs(a - 0.1f) < 1.0e-3f, "mix 0.5 gives a quarter of the level (%.3f)", a);
     }
     p.sampleMix = 1.0f;
     p.sampleChance = 0.0f;
@@ -1212,7 +1218,7 @@ void testSampleBlend()
     {
         SampleSet longSet;
         SampleClip c;
-        c.data.assign(40000, 0.3f);
+        c.data.assign(40000, 0.3f / full);
         c.rate = kFs;
         longSet.clips.push_back(std::move(c));
         Params q = sequence();
@@ -1243,7 +1249,7 @@ void testSampleBlend()
         SampleSet ramp;
         SampleClip c;
         for (int i = 0; i < 4000; ++i)
-            c.data.push_back(0.4f * std::sin(2.0f * 3.14159265f * 400.0f * (float) i / (float) kFs));
+            c.data.push_back(0.4f / full * std::sin(2.0f * 3.14159265f * 400.0f * (float) i / (float) kFs));
         c.rate = kFs;
         ramp.clips.push_back(std::move(c));
         Params q = sequence();
@@ -1261,7 +1267,7 @@ void testSampleBlend()
     SampleSet slow;
     {
         SampleClip c;
-        c.data.assign(1000, 0.3f);
+        c.data.assign(1000, 0.3f / full);
         c.rate = kFs / 2.0;
         slow.clips.push_back(std::move(c));
     }

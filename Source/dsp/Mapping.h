@@ -18,7 +18,8 @@ inline bool sameFloat(float a, float b) { return !(a < b) && !(b < a); }
 
 // Manual, section 9: "very wide tempo range that extends from 23.4 BPM to 6000 BPM".
 inline constexpr float kMinTempoBpm = 23.4f;
-inline constexpr float kMaxTempoBpm = 6000.0f;
+inline constexpr float kMaxTempoBpm = 6000.0f;     // what the engine can run (host sync, audio-rate sequencing)
+inline constexpr float kMaxTempoKnobBpm = 240.0f;  // the TEMPO knob and the typed tempo stop here
 
 enum class SeqType
 {

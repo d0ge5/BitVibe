@@ -100,6 +100,14 @@ class Engine
 public:
     static constexpr int kMaxChannels = 2;
 
+    // The sample blend's knob: a curve, so the first half of the travel is the gentle part, and the sounds (which are
+    // levelled to the same peak) never come in louder than half of full scale before the effect.
+    static float sampleGain(float knob)
+    {
+        const float k = std::clamp(knob, 0.0f, 1.0f);
+        return 0.5f * k * k;
+    }
+
     void prepare(double sampleRate)
     {
         fs = sampleRate;
@@ -382,7 +390,7 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
-        blk.sampleMix = std::clamp(p.sampleMix, 0.0f, 1.0f);
+        blk.sampleMix = sampleGain(p.sampleMix);
         blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);
         blk.sampleSet = p.sampleSet;
         if (p.sampleSet != lastSampleSet) // a new set: whatever is sounding still points into the old one

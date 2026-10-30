@@ -289,7 +289,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
       proc(p),
       bypassParam(*p.apvts.getParameter(ids::bypass), [](float) {}),
       holdParam(*p.apvts.getParameter(ids::hold), [](float) {}),
-      typeParam(*p.apvts.getParameter(ids::seqType), [](float) {})
+      typeParam(*p.apvts.getParameter(ids::seqType), [](float) {}),
+      tempoParam(*p.apvts.getParameter(ids::tempo), [](float) {})
 {
     setLookAndFeel(&laf);
 
@@ -403,6 +404,21 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     addAndMakeVisible(typeButton);
 
     // preset bar: previous / next slot, the name (double-click to rename) and SAVE
+    // the tempo read-out in the middle of the pedal: click it and type a BPM (Enter to set, Esc to cancel)
+    tempoLabel.setLookAndFeel(&laf);
+    tempoLabel.setFont(bold(24.0f));
+    tempoLabel.setJustificationType(Justification::centred);
+    tempoLabel.setEditable(true, true, false);
+    tempoLabel.onTextChange = [this]
+    {
+        const auto text = tempoLabel.getText();
+        if (text.containsAnyOf("0123456789"))
+            tempoParam.setValueAsCompleteGesture(jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoKnobBpm, text.getFloatValue()));
+        tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);
+    };
+    tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);
+    addAndMakeVisible(tempoLabel);
+
     presetLabel.setLookAndFeel(&laf);
     presetLabel.setFont(bold(13.5f));
     presetLabel.setJustificationType(Justification::centred);
@@ -447,7 +463,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
                         &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, samplePanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel,
+                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typeButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -493,6 +509,7 @@ BitVibeEditor::~BitVibeEditor()
     morphButton.setLookAndFeel(nullptr);
     expressionSlider.setLookAndFeel(nullptr);
     presetLabel.setLookAndFeel(nullptr);
+    tempoLabel.setLookAndFeel(nullptr);
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
@@ -644,7 +661,7 @@ void BitVibeEditor::setTooltips()
     typeButton.setTooltip("SEQ TYPE: choose what the sequencer changes: pitch, filter or sample rate (shown by the two lights).");
 
     // global panel
-    tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 6000 BPM. Set it by tapping, or turn on SYNC.");
+    tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Turn the knob, click the big BPM number to type a tempo, tap, or turn on SYNC.");
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
     reverbToneSlider.setTooltip("REVERB TONE: the colour of the reverb, from dark (left) to bright (right).");
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
@@ -667,6 +684,8 @@ void BitVibeEditor::setTooltips()
     prevButton.setTooltip("Previous preset.");
     nextButton.setTooltip("Next preset.");
     saveButton.setTooltip("SAVE: store the current sound in this preset slot.");
+    tempoLabel.setTooltip("TEMPO: the speed of the sequencer and stutter. Click the number and type a BPM (23.4 to 240), then press Enter. "
+                          "While SYNC is on it shows the host tempo.");
     presetLabel.setTooltip("The preset name. Double-click to rename it. An orange dot means the sound has unsaved changes.");
     setUpButton.setTooltip("SET UP: store the current knobs as the 'toe up' sound (expression slider fully left).");
     setDownButton.setTooltip("SET DOWN: store the current knobs as the 'toe down' sound (expression slider fully right).");
@@ -769,6 +788,7 @@ void BitVibeEditor::resized()
     }
 
     typeButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 88, 383 })));
+    tempoLabel.setBounds(face(Rectangle<int>(130, 30).withCentre({ 240, 418 })));
     altButton.setBounds(face(Rectangle<int>(78, 22).withCentre({ 392, 383 })));
     bypassSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 88, 462 })));
     tapSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 392, 462 })));
@@ -881,13 +901,9 @@ void BitVibeEditor::paint(Graphics& g)
     g.drawText("TAP / HOLD", Rectangle<int>(100, 14).withCentre({ 392, 512 }), Justification::centred);
 
     // Centre read-out: tempo
-    const float bpm = proc.getEffectiveBpm();
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
     g.drawText("TEMPO", Rectangle<int>(100, 12).withCentre({ 240, 392 }), Justification::centred);
-    g.setColour(kInk);
-    g.setFont(bold(24.0f));
-    g.drawText(String(bpm, 1), Rectangle<int>(130, 30).withCentre({ 240, 418 }), Justification::centred);
     g.setColour(kInkDim);
     g.setFont(plain(10.0f));
     g.drawText(rawValue(ids::tempoSync) > 0.5f ? "BPM  (HOST)" : "BPM", Rectangle<int>(130, 12).withCentre({ 240, 442 }), Justification::centred);
@@ -957,6 +973,16 @@ void BitVibeEditor::timerCallback()
     }
 
     refreshPresetName();
+    {
+        const bool sync = rawValue(ids::tempoSync) > 0.5f;
+        if (sync == tempoEditable) // typing a tempo does nothing while the host tempo is followed
+        {
+            tempoEditable = !sync;
+            tempoLabel.setEditable(tempoEditable, tempoEditable, false);
+        }
+        if (!tempoLabel.isBeingEdited())
+            tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);
+    }
     const double now = Time::getMillisecondCounterHiRes();
     auto flash = [now](PedalButton& b, double until)
     {

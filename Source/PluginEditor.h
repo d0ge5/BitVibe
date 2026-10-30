@@ -150,7 +150,9 @@ private:
     juce::ToggleButton morphButton { "MORPH" };
     std::unique_ptr<APVTS::ButtonAttachment> morphAtt;
 
-    juce::ParameterAttachment bypassParam, holdParam, typeParam;
+    juce::ParameterAttachment bypassParam, holdParam, typeParam, tempoParam;
+    juce::Label tempoLabel; // the big BPM read-out: click it to type a tempo
+    bool tempoEditable = true;
 
     int shownProgram = -1;
     juce::String shownName;

@@ -486,7 +486,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 40 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 40 and 0)");
+    check(controls == 41 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 41 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -566,8 +566,8 @@ std::unique_ptr<BitVibeProcessor> drumProcessor()
     p->getDrumBeat().loadDemo();
     p->getDrumBeat().waitUntilIdle(30000);
     setValue(*p, ids::seqPlay, 1.0f);
-    setValue(*p, ids::seqMult, 0.0f);
-    setValue(*p, ids::tempo, 600.0f);
+    setValue(*p, ids::tempo, 240.0f);
+    setValue(*p, ids::seqMult, 2.0f); // x4: 62.5 ms steps
     setValue(*p, ids::pickTriggers, 0.0f);
     setValue(*p, ids::beatPlay, 1.0f);
     setValue(*p, ids::beatLevel, DrumBeat::kBeatOffDb);

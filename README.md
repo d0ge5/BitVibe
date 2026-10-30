@@ -29,7 +29,7 @@ in the hands of more people for free.
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds × 7 repeat counts, off and random) and a hold to freeze it.
 - **6-step sequencer** for pitch (±12 semitones), filter cutoff or sample rate, with per-step skip/mute,
-  1× to 128× tempo multiplier and tap tempo from 23.4 to 6000 BPM (fast enough for ring-mod tones).
+  1× to 128× tempo multiplier and tap tempo from 23.4 to 240 BPM. The tempo knob and tap tempo stop at 240; click the big BPM number to type an exact tempo; with the sequencer multiplier at 128x that is still fast enough for audio-rate (ring-mod) tones.
 - Stutter and sequencer are triggered by **pick-attack detection**.
 - **Drum map** (DRUMS tab): load a drum loop (WAV or MP3), BitVibe finds its kick, snare, hi-hat, cymbal and
   tom hits, and each drum can restart the sequence, step it or fire the stutter when it hits hard enough. A
@@ -137,7 +137,7 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   crushed along with everything else (and the reverb hears it). The sounds only play while the sequencer is
   playing and stop when it ends. **CHOOSE SOUNDS** opens a menu where you tick the sounds the sequencer may pick from
   (click as many as you like, click outside to close; *Pick all* and *Pick none* are there too). **MIX** is how
-  loud the chosen sound is (fully left = off, the default) and **CHANCE** is how often a step gets one (100% =
+  loud the chosen sound is (a gentle curve: fully left = off, the default, half way is an eighth of the level of full) and **CHANCE** is how often a step gets one (100% =
   every step). Muted steps stay silent. The sounds are your own audio files (WAV, AIFF, FLAC or OGG, up to 20
   seconds each, every one is levelled to the same peak): **OPEN SOUNDS FOLDER** opens `Documents/BitVibe/Sounds`
   (builds from the source tree also read the `GoodSounds` folder next to the code). BitVibe ships no sounds
@@ -372,7 +372,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 341 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 342 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

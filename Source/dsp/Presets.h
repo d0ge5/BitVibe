@@ -99,7 +99,7 @@ inline FactoryPreset factoryPreset(int slot)
             break;
         case 9:
             f.name = "Ring Mod";
-            f.tempoBpm = 6000.0f;
+            f.tempoBpm = 240.0f;
             f.knobs.seqPlay = 5;
             f.knobs.seqMult = 7;
             f.knobs.steps = { 0.5f, 1.0f, 0.5f, 1.0f, 0.5f, 1.0f }; // dry / mute alternating
