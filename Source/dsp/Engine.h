@@ -82,6 +82,8 @@ struct Params
     float reverbTone = 0.5f;
     float reverbLevelDb = 0.0f;
     int reverbType = 0;                // ReverbType: room, hall or spring
+    float reverbDecay = 0.5f;          // 0 = a quarter of the normal tail, 0.5 = normal, 1 = four times as long
+    bool reverbReverse = false;        // the tail swells up after the sound instead of dying away (for the type chosen)
     float reverbLowCutHz = 20.0f;      // high-pass on the reverb only (20 Hz = off)
     float reverbHighCutHz = 20000.0f;  // low-pass on the reverb only (20 kHz = off)
 
@@ -184,6 +186,7 @@ public:
         reverbLevelSm.setTime(fs, 15.0f);
         reverbLowSm.setTime(fs, 15.0f);
         reverbHighSm.setTime(fs, 15.0f);
+        reverbDecaySm.setTime(fs, 40.0f);
         sampleMixSm.setTime(fs, 15.0f);
         distOnSm.setTime(fs, 10.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
@@ -343,6 +346,8 @@ public:
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
+            revSettings.decay = reverbDecaySm.next(blk.reverbDecay);
+            revSettings.reverse = blk.reverbReverse;
             revSettings.lowCutHz = reverbLowSm.next(blk.reverbLowCut);
             revSettings.highCutHz = reverbHighSm.next(blk.reverbHighCut);
             // The reverb only hears the sound while a sequence or stutter is playing; its tail rings on afterwards.
@@ -444,8 +449,9 @@ private:
         bool fxOnlyOnTriggers = false;
         bool pickTriggers = true, stepsOnHits = false;
         float mix = 1.0f;
-        float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f;
+        float reverbMix = 0.0f, reverbTone = 0.5f, reverbLevel = 1.0f, reverbLowCut = 20.0f, reverbHighCut = 20000.0f, reverbDecay = 0.5f;
         int reverbType = 0;
+        bool reverbReverse = false;
         bool distOn = false, distReverb = false;
         int distType = 0;
         bool patternOn = false;
@@ -472,6 +478,8 @@ private:
         blk.reverbTone = std::clamp(p.reverbTone, 0.0f, 1.0f);
         blk.reverbLevel = dbToGain(std::clamp(p.reverbLevelDb, -60.0f, 12.0f));
         blk.reverbType = std::clamp(p.reverbType, 0, kNumReverbTypes - 1);
+        blk.reverbDecay = std::clamp(p.reverbDecay, 0.0f, 1.0f);
+        blk.reverbReverse = p.reverbReverse;
         if (const int requests = patternRestartRequests.load(std::memory_order_acquire); requests != seenPatternRestarts)
         {
             seenPatternRestarts = requests;
@@ -525,6 +533,7 @@ private:
             reverbLevelSm.snap(blk.reverbLevel);
             reverbLowSm.snap(blk.reverbLowCut);
             reverbHighSm.snap(blk.reverbHighCut);
+            reverbDecaySm.snap(blk.reverbDecay);
             sampleMixSm.snap(blk.sampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             primed = true;
@@ -780,7 +789,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, sampleMixSm, distOnSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)

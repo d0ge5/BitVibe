@@ -1019,6 +1019,93 @@ void testReverb()
         CHECK(worstStep < 0.1f && std::isfinite(last), "switching type stays smooth (largest step %.3f)", worstStep);
     }
 
+    // DECAY stretches the tail (0 = a quarter of the normal length, 1 = four times) for every type.
+    auto impulseResponse = [](ReverbType type, bool reverse, float decay, double seconds)
+    {
+        ReverbSettings rs;
+        rs.type = type;
+        rs.reverse = reverse;
+        rs.decay = decay;
+        rs.tone = 1.0f;
+        Reverb r;
+        r.prepare(kFs, 0);
+        for (int i = 0; i < 600; ++i) // let the type and direction settle (they fade over ~16 ms)
+            r.process(0.0f, rs);
+        Signal out((size_t) (seconds * kFs));
+        for (size_t i = 0; i < out.size(); ++i)
+            out[i] = r.process(i == 0 ? 1.0f : 0.0f, rs);
+        return out;
+    };
+    auto windowEnergy = [](const Signal& x, double t0, double t1)
+    {
+        double e = 0.0;
+        for (size_t i = (size_t) (t0 * kFs); i < std::min(x.size(), (size_t) (t1 * kFs)); ++i)
+            e += (double) x[i] * x[i];
+        return e;
+    };
+    for (int type = 0; type < kNumReverbTypes; ++type)
+    {
+        const auto name = reverbTypeName((ReverbType) type);
+        const double short1 = windowEnergy(impulseResponse((ReverbType) type, false, 0.0f, 3.0), 1.0, 3.0);
+        const double normal = windowEnergy(impulseResponse((ReverbType) type, false, 0.5f, 3.0), 1.0, 3.0);
+        const double longest = windowEnergy(impulseResponse((ReverbType) type, false, 1.0f, 3.0), 1.0, 3.0);
+        CHECK(short1 < normal && normal < longest && longest > 50.0 * std::max(short1, 1.0e-20), "%s: more decay, longer tail (%g, %g, %g)", name, short1, normal, longest);
+    }
+
+    // REVERSE: the tail swells up and stops. Echoes are quiet at the start and loud at the end of the swell, and
+    // nothing is left after it. Room (0.7 s), Hall (2.2 s) and Spring (1.2 s) at the normal decay.
+    for (auto [type, length] : { std::pair<ReverbType, double> { ReverbType::Room, 0.7 }, { ReverbType::Hall, 2.2 }, { ReverbType::Spring, 1.2 } })
+    {
+        const auto ir = impulseResponse(type, true, 0.5f, length + 1.5);
+        const double early = windowEnergy(ir, 0.03 * length, 0.3 * length), late = windowEnergy(ir, 0.6 * length, length - 0.02);
+        const double after = windowEnergy(ir, length + 0.15, length + 1.4);
+        CHECK(late > 8.0 * early && late > 1.0e-5, "reverse %s: the swell builds up (early %g, late %g)", reverbTypeName(type), early, late);
+        CHECK(after < 1.0e-3 * late, "reverse %s: and stops at the end of its length (%g left)", reverbTypeName(type), after);
+        const auto longer = impulseResponse(type, true, 1.0f, length * 4.0 + 1.0);
+        CHECK(windowEnergy(longer, length * 2.5, length * 3.9) > 1.0e-6 && windowEnergy(longer, length * 4.3, length * 4.9) < 1.0e-3 * windowEnergy(longer, length * 2.5, length * 3.9),
+              "reverse %s: DECAY makes the swell longer (four times at the top)", reverbTypeName(type));
+    }
+    {
+        ReverbSettings rs;
+        rs.reverse = true;
+        rs.tone = 1.0f;
+        Reverb r;
+        r.prepare(kFs, 0);
+        Rng rng(11);
+        double in2 = 0.0, out2 = 0.0;
+        bool finite = true;
+        for (int i = 0; i < (int) (4.0 * kFs); ++i)
+        {
+            const float x = 0.3f * rng.next();
+            const float y = r.process(x, rs);
+            finite = finite && std::isfinite(y);
+            if (i > (int) (2.0 * kFs))
+            {
+                in2 += (double) x * x;
+                out2 += (double) y * y;
+            }
+        }
+        const double gainDb = db(std::sqrt(out2 / in2));
+        CHECK(finite && gainDb > -6.0 && gainDb < 6.0, "reverse: steady noise passes at about unity (%.1f dB)", gainDb);
+    }
+    {
+        // turning REVERSE on and off while sound plays does not click
+        Reverb r;
+        r.prepare(kFs, 0);
+        ReverbSettings rs;
+        rs.tone = 1.0f;
+        float last = 0.0f, worstStep = 0.0f;
+        for (int i = 0; i < (int) kFs; ++i)
+        {
+            rs.reverse = (i / 12000) % 2 == 1;
+            const float y = r.process(0.3f * (float) std::sin(2.0 * 3.14159265358979 * 200.0 * (double) i / kFs), rs);
+            if (i > 1000)
+                worstStep = std::max(worstStep, std::abs(y - last));
+            last = y;
+        }
+        CHECK(worstStep < 0.1f && std::isfinite(last), "switching REVERSE stays smooth (largest step %.3f)", worstStep);
+    }
+
     // A sequence plays once from a pick; steps are dry, so only the reverb can change the sound.
     const Signal in = quietToneWithPick();
     Params seq = neutral();
@@ -1035,6 +1122,16 @@ void testReverb()
     const Signal withReverb = render(wet, in);
     CHECK(rmsDiff(withReverb, plain, 0.7, 1.0) > 1.0e-4, "reverb mix 1: the sequenced sound gets a reverb (%g)", rmsDiff(withReverb, plain, 0.7, 1.0));
     CHECK(rmsDiff(withReverb, plain, 1.4, 2.1) > 1.0e-5, "the tail rings on after the sequence has finished (%g)", rmsDiff(withReverb, plain, 1.4, 2.1));
+
+    {
+        Params rev = wet;
+        rev.reverbReverse = true;
+        const Signal reversed = render(rev, in);
+        CHECK(rmsDiff(reversed, withReverb, 0.7, 1.6) > 1.0e-4 && rmsDiff(reversed, plain, 0.7, 1.6) > 1.0e-4,
+              "reverse reverb differs from the normal one and is audible (%g)", rmsDiff(reversed, plain, 0.7, 1.6));
+        rev.reverbMix = 0.0f;
+        CHECK(maxAbsDiff(render(rev, in), plain) == 0.0, "reverse with the reverb mix at 0 adds nothing");
+    }
 
     // Nothing is sequenced: the reverb hears nothing, so the signal is untouched (the clean signal is never reverbed).
     Params idle = neutral();

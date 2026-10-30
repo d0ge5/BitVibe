@@ -168,9 +168,10 @@ private:
     juce::ComboBox headroomBox, stutterLenBox;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
-    KnobSlider reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
-    std::unique_ptr<APVTS::SliderAttachment> reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
+    KnobSlider reverbDecaySlider, reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
+    std::unique_ptr<APVTS::SliderAttachment> reverbDecayAtt, reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
     juce::ComboBox reverbTypeBox;
+    juce::ToggleButton reverbReverseButton { "REVERSE" }; // each type of reverb remembers its own tick
 
     // distortion on the sequenced sound: drive, tone and level, an on switch and a "reverb too" switch
     KnobSlider distDriveSlider, distToneSlider, distLevelSlider;

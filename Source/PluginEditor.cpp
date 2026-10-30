@@ -331,7 +331,17 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(mixSlider, mixAtt, ids::mix);
     smallKnob(outSlider, outAtt, ids::outputGain);
     smallKnob(trigSlider, trigAtt, ids::sensitivity);
+    smallKnob(reverbDecaySlider, reverbDecayAtt, ids::reverbDecay);
     smallKnob(reverbToneSlider, reverbToneAtt, ids::reverbTone);
+    reverbReverseButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(reverbReverseButton);
+    reverbReverseButton.onClick = [this]
+    {
+        // the tick belongs to the type of reverb that is showing
+        static const char* ids[3] = { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring };
+        if (auto* param = proc.apvts.getParameter(ids[jlimit(0, 2, roundToInt(rawValue(ids::reverbType)))]))
+            param->setValueNotifyingHost(reverbReverseButton.getToggleState() ? 1.0f : 0.0f);
+    };
     smallKnob(reverbMixSlider, reverbMixAtt, ids::reverbMix);
     smallKnob(reverbLevelSlider, reverbLevelAtt, ids::reverbLevel);
     smallKnob(reverbLowSlider, reverbLowAtt, ids::reverbLowCut);
@@ -479,7 +489,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -526,12 +536,13 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider })
+    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider })
         s->setLookAndFeel(nullptr);
     distOnButton.setLookAndFeel(nullptr);
     distTypeBox.setLookAndFeel(nullptr);
     distReverbButton.setLookAndFeel(nullptr);
     reverbTypeBox.setLookAndFeel(nullptr);
+    reverbReverseButton.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
     fxTrigButton.setLookAndFeel(nullptr);
@@ -710,6 +721,10 @@ void BitVibeEditor::setTooltips()
     // global panel
     tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Turn the knob, click the big BPM number to type a tempo, tap, or turn on SYNC.");
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
+    reverbDecaySlider.setTooltip("REVERB DECAY: how long the reverb rings. Left = short, middle = normal, right = long (up to four times as long). "
+                                 "With REVERSE on it sets how long the swell takes.");
+    reverbReverseButton.setTooltip("REVERSE: tick this to play the reverb backwards: the sound swells up after the note instead of dying away. "
+                                   "Room, Hall and Spring each remember their own tick.");
     reverbToneSlider.setTooltip("REVERB TONE: the colour of the reverb, from dark (left) to bright (right).");
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
                                "Your clean signal never gets reverb.");
@@ -895,7 +910,8 @@ void BitVibeEditor::resized()
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
-    reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 4, 100, 22 }));
+    reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 3, 100, 20 }));
+    reverbReverseButton.setBounds(face({ kSideX + 250, kReverb.getY() + 3, 88, 20 }));
 
     // distortion panel: the two switches on the caption row, three knobs below
     distTypeBox.setBounds(face({ kSideX + 136, kDist.getY() + 3, 118, 20 }));
@@ -904,9 +920,9 @@ void BitVibeEditor::resized()
     const std::array<Slider*, 3> distKnobs { &distDriveSlider, &distToneSlider, &distLevelSlider };
     for (size_t i = 0; i < distKnobs.size(); ++i)
         distKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 76 + (int) i * 152, kDist.getY() + 48 })));
-    const std::array<Slider*, 5> reverbKnobs { &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
+    const std::array<Slider*, 6> reverbKnobs { &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
     for (size_t i = 0; i < reverbKnobs.size(); ++i)
-        reverbKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kGlobalKnobX0 + kColDx + (int) i * kGlobalKnobDx, kReverb.getY() + 40 })));
+        reverbKnobs[i]->setBounds(face(Rectangle<int>(44, 44).withCentre({ kSideX + 38 + (int) i * 76, kReverb.getY() + 46 })));
     samplePanel->setBounds(face({ kSideX, kSamplesY, SamplePanel::kWidth, SamplePanel::kHeight }));
     patternPanel->setBounds(face({ kSideX, kPatternY, PatternPanel::kWidth, PatternPanel::kHeight }));
 
@@ -1064,7 +1080,8 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("REVERB (SEQUENCED SOUND ONLY)", Rectangle<int>(kSideX + 14, kReverb.getY() + 4, 260, 12), Justification::left);
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
-    const std::array<Entry, 5> reverbEntries {{
+    const std::array<Entry, 6> reverbEntries {{
+        { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
         { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
         { "MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
         { "LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB" },
@@ -1073,13 +1090,13 @@ void BitVibeEditor::paintContent(Graphics& g)
     }};
     for (size_t i = 0; i < reverbEntries.size(); ++i)
     {
-        const int cx = kGlobalKnobX0 + kColDx + (int) i * kGlobalKnobDx;
+        const int cx = kSideX + 38 + (int) i * 76;
         g.setColour(kInk);
         g.setFont(bold(11.0f));
-        g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kReverb.getY() + 74 }), Justification::centred);
+        g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kReverb.getY() + 78 }), Justification::centred);
         g.setColour(kInkDim);
         g.setFont(plain(10.5f));
-        g.drawText(reverbEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, kReverb.getY() + 88 }), Justification::centred);
+        g.drawText(reverbEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, kReverb.getY() + 91 }), Justification::centred);
     }
 }
 
@@ -1105,6 +1122,13 @@ void BitVibeEditor::timerCallback()
                                                           ? Desktop::getInstance().getDisplays().getPrimaryDisplay()->scale : 1.0);
         if (settled && std::abs(wanted - backgroundScale) > 0.02f)
             buildBackground();
+    }
+    {
+        const int type = jlimit(0, 2, roundToInt(rawValue(ids::reverbType)));
+        const std::array<const char*, 3> tickIds { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring };
+        const bool ticked = rawValue(tickIds[(size_t) type]) > 0.5f;
+        if (reverbReverseButton.getToggleState() != ticked)
+            reverbReverseButton.setToggleState(ticked, dontSendNotification);
     }
     refreshPresetName();
     showSeqType();

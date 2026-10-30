@@ -35,6 +35,10 @@ inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
+inline constexpr const char* reverbDecay = "reverbDecay";
+inline constexpr const char* reverbReverseRoom = "reverbRevRoom";
+inline constexpr const char* reverbReverseHall = "reverbRevHall";
+inline constexpr const char* reverbReverseSpring = "reverbRevSpring";
 inline constexpr const char* distOn = "distOn";
 inline constexpr const char* distType = "distType";
 inline constexpr const char* distDrive = "distDrive";
@@ -194,6 +198,8 @@ private:
     std::atomic<float>* pReverbMix = nullptr;
     std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
+    std::atomic<float>* pReverbDecay = nullptr;
+    std::array<std::atomic<float>*, 3> pReverbReverse {}; // room, hall, spring
     std::atomic<float>* pDistOn = nullptr;
     std::atomic<float>* pDistType = nullptr;
     std::atomic<float>* pDistDrive = nullptr;
