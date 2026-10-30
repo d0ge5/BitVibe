@@ -20,6 +20,10 @@ public:
     void refresh();
     void parentHierarchyChanged() override;
 
+    // SIMPLE hides the bank buttons, the sounds folder and the volume range row (and the panel gets shorter).
+    void setAdvanced(bool advanced);
+    int currentHeight() const { return advanced ? kHeight : 112; }
+
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
 
@@ -47,6 +51,7 @@ private:
     juce::String shownButtonText, shownBankState;
     juce::StringArray shownBanks;
     bool updatingControls = false;
+    bool advanced = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplePanel)
 };

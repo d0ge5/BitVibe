@@ -22,6 +22,9 @@ public:
     // Pulls the pattern again and repaints (called by the editor's timer while the page is shown).
     void refresh();
 
+    // SIMPLE hides the time signature, RESTART BAR and PATTERN LOCK (their settings still apply).
+    void setAdvanced(bool advanced);
+
 private:
     void layoutGrid();
     int cellAt(juce::Point<float>) const;
@@ -43,6 +46,7 @@ private:
     std::array<juce::Rectangle<float>, bitvibe::kMaxPatternSteps> cells;
     std::array<juce::Rectangle<float>, 5> beatLabels; // the beat numbers under the grid (they also pick the beats RANDOM may change)
     int shownSignature = -1;
+    bool advanced = true;
     bool updatingControls = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PatternPanel)

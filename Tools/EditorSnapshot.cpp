@@ -629,6 +629,36 @@ void testResizing()
     uisettings::markHelpSeen();
 }
 
+// SIMPLE and ADVANCED on the right-hand side: ADVANCED shows more controls, SIMPLE hides them (their settings still
+// apply), the choice is remembered, and both are drawn for the README.
+void testRightModes(const File& outDir)
+{
+    std::puts("simple and advanced controls on the right-hand side");
+    auto p = makeProcessor();
+    auto countRight = [](BitVibeEditor& ed)
+    {
+        int n = 0;
+        for (auto* c : ed.getContent().getChildren())
+            if (c->isVisible() && c->getX() >= 480 && c->getY() > 40
+                && (dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr || dynamic_cast<ComboBox*>(c) != nullptr))
+                ++n;
+        return n;
+    };
+    uisettings::setAdvancedRight(false);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    const int simple = countRight(*ed);
+    check(!ed->isAdvancedRight(), "a new player starts in SIMPLE");
+    save(*ed, outDir.getChildFile("editor_simple.png"));
+    ed->setRightMode(true);
+    const int advanced = countRight(*ed);
+    check(advanced == simple + 6, "ADVANCED shows the six extra distortion and reverb controls (" + String(simple) + " then " + String(advanced) + ")");
+    save(*ed, outDir.getChildFile("editor_advanced.png"));
+    std::unique_ptr<BitVibeEditor> again(static_cast<BitVibeEditor*>(p->createEditor()));
+    check(again->isAdvancedRight(), "the choice is remembered");
+    again->setRightMode(false);
+    uisettings::setAdvancedRight(true); // the other screenshots show every control
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -697,7 +727,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 52 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 52 and 0)");
+    check(controls == 54 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 54 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1310,6 +1340,7 @@ int main(int argc, char** argv)
     testSettings.deleteRecursively();
     SampleBank::setSettingsFolderOverride(testSettings);
     uisettings::markHelpSeen(); // the quick-start help would otherwise cover the screenshots
+    uisettings::setAdvancedRight(true); // and the screenshots show every control
     const File outDir(argv[1]);
     outDir.createDirectory();
 
@@ -1387,6 +1418,7 @@ int main(int argc, char** argv)
     testSampleBlendParams();
     testSoundBanks();
     testResizing();
+    testRightModes(outDir);
     testDistortionParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

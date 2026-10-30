@@ -152,6 +152,11 @@ public:
     // Shows the DRUMS tab (true) or the pedal (false).
     void showDrums(bool on);
 
+    // The right-hand column in SIMPLE mode (the controls that matter most) or ADVANCED mode (every control).
+    // Settings that SIMPLE hides keep working; they are only out of the way. The choice is remembered.
+    void setRightMode(bool advanced);
+    bool isAdvancedRight() const { return advancedRight; }
+
 private:
     static constexpr int kKnobs = 6;
     using APVTS = juce::AudioProcessorValueTreeState;
@@ -176,6 +181,8 @@ private:
     void paintContent(juce::Graphics&);
     void addKnobHelpers(juce::Slider&, const juce::String& paramId); // double-click to reset, value bubble while turning
     void applySize(); // the window size for the page that is showing, at the player's scale
+    void applyRightMode();
+    int patternTop() const; // where the beat pattern panel starts (the sample panel above it changes height with the mode)
     void timerCallback() override;
     void buildBackground();
     void setTooltips();        // plain-language hover text for every control
@@ -193,6 +200,8 @@ private:
     LevelMeter triggerMeter;
     StepStrip stepStrip;
     PedalButton helpButton { "? HELP" };
+    PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
+    bool advancedRight = false;
     HelpOverlay helpOverlay;
     float meterDb = -100.0f;
     int seenAttacks = 0;

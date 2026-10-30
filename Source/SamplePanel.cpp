@@ -107,9 +107,18 @@ void SamplePanel::parentHierarchyChanged()
             s->setPopupDisplayEnabled(true, false, parent);
 }
 
+void SamplePanel::setAdvanced(bool on)
+{
+    advanced = on;
+    for (Component* c : std::initializer_list<Component*> { &saveButton, &deleteButton, &folderButton, &baseSlider, &maxSlider, &previewButton })
+        c->setVisible(on);
+    resized();
+    repaint();
+}
+
 void SamplePanel::resized()
 {
-    bankBox.setBounds(12, 24, 108, 24);
+    bankBox.setBounds(12, 24, advanced ? 108 : 238, 24);
     saveButton.setBounds(124, 24, 60, 24);
     deleteButton.setBounds(188, 24, 62, 24);
     chooseButton.setBounds(12, 52, 238, 24);
@@ -326,6 +335,8 @@ void SamplePanel::paint(Graphics& g)
         g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
     }
 
+    if (!advanced)
+        return; // SIMPLE: no volume range row
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
     g.drawText("VOLUME RANGE: THE MIX KNOB MOVES BETWEEN BASE AND MAX", 14, 116, 428, 12, Justification::left);

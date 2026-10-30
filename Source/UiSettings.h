@@ -37,6 +37,16 @@ inline void saveWindowScale(float scale)
     write(*xml);
 }
 
+// The right-hand column: false = SIMPLE (the controls that matter most), true = ADVANCED (everything).
+inline bool advancedRight() { return read()->getBoolAttribute("advancedRight", false); }
+
+inline void setAdvancedRight(bool advanced)
+{
+    auto xml = read();
+    xml->setAttribute("advancedRight", advanced);
+    write(*xml);
+}
+
 inline bool helpSeen() { return read()->getBoolAttribute("helpSeen", false); }
 
 inline void markHelpSeen()

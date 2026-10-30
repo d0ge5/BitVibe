@@ -97,6 +97,14 @@ PatternPanel::~PatternPanel()
     lockButton.setLookAndFeel(nullptr);
 }
 
+void PatternPanel::setAdvanced(bool on)
+{
+    advanced = on;
+    for (Component* c : std::initializer_list<Component*> { &signatureBox, &restartButton, &lockButton })
+        c->setVisible(on);
+    repaint();
+}
+
 void PatternPanel::resized()
 {
     // first row: what the pattern does, the time signature, restart the bar
@@ -266,7 +274,18 @@ void PatternPanel::paint(Graphics& g)
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
     g.drawText("ACTION", 14, kRowY, 50, kRowH, Justification::centredLeft);
-    g.drawText("TIME SIG.", 204, kRowY, 58, kRowH, Justification::centredLeft);
+    if (advanced)
+        g.drawText("TIME SIG.", 204, kRowY, 58, kRowH, Justification::centredLeft);
+    else
+    {
+        // what the hidden controls are set to, when it matters
+        String hidden = String(ts.name) + (ts.totalSteps != 16 ? " bar" : "");
+        if (proc.apvts.getRawParameterValue(ids::patternLock)->load() > 0.5f)
+            hidden << ", PATTERN LOCK on";
+        g.setColour(inkDim);
+        g.setFont(plain(10.0f));
+        g.drawText(hidden + " (ADVANCED to change)", 204, kRowY, 240, kRowH, Justification::centredLeft, true);
+    }
 
     // The step the bar is at right now (the engine's own clock), so it is easy to see where a step sits in time.
     const int playing = jlimit(0, ts.totalSteps - 1, proc.getEngine().getPatternStep());

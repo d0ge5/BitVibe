@@ -94,6 +94,13 @@ how fast (for example "6 REPEATS, FAST"). The small lights next to DISTORTION / 
 SAMPLE BLEND come on while a sequence or stutter plays, which is when those effects act; with both the sequencer
 and the stutter off, a note under the right-hand column says so.
 
+**SIMPLE or ADVANCED:** the two buttons above the right-hand column choose how many controls it shows. **SIMPLE**
+(the default for a new player) keeps what you need to make a sound: the distortion type, ON, DRIVE and level; the
+reverb type, REVERSE, DECAY and REV MIX; the sound bank list, CHOOSE SOUNDS, SAMPLE MIX and CHANCE; the pattern's
+action, ready-made patterns and grid. **ADVANCED** shows everything (tones, cuts, reverb level, REVERB TOO, bank
+saving, the sounds folder, the sample volume range and preview, time signature, RESTART BAR and PATTERN LOCK).
+Whatever SIMPLE hides keeps its setting, and the choice is remembered.
+
 **The window can be resized**: drag the corner at the bottom right (or let your DAW resize it). The whole plug-in
 scales up or down with its shape fixed, from 60 % to 200 % of its normal size, and the size is remembered for next
 time. Knobs also grow a little while you hold them, so you can see you have a grip on them.

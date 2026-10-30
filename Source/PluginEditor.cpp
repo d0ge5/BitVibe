@@ -29,7 +29,6 @@ constexpr int kColY = 12 - kFaceDy;
 const Rectangle<int> kReverb { kSideX, kColY + 108, 456, 100 };
 const Rectangle<int> kDist { kSideX, kColY, 456, 100 };
 constexpr int kSamplesY = kColY + 216;
-constexpr int kPatternY = kSamplesY + SamplePanel::kHeight + 8;
 
 // Header rows (window coordinates).
 const Rectangle<int> kPrevBounds { 24, 20, 30, 26 }, kNameBox { 60, 20, 266, 26 }, kNextBounds { 332, 20, 30, 26 },
@@ -700,6 +699,14 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         helpOverlay.toFront(false);
     };
     content.addAndMakeVisible(helpButton);
+    simpleButton.setTooltip("SIMPLE: the right-hand side shows only the controls you need to make a sound. What it hides keeps its settings.");
+    advancedButton.setTooltip("ADVANCED: the right-hand side shows every control: tone, cuts, levels, sound banks, sample volumes, time signature and more.");
+    simpleButton.onClick = [this] { setRightMode(false); };
+    advancedButton.onClick = [this] { setRightMode(true); };
+    content.addAndMakeVisible(simpleButton);
+    content.addAndMakeVisible(advancedButton);
+    advancedRight = uisettings::advancedRight();
+    applyRightMode();
     content.addChildComponent(helpOverlay);
     if (!uisettings::helpSeen())
     {
@@ -786,7 +793,10 @@ void BitVibeEditor::showDrums(bool on)
     for (auto* c : pedalComponents)
         c->setVisible(!on);
     if (!on)
+    {
         setAltLayer(altLayer); // puts the right layer of knobs back
+        applyRightMode();
+    }
     drumPage->setVisible(on);
     baseWidth = on ? kWidth : kPedalWidth;
     baseHeight = kHeight;
@@ -797,6 +807,36 @@ void BitVibeEditor::showDrums(bool on)
     pedalTab.repaint();
     drumsTab.repaint();
     repaint();
+}
+
+void BitVibeEditor::setRightMode(bool advanced)
+{
+    advancedRight = advanced;
+    uisettings::setAdvancedRight(advanced);
+    applyRightMode();
+}
+
+// SIMPLE keeps: distortion type, on, drive and level; reverb type, reverse, decay and mix; the sound bank list, the
+// sound chooser, sample mix and chance; the pattern's action, its ready-made patterns and its grid.
+void BitVibeEditor::applyRightMode()
+{
+    const bool show = advancedRight && !drumsShown;
+    for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton, &reverbToneSlider, &reverbLevelSlider,
+                                                            &reverbLowSlider, &reverbHighSlider })
+        c->setVisible(show);
+    samplePanel->setAdvanced(advancedRight);
+    patternPanel->setAdvanced(advancedRight);
+    simpleButton.lit = !advancedRight;
+    advancedButton.lit = advancedRight;
+    simpleButton.repaint();
+    advancedButton.repaint();
+    resized();
+    repaint();
+}
+
+int BitVibeEditor::patternTop() const
+{
+    return kSamplesY + samplePanel->currentHeight() + 8;
 }
 
 void BitVibeEditor::stepProgram(int direction)
@@ -1110,20 +1150,34 @@ void BitVibeEditor::resized()
     distTypeBox.setBounds(face({ kSideX + 136, kDist.getY() + 3, 118, 20 }));
     distOnButton.setBounds(face({ kSideX + 266, kDist.getY() + 3, 56, 20 }));
     distReverbButton.setBounds(face({ kSideX + 328, kDist.getY() + 3, 120, 20 }));
-    const std::array<Slider*, 3> distKnobs { &distDriveSlider, &distToneSlider, &distLevelSlider };
-    for (size_t i = 0; i < distKnobs.size(); ++i)
-        distKnobs[i]->setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 76 + (int) i * 152, kDist.getY() + 48 })));
-    const std::array<Slider*, 6> reverbKnobs { &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider };
-    for (size_t i = 0; i < reverbKnobs.size(); ++i)
-        reverbKnobs[i]->setBounds(face(Rectangle<int>(44, 44).withCentre({ kSideX + 38 + (int) i * 76, kReverb.getY() + 46 })));
-    samplePanel->setBounds(face({ kSideX, kSamplesY, SamplePanel::kWidth, SamplePanel::kHeight }));
-    patternPanel->setBounds(face({ kSideX, kPatternY, PatternPanel::kWidth, PatternPanel::kHeight }));
+    // the knobs that are showing (SIMPLE hides some) share the width of their panel evenly
+    auto spread = [this](std::initializer_list<std::pair<Slider*, bool>> knobs, int size, int y)
+    {
+        int shown = 0;
+        for (const auto& k : knobs)
+            shown += (advancedRight || !k.second) ? 1 : 0;
+        int index = 0;
+        for (const auto& k : knobs)
+            if (advancedRight || !k.second)
+            {
+                const int cx = kSideX + (int) std::lround(456.0 * ((double) index++ + 0.5) / (double) shown);
+                k.first->setBounds(Rectangle<int>(size, size).withCentre({ cx, y }).translated(0, kFaceDy));
+            }
+    };
+    spread({ { &distDriveSlider, false }, { &distToneSlider, true }, { &distLevelSlider, false } }, 48, kDist.getY() + 48);
+    spread({ { &reverbDecaySlider, false }, { &reverbToneSlider, true }, { &reverbMixSlider, false }, { &reverbLevelSlider, true },
+             { &reverbLowSlider, true }, { &reverbHighSlider, true } },
+           44, kReverb.getY() + 46);
+    samplePanel->setBounds(face({ kSideX, kSamplesY, SamplePanel::kWidth, samplePanel->currentHeight() }));
+    patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
     for (auto* c : pedalComponents)
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
     helpButton.setBounds(kWidth - 140 - 76, 8, 70, 24);
+    simpleButton.setBounds(kSideX + 300, 8, 76, 24);
+    advancedButton.setBounds(kSideX + 380, 8, 76, 24);
     helpOverlay.setBounds(0, 0, baseWidth, baseHeight);
     pedalTab.setBounds(12, 8, 96, 24);
     drumsTab.setBounds(114, 8, 96, 24);
@@ -1136,6 +1190,9 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.drawImage(background, 0, 0, baseWidth, baseHeight, 0, 0, roundToInt((float) baseWidth * backgroundScale), roundToInt((float) baseHeight * backgroundScale));
     if (drumsShown)
         return; // the DRUMS page paints everything below the tabs
+    g.setColour(kInkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("CONTROLS ON THIS SIDE:", Rectangle<int>(kSideX + 130, 8, 164, 24), Justification::centredRight);
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     // Header: slot number and modified mark beside the preset name, state line under the morph strip
@@ -1230,7 +1287,25 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("GLOBAL", Rectangle<int>(26, 548, 80, 12), Justification::left);
 
-    struct Entry { const char* name; String value; };
+    struct Entry
+    {
+        const char* name;
+        String value;
+        bool advancedOnly = false;
+    };
+    // where the n-th of the labels that are showing goes (the knobs above them are spread the same way)
+    auto labelX = [this](const auto& list, size_t i)
+    {
+        int shown = 0, index = 0;
+        for (size_t k = 0; k < list.size(); ++k)
+            if (advancedRight || !list[k].advancedOnly)
+            {
+                if (k < i)
+                    ++index;
+                ++shown;
+            }
+        return kSideX + (int) std::lround(456.0 * ((double) index + 0.5) / (double) jmax(1, shown));
+    };
     const std::array<Entry, 5> entries {{
         { "TEMPO", String(rawValue(ids::tempo), 1) },
         { "INPUT", String(rawValue(ids::inputGain), 1) + " dB" },
@@ -1262,7 +1337,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         const bool sequenceOff = roundToInt(rawValue(ids::seqPlay)) == 0;
         const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
-        const Rectangle<int> note(kSideX + 8, kPatternY + PatternPanel::kHeight + 10, 440, 40);
+        const Rectangle<int> note(kSideX + 8, patternTop() + PatternPanel::kHeight + 10, 440, 40);
         g.setFont(plain(10.5f));
         if (sequenceOff && stutterOff)
         {
@@ -1285,12 +1360,14 @@ void BitVibeEditor::paintContent(Graphics& g)
     const bool fuzz = roundToInt(rawValue(ids::distType)) == 1; // the big-fuzz style calls its knobs sustain / tone / volume
     const std::array<Entry, 3> distEntries {{
         { fuzz ? "SUSTAIN" : "DRIVE", String(roundToInt(rawValue(ids::distDrive) * 100.0f)) + "%" },
-        { fuzz ? "FUZZ TONE" : "DIST TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%" },
+        { fuzz ? "FUZZ TONE" : "DIST TONE", String(roundToInt(rawValue(ids::distTone) * 100.0f)) + "%", true },
         { fuzz ? "VOLUME" : "DIST LEVEL", String(roundToInt(rawValue(ids::distLevel) * 100.0f)) + "%" },
     }};
     for (size_t i = 0; i < distEntries.size(); ++i)
     {
-        const int cx = kSideX + 76 + (int) i * 152;
+        if (!advancedRight && distEntries[i].advancedOnly)
+            continue;
+        const int cx = labelX(distEntries, i);
         g.setColour(kInk);
         g.setFont(bold(11.0f));
         g.drawText(distEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kDist.getY() + 79 }), Justification::centred);
@@ -1306,15 +1383,17 @@ void BitVibeEditor::paintContent(Graphics& g)
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
-        { "REV TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%" },
+        { "REV TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%", true },
         { "REV MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
-        { "REV LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB" },
-        { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut) },
-        { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut) },
+        { "REV LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB", true },
+        { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut), true },
+        { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut), true },
     }};
     for (size_t i = 0; i < reverbEntries.size(); ++i)
     {
-        const int cx = kSideX + 38 + (int) i * 76;
+        if (!advancedRight && reverbEntries[i].advancedOnly)
+            continue;
+        const int cx = labelX(reverbEntries, i);
         g.setColour(kInk);
         g.setFont(bold(11.0f));
         g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, kReverb.getY() + 78 }), Justification::centred);
