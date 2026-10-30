@@ -1103,11 +1103,12 @@ void testSampleBlend()
 {
     std::puts("sample blend: a random sound from the picked list at each sequencer step");
 
-    // The knob is a gentle curve (a quarter of the level at half way); the clips here are made louder by the curve's
-    // gain at full mix, so that the output at mix 1 is exactly 0.2 or 0.4 and so on.
-    const float full = Engine::sampleGain(1.0f);
-    CHECK(std::abs(full - 0.5f) < 1.0e-6f && Engine::sampleGain(0.0f) == 0.0f && std::abs(Engine::sampleGain(0.5f) - 0.125f) < 1.0e-6f,
-          "the sample knob is a curve: off, an eighth of full level half way, half at the top");
+    // The volume: MIX moves between a base and a max volume, in dB; the bottom of a volume knob is silence.
+    CHECK(Engine::sampleGain(0.0f, -60.0f, -6.0f) == 0.0f && std::abs(db(Engine::sampleGain(1.0f, -60.0f, -6.0f)) + 6.0) < 0.01 &&
+              std::abs(db(Engine::sampleGain(0.5f, -20.0f, -6.0f)) + 13.0) < 0.01 && std::abs(db(Engine::sampleGain(0.0f, -20.0f, -6.0f)) + 20.0) < 0.01 &&
+              Engine::sampleGain(0.5f, -60.0f, -60.0f) == 0.0f,
+          "the sample volume: base at mix 0, max at mix 1, even steps in dB in between, silence at the bottom");
+    const float full = 1.0f; // the tests below use base Off and max 0 dB, so mix 1 plays the clips at their own level
 
     // Two clips of constant level, 2000 samples long (at the engine's rate): 0.2 and 0.4 after the knob.
     SampleSet set;
@@ -1129,6 +1130,8 @@ void testSampleBlend()
         p.tempoBpm = 600.0f;
         p.steps.fill(mapping::pitchStepKnob(0));
         p.pickTriggers = false;
+        p.sampleBaseDb = -60.0f; // Off at mix 0, 0 dB (the clip's own level) at mix 1
+        p.sampleMaxDb = 0.0f;
         return p;
     };
     // Runs the engine in 256-sample blocks with one restart event at sample 1000.
@@ -1157,7 +1160,9 @@ void testSampleBlend()
 
     Params p = sequence();
     p.sampleSet = &set;
-    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "sample mix 0: nothing is added");
+    p.sampleBaseDb = -60.0f; // Off
+    p.sampleMaxDb = 0.0f;
+    CHECK(maxAbsDiff(renderWithTrigger(p), in) == 0.0, "sample mix 0 with the base Off: nothing is added");
 
     p.sampleMix = 1.0f;
     const Signal out = renderWithTrigger(p);
@@ -1197,7 +1202,7 @@ void testSampleBlend()
     {
         const Signal half = renderWithTrigger(p);
         const float a = half[1000 + 500];
-        CHECK(std::abs(a - 0.05f) < 1.0e-3f || std::abs(a - 0.1f) < 1.0e-3f, "mix 0.5 gives a quarter of the level (%.3f)", a);
+        CHECK(std::abs(a - 0.2f * 0.0316228f) < 1.0e-4f || std::abs(a - 0.4f * 0.0316228f) < 1.0e-4f, "mix 0.5 with the base Off is 30 dB down (%.4f)", a);
     }
     p.sampleMix = 1.0f;
     p.sampleChance = 0.0f;
@@ -1261,6 +1266,25 @@ void testSampleBlend()
         CHECK(tonePower(flat, 0.03, 0.09, 400.0) > 4.0 * tonePower(flat, 0.03, 0.09, 800.0) &&
                   tonePower(up, 0.03, 0.09, 800.0) > 4.0 * tonePower(up, 0.03, 0.09, 400.0),
               "the sequence's +12 step moves the sound from 400 Hz up to 800 Hz");
+    }
+
+    // A preview: one picked sound at a volume of its own, with no sequence running and whatever the MIX knob says.
+    {
+        Params q = neutral();
+        q.sampleSet = &set;
+        q.sampleMix = 0.0f;
+        Engine e;
+        e.prepare(kFs);
+        Signal heard(4000, 0.0f);
+        float* ch = heard.data();
+        e.previewSample(&set, 1, 0.5f); // pick 1 of 2 clips: the 0.4 one, at half volume
+        e.process(&ch, 1, 4000, q);
+        CHECK(std::abs(heard[500] - 0.2f) < 1.0e-3f && std::abs(heard[3500]) < 1.0e-6f, "a preview plays the picked sound at its own volume (%.3f), then stops", heard[500]);
+        Signal silent(500, 0.0f);
+        float* sc = silent.data();
+        e.previewSample(&set, 0, 0.0f);
+        e.process(&sc, 1, 500, q);
+        CHECK(std::abs(silent[400]) < 1.0e-9f, "a preview at silence plays nothing");
     }
 
     // A clip at half the engine's rate lasts twice as long.

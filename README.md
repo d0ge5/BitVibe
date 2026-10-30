@@ -150,8 +150,11 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   shifter and the bit-crush, sample-rate and filter stage, so it is shifted by the sequence's pitch steps and
   crushed along with everything else (and the reverb hears it). The sounds only play while the sequencer is
   playing and stop when it ends. **CHOOSE SOUNDS** opens a menu where you tick the sounds the sequencer may pick from
-  (click as many as you like, click outside to close; *Pick all* and *Pick none* are there too). **MIX** is how
-  loud the chosen sound is (a gentle curve: fully left = off, the default, half way is an eighth of the level of full) and **CHANCE** is how often a step gets one (100% =
+  (click as many as you like, click outside to close; *Pick all* and *Pick none* are there too). **MIX** moves the
+  volume between two levels you set with **BASE** and **MAX** (in dB, so the travel sounds even; the bottom of
+  the BASE knob is Off, which makes MIX fully left silent, the default). Let go of the BASE or MAX knob, or press
+  **PREVIEW**, and BitVibe plays one of your picked sounds at that volume (PREVIEW plays the same sound at the
+  base volume and then at the max volume) through the same crusher as the sequence, so you can set both by ear. And **CHANCE** is how often a step gets one (100% =
   every step). Muted steps stay silent. The sounds are your own audio files (WAV, AIFF, FLAC or OGG, up to 20
   seconds each, every one is levelled to the same peak): **OPEN SOUNDS FOLDER** opens `Documents/BitVibe/Sounds`
   (builds from the source tree also read the `GoodSounds` folder next to the code). BitVibe ships no sounds
@@ -392,7 +395,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 363 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 365 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

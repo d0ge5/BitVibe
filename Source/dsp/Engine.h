@@ -92,9 +92,12 @@ struct Params
     bool distReverb = false;
 
     // Sample blend: at the start of every sequencer step (with this chance) one of the picked sounds, chosen at
-    // random, is mixed into the sequenced sound at this level. 0 = off (the default). The set is owned by the caller
-    // and must stay alive while the engine may play from it (the plug-in keeps the previous set until the next block).
+    // random, is mixed into the sequenced sound. The volume is set by two levels and the MIX knob between them:
+    // sampleMix 0 plays at sampleBaseDb, 1 at sampleMaxDb (a base at the bottom, -60 dB, means silence). The set is
+    // owned by the caller and must stay alive while the engine may play from it (the plug-in keeps the previous set
+    // until the next block).
     float sampleMix = 0.0f;
+    float sampleBaseDb = -60.0f, sampleMaxDb = -9.0f;
     float sampleChance = 1.0f;
     const SampleSet* sampleSet = nullptr;
 
@@ -109,12 +112,28 @@ class Engine
 public:
     static constexpr int kMaxChannels = 2;
 
-    // The sample blend's knob: a curve, so the first half of the travel is the gentle part, and the sounds (which are
-    // levelled to the same peak) never come in louder than half of full scale before the effect.
-    static float sampleGain(float knob)
+    static constexpr float kSampleOffDb = -60.0f; // the bottom of the base and max volume knobs: silence
+
+    // The sample blend's volume: the MIX knob moves between the base and the max volume (in dB, so the travel
+    // sounds even). A volume at the bottom of its range is silence. The sounds are levelled to the same peak.
+    static float sampleGain(float mix, float baseDb, float maxDb)
     {
-        const float k = std::clamp(knob, 0.0f, 1.0f);
-        return 0.5f * k * k;
+        const float db = baseDb + (maxDb - baseDb) * std::clamp(mix, 0.0f, 1.0f);
+        return db <= kSampleOffDb + 0.05f ? 0.0f : dbToGain(db);
+    }
+
+    // Plays one of the picked sounds (chosen by pick) at a volume of its own, outside the sequence: the preview the
+    // player asks for while setting the base and max volumes. Call it on the audio thread before process().
+    void previewSample(const SampleSet* set, uint32_t pick, float gain)
+    {
+        if (set == nullptr || set->clips.empty() || !(gain > 0.0f))
+            return;
+        if (set != lastSampleSet) // a new set: whatever is sounding still points into the old one
+        {
+            samplePlayer.reset();
+            lastSampleSet = set;
+        }
+        samplePlayer.trigger(&set->clips[pick % set->clips.size()], gain, true);
     }
 
     void prepare(double sampleRate)
@@ -304,7 +323,8 @@ public:
             const float distAmount = distOnSm.next(blk.distOn ? 1.0f : 0.0f);
             const bool distRun = blk.distOn || distAmount > 1.0e-4f;
             const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
-            const float sampleSignal = samplePlayer.process() * sampleMixSm.next(blk.sampleMix);
+            const auto heard = samplePlayer.process();
+            const float sampleSignal = heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.preview;
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
@@ -408,7 +428,7 @@ private:
         bool distOn = false, distReverb = false;
         int distType = 0;
         float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
-        float sampleMix = 0.0f, sampleChance = 1.0f;
+        float sampleGain = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
         int stutterLength = 0;
     };
@@ -440,7 +460,7 @@ private:
             ch.fuzz.setParams(p.distDrive, p.distTone, p.distLevel);
             ch.fuzzReverb.setParams(p.distDrive, p.distTone, p.distLevel);
         }
-        blk.sampleMix = sampleGain(p.sampleMix);
+        blk.sampleGain = sampleGain(p.sampleMix, p.sampleBaseDb, p.sampleMaxDb);
         blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);
         blk.sampleSet = p.sampleSet;
         if (p.sampleSet != lastSampleSet) // a new set: whatever is sounding still points into the old one
@@ -469,7 +489,7 @@ private:
             reverbLevelSm.snap(blk.reverbLevel);
             reverbLowSm.snap(blk.reverbLowCut);
             reverbHighSm.snap(blk.reverbHighCut);
-            sampleMixSm.snap(blk.sampleMix);
+            sampleMixSm.snap(blk.sampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             primed = true;
         }
@@ -593,7 +613,7 @@ private:
     // A sequencer step has just begun: maybe bring in one of the picked sounds, chosen at random. Muted steps stay silent.
     void stepStarted()
     {
-        if (blk.sampleMix <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
+        if (blk.sampleGain <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
             return;
         if (steps[(size_t) active[(size_t) seqIdx]].kind == mapping::Step::Kind::Mute)
             return;

@@ -404,6 +404,39 @@ void testSampleBlendParams()
     check(maxDifference(run(*p, in), plain) < 1.0e-6f, "chance 0: no step gets a sound");
     setValue(*p, ids::sampleChance, 1.0f);
 
+    // The volume range: MIX moves between the base and the max volume.
+    setValue(*p, ids::sampleBase, -20.0f);
+    setValue(*p, ids::sampleMax, -6.0f);
+    setValue(*p, ids::sampleMix, 0.0f);
+    const auto atBase = run(*p, in);
+    setValue(*p, ids::sampleMix, 1.0f);
+    const auto atMax = run(*p, in);
+    const float baseSize = maxDifference(atBase, plain), maxSize = maxDifference(atMax, plain);
+    check(baseSize > 0.001f && maxSize > baseSize * 3.0f, "MIX 0 plays at the base volume and MIX 1 at the max volume (" + String(baseSize, 3) + " then " + String(maxSize, 3) + ")");
+
+    // The preview: a picked sound at a volume, with no sequencer running.
+    {
+        auto q = makeProcessor();
+        q->getSampleBank().selectAll();
+        q->prepareToPlay(48000.0, 512);
+        AudioBuffer<float> buffer(2, 512);
+        MidiBuffer midi;
+        buffer.clear();
+        q->processBlock(buffer, midi);
+        check(buffer.getMagnitude(0, 512) == 0.0f, "nothing plays before a preview is asked for");
+        q->requestSamplePreview(-12.0f, 3);
+        buffer.clear();
+        q->processBlock(buffer, midi);
+        float loudest = 0.0f;
+        for (int block = 0; block < 200; ++block) // about two seconds: some sounds start quietly
+        {
+            loudest = jmax(loudest, buffer.getMagnitude(0, 512));
+            buffer.clear();
+            q->processBlock(buffer, midi);
+        }
+        check(loudest > 0.005f && loudest < 0.5f, "a preview plays a picked sound (" + String(loudest, 3) + ")");
+    }
+
     // The picked list is saved with the project; a project without one picks everything.
     p->getSampleBank().setSelected({ library[0].getFileName(), library[library.size() - 1].getFileName() });
     MemoryBlock state;
@@ -472,7 +505,14 @@ void testSoundBanks()
         // the knobs, as the panel records them when the player lets go
         setValue(*p, ids::sampleMix, 0.35f);
         setValue(*p, ids::sampleChance, 0.6f);
-        bank.rememberLevels(0.35f, 0.6f);
+        SampleBank::Levels levels;
+        levels.mix = 0.35f;
+        levels.chance = 0.6f;
+        levels.baseDb = -30.0f;
+        levels.maxDb = -12.0f;
+        setValue(*p, ids::sampleBase, -30.0f);
+        setValue(*p, ids::sampleMax, -12.0f);
+        bank.rememberLevels(levels);
     }
 
     {
@@ -481,8 +521,9 @@ void testSoundBanks()
         auto& bank = p->getSampleBank();
         check(bank.getSelected().size() == 2 && bank.getBankNames().size() == 2 && bank.getActiveBank() == "Single",
               "a new instance starts with the remembered list and banks");
-        check(std::abs(getValue(*p, ids::sampleMix) - 0.35f) < 0.01f && std::abs(getValue(*p, ids::sampleChance) - 0.6f) < 0.01f,
-              "and with the sample MIX and CHANCE the player left");
+        check(std::abs(getValue(*p, ids::sampleMix) - 0.35f) < 0.01f && std::abs(getValue(*p, ids::sampleChance) - 0.6f) < 0.01f &&
+                  std::abs(getValue(*p, ids::sampleBase) + 30.0f) < 0.6f && std::abs(getValue(*p, ids::sampleMax) + 12.0f) < 0.6f,
+              "and with the sample MIX, CHANCE, BASE and MAX volumes the player left");
 
         // a saved project brings its own list and does not disturb what is remembered
         bank.setSelected({ library[2].getFileName() });
@@ -722,7 +763,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 45, "45 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 47, "47 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

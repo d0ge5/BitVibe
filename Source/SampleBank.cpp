@@ -176,8 +176,10 @@ void SampleBank::loadSettings()
     activeBank = xml->getStringAttribute("activeBank");
     if (xml->hasAttribute("mix"))
     {
-        rememberedMix = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("mix", 0.0));
-        rememberedChance = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("chance", 1.0));
+        remembered.mix = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("mix", 0.0));
+        remembered.chance = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("chance", 1.0));
+        remembered.baseDb = jlimit(-60.0f, 6.0f, (float) xml->getDoubleAttribute("baseDb", -60.0));
+        remembered.maxDb = jlimit(-60.0f, 6.0f, (float) xml->getDoubleAttribute("maxDb", -9.0));
         haveLevels = true;
     }
     for (auto* b : xml->getChildWithTagNameIterator("BANK"))
@@ -196,8 +198,10 @@ void SampleBank::saveSettings() const
         xml.setAttribute("activeBank", activeBank);
         if (haveLevels)
         {
-            xml.setAttribute("mix", (double) rememberedMix);
-            xml.setAttribute("chance", (double) rememberedChance);
+            xml.setAttribute("mix", (double) remembered.mix);
+            xml.setAttribute("chance", (double) remembered.chance);
+            xml.setAttribute("baseDb", (double) remembered.baseDb);
+            xml.setAttribute("maxDb", (double) remembered.maxDb);
         }
         addFiles(*xml.createNewChildElement("LAST"), selected);
         for (const auto& b : banks)
@@ -212,23 +216,27 @@ void SampleBank::saveSettings() const
     file.replaceWithText(xml.toString());
 }
 
-void SampleBank::rememberLevels(float mix, float chance)
+void SampleBank::rememberLevels(const Levels& levels)
 {
     {
         const ScopedLock sl(lock);
-        rememberedMix = jlimit(0.0f, 1.0f, mix);
-        rememberedChance = jlimit(0.0f, 1.0f, chance);
+        remembered = levels;
         haveLevels = true;
     }
     saveSettings();
 }
 
-bool SampleBank::getRememberedLevels(float& mix, float& chance) const
+bool SampleBank::getRememberedLevels(Levels& levels) const
 {
     const ScopedLock sl(lock);
-    mix = rememberedMix;
-    chance = rememberedChance;
+    levels = remembered;
     return haveLevels;
+}
+
+double SampleBank::getClipSeconds(std::uint32_t pick) const
+{
+    const ScopedLock sl(lock);
+    return clipSeconds.empty() ? 0.0 : clipSeconds[pick % clipSeconds.size()];
 }
 
 // ---- the picked list ----------------------------------------------------------------------------
@@ -275,17 +283,22 @@ void SampleBank::rebuild()
     formats.registerBasicFormats();
 
     auto holder = std::make_unique<Holder>();
+    std::vector<double> seconds;
     for (const auto& f : libraryFiles())
     {
         if (!names.contains(f.getFileName()))
             continue;
         auto clip = loadClip(formats, f);
         if (!clip.data.empty())
+        {
+            seconds.push_back((double) clip.data.size() / clip.rate);
             holder->set.clips.push_back(std::move(clip));
+        }
     }
     {
         const ScopedLock sl(lock);
         numLoaded = (int) holder->set.clips.size();
+        clipSeconds = std::move(seconds);
     }
     slot.publish(std::move(holder));
 }

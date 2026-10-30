@@ -43,6 +43,8 @@ inline constexpr const char* distLevel = "distLevel";
 inline constexpr const char* distReverb = "distReverb";
 inline constexpr const char* sampleMix = "sampleMix";
 inline constexpr const char* sampleChance = "sampleChance";
+inline constexpr const char* sampleBase = "sampleBase";
+inline constexpr const char* sampleMax = "sampleMax";
 inline constexpr const char* reverbLowCut = "reverbLowCut";
 inline constexpr const char* reverbHighCut = "reverbHighCut";
 inline constexpr const char* beatPlay = "beatPlay";
@@ -111,6 +113,15 @@ public:
     // The sounds the sample blend picks from at random (the player chooses the list).
     SampleBank& getSampleBank() { return sampleBank; }
 
+    // Plays one of the picked sounds (the one that pick selects) at a volume of its own, so the player can hear the
+    // base and max volumes while setting them. Message thread; the audio thread picks the request up.
+    void requestSamplePreview(float volumeDb, std::uint32_t pick)
+    {
+        previewDb.store(volumeDb, std::memory_order_relaxed);
+        previewPick.store(pick, std::memory_order_relaxed);
+        previewCounter.fetch_add(1, std::memory_order_release);
+    }
+
     // Where the beat's sound goes: the main output, the optional "Beat Monitor" output (the second output
     // bus, which the host switches on and the player routes to their headphones) or nowhere. Updated every
     // block; for the DRUMS tab's readout.
@@ -152,6 +163,10 @@ private:
     bitvibe::Engine engine;
     DrumBeat drumBeat;
     SampleBank sampleBank;
+    std::atomic<int> previewCounter { 0 };
+    std::atomic<float> previewDb { -60.0f };
+    std::atomic<std::uint32_t> previewPick { 0 };
+    int seenPreviewCounter = 0; // audio thread
     std::array<bitvibe::TriggerEvent, 256> triggerEvents {};
 
     juce::AudioProcessorParameter* bypassParam = nullptr;
@@ -187,6 +202,8 @@ private:
     std::atomic<float>* pDistReverb = nullptr;
     std::atomic<float>* pSampleMix = nullptr;
     std::atomic<float>* pSampleChance = nullptr;
+    std::atomic<float>* pSampleBase = nullptr;
+    std::atomic<float>* pSampleMax = nullptr;
     std::atomic<float>* pReverbLowCut = nullptr;
     std::atomic<float>* pReverbHighCut = nullptr;
     std::atomic<float>* pBeatPlay = nullptr;

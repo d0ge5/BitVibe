@@ -50,8 +50,15 @@ public:
     void deleteBank(const juce::String& name);
 
     // ---- the knobs ------------------------------------------------------------------------------
-    void rememberLevels(float mix, float chance);
-    bool getRememberedLevels(float& mix, float& chance) const;
+    struct Levels
+    {
+        float mix = 0.0f, chance = 1.0f, baseDb = -60.0f, maxDb = -9.0f;
+    };
+    void rememberLevels(const Levels&);
+    bool getRememberedLevels(Levels&) const;
+
+    // How long the sound that a preview pick selects lasts, in seconds (0 if nothing is picked).
+    double getClipSeconds(std::uint32_t pick) const;
 
     // ---- project state --------------------------------------------------------------------------
     juce::ValueTree toState() const;
@@ -81,8 +88,9 @@ private:
     juce::StringArray selected;
     std::vector<Bank> banks;
     juce::String activeBank;
-    float rememberedMix = 0.0f, rememberedChance = 1.0f;
+    Levels remembered;
     bool haveLevels = false;
+    std::vector<double> clipSeconds; // of the loaded sounds, in the order of the set the audio thread plays from
     int numLoaded = 0;
     HandOver<Holder> slot;
 

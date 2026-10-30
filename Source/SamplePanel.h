@@ -8,7 +8,7 @@
 class SamplePanel : public juce::Component
 {
 public:
-    static constexpr int kWidth = 456, kHeight = 112;
+    static constexpr int kWidth = 456, kHeight = 210;
 
     SamplePanel(BitVibeProcessor&, PedalLookAndFeel&);
     ~SamplePanel() override;
@@ -27,6 +27,8 @@ private:
     void askBankName();
     void askDeleteBank();
     void rememberKnobs();
+    void previewBoth();
+    void previewAt(float volumeDb);
     float rawValue(const char* id) const;
 
     BitVibeProcessor& proc;
@@ -36,8 +38,10 @@ private:
     juce::ComboBox bankBox;
     PedalButton saveButton { "SAVE" }, deleteButton { "DELETE" };
     PedalButton chooseButton { "CHOOSE SOUNDS..." }, folderButton { "OPEN SOUNDS FOLDER" };
-    juce::Slider mixSlider, chanceSlider;
-    std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt;
+    juce::Slider mixSlider, chanceSlider, baseSlider, maxSlider;
+    std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
+    PedalButton previewButton { "PREVIEW" };
+    std::uint32_t previewPick = 0; // which of the picked sounds the preview plays (new each time the player starts a preview)
     int numAvailable = 0;
     juce::String shownButtonText, shownBankState;
     juce::StringArray shownBanks;

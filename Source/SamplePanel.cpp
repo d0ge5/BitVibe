@@ -7,7 +7,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
 {
     setSize(kWidth, kHeight);
 
-    for (auto* s : { &mixSlider, &chanceSlider })
+    for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider })
     {
         s->setSliderStyle(Slider::RotaryVerticalDrag);
         s->setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
@@ -20,6 +20,18 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     }
     mixAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMix, mixSlider);
     chanceAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleChance, chanceSlider);
+    baseAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleBase, baseSlider);
+    maxAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMax, maxSlider);
+
+    // Letting go of the base or max knob plays one of the picked sounds at that volume (the same sound until the
+    // next time a knob is picked up), so the player hears what they set.
+    for (auto* s : { &baseSlider, &maxSlider })
+    {
+        s->onDragStart = [this] { previewPick = (std::uint32_t) Random::getSystemRandom().nextInt(); };
+        s->onDragEnd = [this, s] { previewAt((float) s->getValue()); };
+    }
+    previewButton.onClick = [this] { previewBoth(); };
+    addAndMakeVisible(previewButton);
 
     bankBox.setLookAndFeel(&laf);
     bankBox.onChange = [this]
@@ -48,7 +60,11 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                             "them is picked at random and blended in. Your picks are remembered next time.");
     folderButton.setTooltip("OPEN SOUNDS FOLDER: opens the folder for your own sounds (WAV, AIFF, FLAC or OGG files). "
                             "Put files in it, then pick them with CHOOSE SOUNDS.");
-    mixSlider.setTooltip("SAMPLE MIX: how loud the random sound is in the sequence. Fully left = no sounds (the default). Remembered next time.");
+    mixSlider.setTooltip("SAMPLE MIX: how loud the random sounds are, between the BASE volume (fully left) and the MAX volume (fully right). "
+                         "With the base left at Off, fully left means no sounds. Remembered next time.");
+    baseSlider.setTooltip("BASE VOLUME: how loud the sounds are with MIX fully left. Fully left = Off. Let go of the knob to hear a sound at this volume.");
+    maxSlider.setTooltip("MAX VOLUME: how loud the sounds are with MIX fully right. Let go of the knob to hear a sound at this volume.");
+    previewButton.setTooltip("PREVIEW: plays one of the sounds you picked at the BASE volume, then the same sound at the MAX volume, so you can set both by ear.");
     chanceSlider.setTooltip("SAMPLE CHANCE: how often a step gets a sound. 100% = every step, lower = now and then. Remembered next time.");
 
     numAvailable = SampleBank::libraryFiles().size();
@@ -69,7 +85,12 @@ float SamplePanel::rawValue(const char* id) const
 
 void SamplePanel::rememberKnobs()
 {
-    bank.rememberLevels(rawValue(ids::sampleMix), rawValue(ids::sampleChance));
+    SampleBank::Levels levels;
+    levels.mix = rawValue(ids::sampleMix);
+    levels.chance = rawValue(ids::sampleChance);
+    levels.baseDb = rawValue(ids::sampleBase);
+    levels.maxDb = rawValue(ids::sampleMax);
+    bank.rememberLevels(levels);
 }
 
 void SamplePanel::resized()
@@ -81,6 +102,9 @@ void SamplePanel::resized()
     folderButton.setBounds(12, 80, 238, 24);
     mixSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 322, 44 }));
     chanceSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 402, 44 }));
+    baseSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 62, 148 }));
+    maxSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 154, 148 }));
+    previewButton.setBounds(228, 132, 100, 24);
 }
 
 void SamplePanel::refresh()
@@ -118,6 +142,35 @@ void SamplePanel::refresh()
         deleteButton.setAlpha(active.isEmpty() ? 0.45f : 1.0f);
     }
     repaint();
+}
+
+// One of the picked sounds, at a volume. The audio thread plays it through the same crush and filter stage as the
+// sequence (so it sounds as it will in use), and does not need the sequencer to be running.
+void SamplePanel::previewAt(float volumeDb)
+{
+    if (volumeDb > bitvibe::Engine::kSampleOffDb + 0.05f)
+        proc.requestSamplePreview(volumeDb, previewPick);
+}
+
+// The same sound at the base volume, then at the max volume.
+void SamplePanel::previewBoth()
+{
+    previewPick = (std::uint32_t) Random::getSystemRandom().nextInt();
+    const float baseDb = rawValue(ids::sampleBase), maxDb = rawValue(ids::sampleMax);
+    const bool baseAudible = baseDb > bitvibe::Engine::kSampleOffDb + 0.05f;
+    if (baseAudible)
+        previewAt(baseDb);
+    const int waitMs = baseAudible ? (int) jlimit(400.0, 2500.0, bank.getClipSeconds(previewPick) * 1000.0 + 300.0) : 0;
+    const auto pick = previewPick;
+    Component::SafePointer<SamplePanel> safe(this);
+    Timer::callAfterDelay(waitMs, [safe, maxDb, pick]
+    {
+        if (safe != nullptr)
+        {
+            safe->previewPick = pick;
+            safe->previewAt(maxDb);
+        }
+    });
 }
 
 void SamplePanel::openFolder()
@@ -231,16 +284,26 @@ void SamplePanel::paint(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 14, 4, 290, 12, Justification::left);
 
-    struct Entry { const char* name; String value; int cx; };
-    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322 },
-                              { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 402 } };
+    struct Entry { const char* name; String value; int cx, y; };
+    auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
+    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322, 76 },
+                              { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 402, 76 },
+                              { "BASE", volumeText(rawValue(ids::sampleBase)), 62, 180 },
+                              { "MAX", volumeText(rawValue(ids::sampleMax)), 154, 180 } };
     for (const auto& e : entries)
     {
         g.setColour(ink);
         g.setFont(bold(11.0f));
-        g.drawText(e.name, Rectangle<int>(80, 14).withCentre({ e.cx, 76 }), Justification::centred);
+        g.drawText(e.name, Rectangle<int>(80, 14).withCentre({ e.cx, e.y }), Justification::centred);
         g.setColour(inkDim);
         g.setFont(plain(10.5f));
-        g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, 90 }), Justification::centred);
+        g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
     }
+
+    g.setColour(inkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("VOLUME RANGE: THE MIX KNOB MOVES BETWEEN BASE AND MAX", 14, 116, 428, 12, Justification::left);
+    g.setFont(plain(10.0f));
+    g.drawFittedText("Plays a picked sound at the base volume, then at the max volume. Letting go of a knob plays it too.",
+                     Rectangle<int>(228, 162, 214, 36), Justification::topLeft, 3);
 }

@@ -119,6 +119,14 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
+    // The volume range of the sounds: MIX goes from the base volume (0) to the max volume (1). The bottom of a knob is silence.
+    auto volumeText = AudioParameterFloatAttributes()
+                          .withStringFromValueFunction([](float v, int) { return v <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("Off") : String(v, 1) + " dB"; })
+                          .withValueFromStringFunction([](const String& t) { return t.trim().equalsIgnoreCase("off") ? bitvibe::Engine::kSampleOffDb : t.getFloatValue(); });
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleBase), "Sample Base Volume",
+                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMax), "Sample Max Volume",
+                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
     {
         // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
         auto hzText = [](float off, bool low)
@@ -257,6 +265,8 @@ BitVibeProcessor::BitVibeProcessor()
     pDistReverb = raw(ids::distReverb);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
+    pSampleBase = raw(ids::sampleBase);
+    pSampleMax = raw(ids::sampleMax);
     pReverbLowCut = raw(ids::reverbLowCut);
     pReverbHighCut = raw(ids::reverbHighCut);
     pBeatPlay = raw(ids::beatPlay);
@@ -271,10 +281,11 @@ BitVibeProcessor::BitVibeProcessor()
 
     // A new instance starts with the sample MIX and CHANCE the player last set (a saved project overrides them).
     {
-        float rememberedMix = 0.0f, rememberedChance = 1.0f;
-        if (sampleBank.getRememberedLevels(rememberedMix, rememberedChance))
+        SampleBank::Levels remembered;
+        if (sampleBank.getRememberedLevels(remembered))
         {
-            const std::array<std::pair<const char*, float>, 2> levels { { { ids::sampleMix, rememberedMix }, { ids::sampleChance, rememberedChance } } };
+            const std::array<std::pair<const char*, float>, 4> levels { { { ids::sampleMix, remembered.mix }, { ids::sampleChance, remembered.chance },
+                                                                          { ids::sampleBase, remembered.baseDb }, { ids::sampleMax, remembered.maxDb } } };
             for (const auto& level : levels)
                 if (auto* param = apvts.getParameter(level.first))
                     param->setValueNotifyingHost(param->convertTo0to1(level.second));
@@ -382,6 +393,8 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.distReverb = pDistReverb->load() > 0.5f;
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
+    p.sampleBaseDb = pSampleBase->load();
+    p.sampleMaxDb = pSampleMax->load();
     p.sampleSet = sampleBank.beginBlock();
     p.reverbLowCutHz = pReverbLowCut->load();
     p.reverbHighCutHz = pReverbHighCut->load();
@@ -412,6 +425,12 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
     const auto params = readParams();
     const int numEvents = drumBeat.beginBlock(numSamples, pBeatPlay->load() > 0.5f, !params.bypass, triggerEvents.data(),
                                               (int) triggerEvents.size());
+    if (const int counter = previewCounter.load(std::memory_order_acquire); counter != seenPreviewCounter)
+    {
+        seenPreviewCounter = counter; // the player asked to hear a sound at the base or the max volume
+        engine.previewSample(params.sampleSet, previewPick.load(std::memory_order_relaxed),
+                             std::pow(10.0f, previewDb.load(std::memory_order_relaxed) / 20.0f));
+    }
     engine.process(mainOut.getArrayOfWritePointers(), numChannels, numSamples, params, triggerEvents.data(), numEvents);
 
     const auto route = bitvibe::chooseBeatRoute(bitvibe::beatOutputFromIndex(roundToInt(pBeatOutput->load())), monitorConnected);

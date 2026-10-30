@@ -23,12 +23,19 @@ struct SampleSet
     std::vector<SampleClip> clips;
 };
 
-// Plays a few overlapping clips (linear interpolation, so any sample rate works). A new clip fades the ones
-// still sounding out over a few milliseconds, so retriggering at speed does not click.
+// Plays a few overlapping clips (linear interpolation, so any sample rate works). A new clip fades the ones of its
+// own kind that are still sounding out over a few milliseconds, so retriggering at speed does not click. There are
+// two kinds: the sounds the sequencer plays, and the preview the player asks for while setting the volumes.
 class SamplePlayer
 {
 public:
     static constexpr int kVoices = 8;
+
+    struct Output
+    {
+        float sequence = 0.0f; // what the sequencer's sounds add up to (before the sample mix is applied)
+        float preview = 0.0f;  // the preview, already at its own volume
+    };
 
     void prepare(double sampleRate)
     {
@@ -45,12 +52,12 @@ public:
     }
 
     // Starts a clip from its beginning. The clip must outlive its playback (the caller keeps the set alive).
-    void trigger(const SampleClip* clip)
+    void trigger(const SampleClip* clip, float level = 1.0f, bool preview = false)
     {
         if (clip == nullptr || clip->data.empty())
             return;
         for (auto& v : voices)
-            if (v.clip != nullptr)
+            if (v.clip != nullptr && v.preview == preview)
                 v.releasing = true;
         for (auto& v : voices)
         {
@@ -60,6 +67,8 @@ public:
                 v.position = 0.0;
                 v.step = clip->rate / fs;
                 v.gain = 0.0f;
+                v.level = level;
+                v.preview = preview;
                 v.releasing = false;
                 return;
             }
@@ -67,18 +76,18 @@ public:
         // Every voice is busy fading out (very fast retriggering): drop this one.
     }
 
-    // Fades out whatever is sounding (the sequence has stopped).
+    // Fades out the sequencer's sounds (the sequence has stopped). A preview plays on.
     void release()
     {
         for (auto& v : voices)
-            if (v.clip != nullptr)
+            if (v.clip != nullptr && !v.preview)
                 v.releasing = true;
     }
 
     // The next output sample, with every sounding clip summed.
-    float process()
+    Output process()
     {
-        float sum = 0.0f;
+        Output out;
         for (auto& v : voices)
         {
             if (v.clip == nullptr)
@@ -92,7 +101,11 @@ public:
             }
             const float frac = (float) (v.position - (double) i);
             const float a = d[i], b = i + 1 < d.size() ? d[i + 1] : 0.0f;
-            sum += (a + (b - a) * frac) * v.gain;
+            const float value = (a + (b - a) * frac) * v.gain;
+            if (v.preview)
+                out.preview += value * v.level;
+            else
+                out.sequence += value;
 
             if (v.releasing)
             {
@@ -109,7 +122,7 @@ public:
             }
             v.position += v.step;
         }
-        return sum;
+        return out;
     }
 
     bool isPlaying() const
@@ -125,8 +138,8 @@ private:
     {
         const SampleClip* clip = nullptr;
         double position = 0.0, step = 1.0;
-        float gain = 0.0f;
-        bool releasing = false;
+        float gain = 0.0f, level = 1.0f;
+        bool releasing = false, preview = false;
     };
 
     std::array<Voice, kVoices> voices;
