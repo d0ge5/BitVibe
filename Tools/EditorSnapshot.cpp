@@ -8,6 +8,7 @@
 
 #include "PluginEditor.h"
 #include "EqPanel.h"
+#include "SamplePanel.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
 
@@ -731,7 +732,7 @@ void testEqReferenceClip()
     ref.requestCapture();
     process(512);
     const int n = ref.getClipSamples();
-    check(n > 4800 && n <= 4 * 48000, "CAPTURE keeps what was just played (" + String(n) + " samples)");
+    check(n > 4800 && n <= 8 * 48000, "CAPTURE keeps what was just played (" + String(n) + " samples)");
     p->prepareToPlay(48000.0, 512);
     check(ref.getClipSamples() == n, "the host preparing again keeps the clip");
 
@@ -788,6 +789,66 @@ void testEqReferenceClip()
     }
     auto fresh = makeProcessor();
     check(!fresh->saveCapturedClip(file, message) && message.isNotEmpty() && !file.exists(), "with no clip there is nothing to save");
+}
+
+// The loop section's sounds through the processor: a list of its own (the main one until then), remembered, saved with
+// the project and in preset files; SAME AS MAIN goes back to the main list; its own levels start off.
+void testLoopSectionSounds()
+{
+    std::puts("loop section sounds (processor level)");
+    const auto library = SampleBank::libraryFiles();
+    if (library.size() < 2)
+    {
+        std::puts("  (skipped: fewer than two sounds in the library)");
+        return;
+    }
+    auto p = makeProcessor();
+    auto& bank = p->getSampleBank();
+    bank.setLoopOwnSounds(false);
+    bank.setSelected({ library[0].getFileName(), library[1].getFileName() }, false);
+    check(!bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == bank.getSelected(), "the loop section starts with the main list");
+    check(getValue(*p, ids::sampleLoopOwn) < 0.5f, "and with the main levels");
+    bank.setSelected({ library[1].getFileName() }, true, SampleBank::kLoop);
+    check(bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == StringArray { library[1].getFileName() } && bank.getSelected().size() == 2
+              && bank.getNumSelected(SampleBank::kLoop) == 1,
+          "it can have a list of its own; the main one stays");
+    {
+        SampleBank fresh;
+        check(fresh.loopHasOwnSounds() && fresh.getSelected(SampleBank::kLoop) == bank.getSelected(SampleBank::kLoop), "the loop list is remembered for next time");
+    }
+    MemoryBlock state;
+    p->getStateInformation(state);
+    auto q = makeProcessor();
+    q->getSampleBank().setLoopOwnSounds(false, false);
+    q->setStateInformation(state.getData(), (int) state.getSize());
+    check(q->getSampleBank().loopHasOwnSounds() && q->getSampleBank().getSelected(SampleBank::kLoop) == bank.getSelected(SampleBank::kLoop),
+          "the loop list is saved with the project");
+    const auto text = p->exportPreset()->toString();
+    check(text.contains("LOOP_SOUNDS") && text.contains("sampleLoopOwn"), "a preset file holds the loop list and levels");
+    auto r = makeProcessor();
+    r->getSampleBank().setLoopOwnSounds(false, false);
+    String message;
+    if (auto parsed = XmlDocument::parse(text))
+        check(r->importPreset(*parsed, message) && r->getSampleBank().loopHasOwnSounds()
+                  && r->getSampleBank().getSelected(SampleBank::kLoop) == bank.getSelected(SampleBank::kLoop),
+              "and importing it brings the loop list along");
+    {
+        // the panel's LOOP section, with its own list and levels
+        setValue(*p, ids::loopOn, 1.0f);
+        setValue(*p, ids::sampleLoopOwn, 1.0f);
+        setValue(*p, ids::sampleLoopMix, 0.75f);
+        PedalLookAndFeel lookAndFeel;
+        SamplePanel panel(*p, lookAndFeel);
+        panel.refresh();
+        panel.showSection(SampleBank::kLoop);
+        const auto image = panel.createComponentSnapshot(panel.getLocalBounds(), true, 2.0f);
+        const auto file = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_sample_loop.png");
+        file.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+            PNGImageFormat().writeImageToStream(image, *out);
+    }
+    bank.setLoopOwnSounds(false);
+    check(!bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == bank.getSelected(), "SAME AS MAIN goes back to the main list");
 }
 
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
@@ -906,7 +967,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 61 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 61 and 0)");
+    check(controls == 67 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 67 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1049,7 +1110,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 103, "103 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 114, "114 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1619,6 +1680,7 @@ int main(int argc, char** argv)
     testEqParams();
     testSequenceLoopParams();
     testEqReferenceClip();
+    testLoopSectionSounds();
     testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

@@ -5,6 +5,9 @@
 // The SAMPLE BLEND panel: pick the list of sounds the sequencer chooses from at random (or load a saved sound
 // bank), how much of the chosen sound is mixed into the sequence, and how often a step gets one. What is picked
 // and where the knobs are set is remembered between sessions (see SampleBank).
+//
+// While the sequence has a loop section, MAIN and LOOP buttons choose which steps the panel sets up: the loop section
+// can have a list of its own (until then it plays the main one) and, with OWN LEVELS, volumes and chance of its own.
 class SamplePanel : public juce::Component
 {
 public:
@@ -24,6 +27,9 @@ public:
     void setAdvanced(bool advanced);
     int currentHeight() const { return advanced ? kHeight : 112; }
 
+    // Which steps the panel sets up: SampleBank::kMain or kLoop (only while the sequence has a loop section).
+    void showSection(int newSection);
+
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
 
@@ -35,6 +41,14 @@ private:
     void previewBoth();
     void previewAt(float volumeDb);
     float rawValue(const char* id) const;
+    bool editingLoop() const { return section == SampleBank::kLoop; }
+    bool loopOwnLevels() const;
+    // The parameter each knob is set with: the loop section's own ones while they are in use.
+    const char* mixId() const;
+    const char* chanceId() const;
+    const char* baseId() const;
+    const char* maxId() const;
+    void attachKnobs();
 
     BitVibeProcessor& proc;
     SampleBank& bank;
@@ -46,6 +60,12 @@ private:
     KnobSlider mixSlider, chanceSlider, baseSlider, maxSlider;
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
+    PedalButton mainButton { "MAIN" }, loopButton { "LOOP" };
+    juce::ToggleButton ownLevelsButton { "OWN LEVELS FOR THE LOOP" };
+    std::unique_ptr<APVTS::ButtonAttachment> ownLevelsAtt;
+    int section = SampleBank::kMain;
+    bool knobsOnLoop = false; // the knobs are attached to the loop section's own parameters
+    bool loopShown = false;
     juce::ToggleButton onButton { "ON" };
     std::unique_ptr<APVTS::ButtonAttachment> onAtt;
     std::uint32_t previewPick = 0; // which of the picked sounds the preview plays (new each time the player starts a preview)

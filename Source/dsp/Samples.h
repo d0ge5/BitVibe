@@ -33,8 +33,9 @@ public:
 
     struct Output
     {
-        float sequence = 0.0f; // what the sequencer's sounds add up to (before the sample mix is applied)
-        float preview = 0.0f;  // the preview, already at its own volume
+        float sequence = 0.0f;     // what the sequencer's sounds add up to (before the sample mix is applied)
+        float loopSequence = 0.0f; // the same for the sounds started in the sequence's loop section (its own mix)
+        float preview = 0.0f;      // the preview, already at its own volume
     };
 
     void prepare(double sampleRate)
@@ -51,8 +52,9 @@ public:
             v = Voice {};
     }
 
-    // Starts a clip from its beginning. The clip must outlive its playback (the caller keeps the set alive).
-    void trigger(const SampleClip* clip, float level = 1.0f, bool preview = false)
+    // Starts a clip from its beginning. The clip must outlive its playback (the caller keeps the set alive). loopSection
+    // puts a sequence sound in the loop section's output.
+    void trigger(const SampleClip* clip, float level = 1.0f, bool preview = false, bool loopSection = false)
     {
         if (clip == nullptr || clip->data.empty())
             return;
@@ -69,6 +71,7 @@ public:
                 v.gain = 0.0f;
                 v.level = level;
                 v.preview = preview;
+                v.loopSection = loopSection;
                 v.releasing = false;
                 return;
             }
@@ -104,6 +107,8 @@ public:
             const float value = (a + (b - a) * frac) * v.gain;
             if (v.preview)
                 out.preview += value * v.level;
+            else if (v.loopSection)
+                out.loopSequence += value;
             else
                 out.sequence += value;
 
@@ -139,7 +144,7 @@ private:
         const SampleClip* clip = nullptr;
         double position = 0.0, step = 1.0;
         float gain = 0.0f, level = 1.0f;
-        bool releasing = false, preview = false;
+        bool releasing = false, preview = false, loopSection = false;
     };
 
     std::array<Voice, kVoices> voices;

@@ -6,18 +6,26 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_data_structures/juce_data_structures.h>
 
+#include <array>
+
 // The sounds the sample blend chooses from: the audio files found in the sounds folders, the list of them the
 // player has picked, named sound banks (saved lists) and what the player last set, remembered across sessions.
 //
+// There are two lists. The MAIN one plays on every step; the LOOP one, on the steps of the sequence's loop section,
+// when the player gives the loop section sounds of its own (until then it plays the main list). Calls that take a
+// section use 0 for main and 1 for the loop section.
+//
 // Remembered settings live in one small XML file in the user's application-data folder (see settingsFile()): the
-// last picked list, the banks, and the sample MIX and CHANCE the player last set with the knobs. A new instance
-// of the plug-in starts from them; a saved project brings its own list back instead (and does not overwrite them).
+// last picked lists, the banks, and the sample knobs the player last set. A new instance of the plug-in starts from
+// them; a saved project brings its own lists back instead (and does not overwrite them).
 //
 // Message-thread side: scanning folders, decoding, the lists and the file. The audio thread only calls
-// beginBlock() to get the newest immutable SampleSet.
+// beginBlock() to get the newest immutable SampleSet of each list.
 class SampleBank
 {
 public:
+    static constexpr int kMain = 0, kLoop = 1;
+
     SampleBank();
 
     // Documents/BitVibe/Sounds, and (local builds only) the source tree's GoodSounds folder.
@@ -32,40 +40,48 @@ public:
     static juce::File settingsFolder();
     static juce::File settingsFile();
 
-    // ---- the picked list -------------------------------------------------------------------------
-    juce::StringArray getSelected() const;
-    int getNumSelected() const; // picked and found in the folders
+    // ---- the picked lists ------------------------------------------------------------------------
+    // The loop section's list is the main one until it gets its own (picking sounds or loading a bank for it).
+    juce::StringArray getSelected(int section = kMain) const;
+    int getNumSelected(int section = kMain) const; // picked and found in the folders
     // remember = false for a list that comes from a project (the remembered one stays as the player left it).
-    void setSelected(const juce::StringArray& fileNames, bool remember = true);
-    void selectAll();
-    void selectNone() { setSelected({}); }
+    // Setting the loop section's list gives it its own sounds.
+    void setSelected(const juce::StringArray& fileNames, bool remember = true, int section = kMain);
+    void selectAll(int section = kMain);
+    void selectNone(int section = kMain) { setSelected({}, true, section); }
+    bool loopHasOwnSounds() const;
+    void setLoopOwnSounds(bool own, bool remember = true); // false: the loop section plays the main list again
 
     // ---- sound banks: named, saved lists ---------------------------------------------------------
     juce::StringArray getBankNames() const;
-    juce::String getActiveBank() const;                  // the bank last saved or loaded ("" = none)
+    juce::String getActiveBank(int section = kMain) const;  // the bank last saved or loaded for that list ("" = none)
     juce::StringArray getBankFiles(const juce::String& name) const;
-    bool selectionMatchesActiveBank() const;             // false once the list has been changed after loading it
-    bool saveBank(const juce::String& name);             // the current list under this name (replaces one of that name)
-    bool loadBank(const juce::String& name);             // makes that list the current one
+    bool selectionMatchesActiveBank(int section = kMain) const; // false once the list has been changed after loading it
+    bool saveBank(const juce::String& name, int section = kMain); // that list under this name (replaces one of that name)
+    bool loadBank(const juce::String& name, int section = kMain); // makes that bank the list
     void deleteBank(const juce::String& name);
 
     // ---- the knobs ------------------------------------------------------------------------------
     struct Levels
     {
         float mix = 0.0f, chance = 1.0f, baseDb = -60.0f, maxDb = -9.0f;
+        // the loop section's own knobs, used when loopOwn is set (otherwise it follows the ones above)
+        bool loopOwn = false;
+        float loopMix = 0.0f, loopChance = 1.0f, loopBaseDb = -60.0f, loopMaxDb = -9.0f;
     };
     void rememberLevels(const Levels&);
     bool getRememberedLevels(Levels&) const;
 
     // How long the sound that a preview pick selects lasts, in seconds (0 if nothing is picked).
-    double getClipSeconds(std::uint32_t pick) const;
+    double getClipSeconds(std::uint32_t pick, int section = kMain) const;
 
     // ---- project state --------------------------------------------------------------------------
     juce::ValueTree toState() const;
-    void fromState(const juce::ValueTree&); // no list in it (an older project): the current list is kept
+    void fromState(const juce::ValueTree&); // no list in it (an older project): the current lists are kept
 
-    // Audio thread: the set to play from this block (nullptr until the first one is published).
-    const bitvibe::SampleSet* beginBlock();
+    // Audio thread: the set to play from this block (nullptr until the first one is published). For the loop
+    // section, nullptr while it plays the main list.
+    const bitvibe::SampleSet* beginBlock(int section = kMain);
 
 private:
     struct Holder
@@ -79,20 +95,24 @@ private:
         juce::StringArray files;
     };
 
-    void rebuild();
+    static int clampSection(int s) { return s == kLoop ? kLoop : kMain; }
+    int listFor(int section) const; // the list a section plays: the loop section without its own sounds plays the main one
+    void rebuild(int section);
     void loadSettings();
     void saveSettings() const;
     static juce::String cleanName(const juce::String& name);
 
     mutable juce::CriticalSection lock;
-    juce::StringArray selected;
+    std::array<juce::StringArray, 2> selected;
+    bool loopOwn = false;
     std::vector<Bank> banks;
-    juce::String activeBank;
+    std::array<juce::String, 2> activeBank;
     Levels remembered;
     bool haveLevels = false;
-    std::vector<double> clipSeconds; // of the loaded sounds, in the order of the set the audio thread plays from
-    int numLoaded = 0;
-    HandOver<Holder> slot;
+    std::array<std::vector<double>, 2> clipSeconds; // of the loaded sounds, in the order of the set the audio thread plays from
+    std::array<int, 2> numLoaded {};
+    std::array<HandOver<Holder>, 2> slot;
+    std::atomic<bool> loopOwnForAudio { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SampleBank)
 };

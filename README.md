@@ -28,8 +28,8 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 - **Sample-rate reduction** (48 kHz down to 48 Hz) and **bit-depth reduction** (24 bit down to 1 bit).
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random) and a hold to freeze it.
-- **6-step sequencer** for pitch (+/-12 semitones), filter cutoff or sample rate. Each step can be skipped or
-  muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, tapped or typed in). A **loop section**
+- **6-step sequencer** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole sequence or
+  for each step on its own. Each step can be skipped or muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, tapped or typed in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
@@ -42,9 +42,11 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 - **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, level, low and high cut, and a
   reverse option for each type.
 - **Sample blend:** a random sound from your own audio files joins each step, crushed along with the sequence.
-  Pick sounds, save them as banks, and set a base and a maximum volume.
+  Pick sounds, save them as banks, and set a base and a maximum volume. The sequence's loop section can have sounds
+  and levels of its own.
 - **EQ:** an eight-band equalizer with a draggable curve and a live spectrum (ADVANCED mode). Capture a few
-  seconds of the sequenced sound and loop it through the EQ as a reference while you set it, or save it as a WAV.
+  seconds of the sequenced sound (you choose how much) and loop it through the EQ as a reference while you set it,
+  or save it as a WAV.
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need.
@@ -105,7 +107,9 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 | **Seq Mult** | Sequencer speed as a multiple of the tempo | Step 6 |
 
 - **ALT** swaps the knobs for the six sequencer steps. A step at minimum is skipped, at maximum muted.
-- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate.
+- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate. On the ALT layer each step's
+  name is a menu: leave it on **SEQ TYPE** to follow those buttons, or pick PITCH, FILTER or SAMPLE for that step
+  alone (for example pitch jumps on the first steps and a filter sweep on the rest). It is saved with the preset.
 - **TAP** sets the tempo (or click the big BPM number and type one). Holding it, or the HOLD button, freezes the stutter.
 - **BYPASS** switches the effect off. **TRIGGER** sets how easily picked notes start the stutter and sequencer.
 - **LOOP** (under the global knobs) repeats part of the sequence. Choose its first and last step and how often it
@@ -131,11 +135,15 @@ belong to your rig, so they stay put when you change preset.
   (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. **MIX** moves between the **BASE**
   and **MAX** volumes, **CHANCE** is how often a step gets a sound, and **PREVIEW** plays one so you can set the
   volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
-  picks and banks are remembered between sessions.
+  picks and banks are remembered between sessions. While **LOOP** is on (see the pedal above), **MAIN** and **LOOP**
+  buttons appear: LOOP sets up the loop section's steps. Its bank list starts on **Same as MAIN**; pick a bank or
+  choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own SAMPLE
+  MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for
   Q, and double-click to switch a band on or off. Behind the curve is the spectrum of the sound reaching the EQ
-  (grey) and, with the EQ on, of what comes out (orange). **CAPTURE** keeps the last few seconds (up to 4) of the
-  sound reaching the EQ; **PLAY CLIP** loops that clip through the EQ instead of the live sound, so you can set the
+  (grey) and, with the EQ on, of what comes out (orange). **CAPTURE** keeps the last few seconds (up to 8) of the
+  sound reaching the EQ, and the box next to it sets how much of the end of the clip is used (half a second to 8
+  seconds, changeable after capturing); **PLAY CLIP** loops that clip through the EQ instead of the live sound, so you can set the
   EQ with your hands free (press it again to go back); **SAVE CLIP** writes the clip to a WAV file
   (`Documents/BitVibe/Clips` by default). The clip lasts until you capture again or the sample rate changes, and
   is not saved with the project.
@@ -199,7 +207,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 462 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 474 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

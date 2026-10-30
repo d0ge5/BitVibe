@@ -18,16 +18,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         s->onValueChange = [this, s] { if (s->isMouseOver(true)) rememberKnobs(); };
         addAndMakeVisible(*s);
     }
-    mixAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMix, mixSlider);
-    chanceAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleChance, chanceSlider);
-    baseAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleBase, baseSlider);
-    maxAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMax, maxSlider);
-    // double-click puts a knob back to its default
-    const std::array<std::pair<Slider*, const char*>, 4> knobIds { { { &mixSlider, ids::sampleMix }, { &chanceSlider, ids::sampleChance },
-                                                                     { &baseSlider, ids::sampleBase }, { &maxSlider, ids::sampleMax } } };
-    for (const auto& [slider, id] : knobIds)
-        if (auto* param = proc.apvts.getParameter(id))
-            slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
+    attachKnobs();
 
     // Letting go of the base or max knob plays one of the picked sounds at that volume (the same sound until the
     // next time a knob is picked up), so the player hears what they set.
@@ -48,11 +39,41 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     {
         if (updatingControls)
             return;
-        const auto name = bankBox.getText();
-        if (name.isNotEmpty())
-            bank.loadBank(name);
+        if (editingLoop() && bankBox.getSelectedId() == 1)
+            bank.setLoopOwnSounds(false); // "Same as MAIN"
+        else if (const auto name = bankBox.getText(); name.isNotEmpty())
+            bank.loadBank(name, section);
         refresh();
     };
+
+    // which steps the panel sets up, while the sequence has a loop section
+    mainButton.onClick = [this] { showSection(SampleBank::kMain); };
+    loopButton.onClick = [this] { showSection(SampleBank::kLoop); };
+    mainButton.setTooltip("MAIN: set up the sounds of the steps outside the loop section.");
+    loopButton.setTooltip("LOOP: set up the sounds of the loop section's steps (the LOOP steps in the global panel). They can "
+                          "have a sound bank of their own, and with OWN LEVELS their own volumes and chance.");
+    addChildComponent(mainButton);
+    addChildComponent(loopButton);
+    ownLevelsButton.setLookAndFeel(&laf);
+    ownLevelsAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleLoopOwn, ownLevelsButton);
+    ownLevelsButton.onClick = [this]
+    {
+        // switched on: the loop section's knobs start where the main ones are
+        if (ownLevelsButton.getToggleState())
+        {
+            const std::array<std::pair<const char*, const char*>, 4> pairs { { { ids::sampleMix, ids::sampleLoopMix }, { ids::sampleChance, ids::sampleLoopChance },
+                                                                               { ids::sampleBase, ids::sampleLoopBase }, { ids::sampleMax, ids::sampleLoopMax } } };
+            for (const auto& [from, to] : pairs)
+                if (auto* param = proc.apvts.getParameter(to))
+                    param->setValueNotifyingHost(proc.apvts.getParameter(from)->getValue());
+        }
+        attachKnobs();
+        rememberKnobs();
+        repaint();
+    };
+    ownLevelsButton.setTooltip("OWN LEVELS FOR THE LOOP: off, the loop steps use the same SAMPLE MIX, CHANCE, BASE and MAX as the "
+                               "other steps. On, they get their own (starting from the same values); the knobs then set the loop's.");
+    addChildComponent(ownLevelsButton);
     addAndMakeVisible(bankBox);
 
     saveButton.onClick = [this] { askBankName(); };
@@ -83,6 +104,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
 
 SamplePanel::~SamplePanel()
 {
+    ownLevelsButton.setLookAndFeel(nullptr);
     mixSlider.setLookAndFeel(nullptr);
     chanceSlider.setLookAndFeel(nullptr);
     onButton.setLookAndFeel(nullptr);
@@ -101,7 +123,52 @@ void SamplePanel::rememberKnobs()
     levels.chance = rawValue(ids::sampleChance);
     levels.baseDb = rawValue(ids::sampleBase);
     levels.maxDb = rawValue(ids::sampleMax);
+    levels.loopOwn = rawValue(ids::sampleLoopOwn) > 0.5f;
+    levels.loopMix = rawValue(ids::sampleLoopMix);
+    levels.loopChance = rawValue(ids::sampleLoopChance);
+    levels.loopBaseDb = rawValue(ids::sampleLoopBase);
+    levels.loopMaxDb = rawValue(ids::sampleLoopMax);
     bank.rememberLevels(levels);
+}
+
+bool SamplePanel::loopOwnLevels() const { return rawValue(ids::sampleLoopOwn) > 0.5f; }
+const char* SamplePanel::mixId() const { return knobsOnLoop ? ids::sampleLoopMix : ids::sampleMix; }
+const char* SamplePanel::chanceId() const { return knobsOnLoop ? ids::sampleLoopChance : ids::sampleChance; }
+const char* SamplePanel::baseId() const { return knobsOnLoop ? ids::sampleLoopBase : ids::sampleBase; }
+const char* SamplePanel::maxId() const { return knobsOnLoop ? ids::sampleLoopMax : ids::sampleMax; }
+
+// The knobs set the main values, or the loop section's own ones while the LOOP section with OWN LEVELS is showing.
+void SamplePanel::attachKnobs()
+{
+    knobsOnLoop = editingLoop() && loopOwnLevels();
+    mixAtt.reset();
+    chanceAtt.reset();
+    baseAtt.reset();
+    maxAtt.reset();
+    mixAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, mixId(), mixSlider);
+    chanceAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, chanceId(), chanceSlider);
+    baseAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, baseId(), baseSlider);
+    maxAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, maxId(), maxSlider);
+    // double-click puts a knob back to its default
+    const std::array<std::pair<Slider*, const char*>, 4> knobIds { { { &mixSlider, mixId() }, { &chanceSlider, chanceId() },
+                                                                     { &baseSlider, baseId() }, { &maxSlider, maxId() } } };
+    for (const auto& [slider, id] : knobIds)
+        if (auto* param = proc.apvts.getParameter(id))
+            slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
+}
+
+void SamplePanel::showSection(int newSection)
+{
+    section = newSection == SampleBank::kLoop && loopShown ? SampleBank::kLoop : SampleBank::kMain;
+    mainButton.lit = section == SampleBank::kMain;
+    loopButton.lit = section == SampleBank::kLoop;
+    mainButton.repaint();
+    loopButton.repaint();
+    shownBankState = {}; // the bank list is rebuilt for this section
+    shownButtonText = {};
+    attachKnobs();
+    resized();
+    refresh();
 }
 
 // While a knob is turned, a bubble shows its value; it lives in the editor so it is not cut off by this panel.
@@ -115,7 +182,7 @@ void SamplePanel::parentHierarchyChanged()
 void SamplePanel::setAdvanced(bool on)
 {
     advanced = on;
-    for (Component* c : std::initializer_list<Component*> { &saveButton, &deleteButton, &folderButton, &baseSlider, &maxSlider, &previewButton })
+    for (Component* c : std::initializer_list<Component*> { &saveButton, &deleteButton, &baseSlider, &maxSlider, &previewButton })
         c->setVisible(on);
     resized();
     repaint();
@@ -124,6 +191,12 @@ void SamplePanel::setAdvanced(bool on)
 void SamplePanel::resized()
 {
     onButton.setBounds(kWidth - 70, 3, 56, 20);
+    mainButton.setBounds(196, 2, 56, 20);
+    loopButton.setBounds(256, 2, 56, 20);
+    // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
+    folderButton.setVisible(advanced && !editingLoop());
+    ownLevelsButton.setVisible(editingLoop());
+    ownLevelsButton.setBounds(12, 80, 238, 24);
     bankBox.setBounds(12, 24, advanced ? 108 : 238, 24);
     saveButton.setBounds(124, 24, 60, 24);
     deleteButton.setBounds(188, 24, 62, 24);
@@ -138,11 +211,26 @@ void SamplePanel::resized()
 
 void SamplePanel::refresh()
 {
+    // MAIN and LOOP are there while the sequence has a loop section
+    const bool loopOn = proc.apvts.getRawParameterValue(ids::loopOn)->load() > 0.5f;
+    if (loopOn != loopShown)
+    {
+        loopShown = loopOn;
+        mainButton.setVisible(loopOn);
+        loopButton.setVisible(loopOn);
+        showSection(loopOn ? section : SampleBank::kMain);
+    }
+    if (knobsOnLoop != (editingLoop() && loopOwnLevels())) // the host or a project switched OWN LEVELS
+        attachKnobs();
+
+    const bool sameAsMain = editingLoop() && !bank.loopHasOwnSounds();
     String text;
     if (numAvailable == 0)
         text = "NO SOUNDS FOUND";
+    else if (sameAsMain)
+        text = "CHOOSE SOUNDS (SAME AS MAIN)";
     else
-        text = "CHOOSE SOUNDS (" + String(bank.getNumSelected()) + " OF " + String(numAvailable) + ")";
+        text = "CHOOSE SOUNDS (" + String(bank.getNumSelected(section)) + " OF " + String(numAvailable) + ")";
     if (text != shownButtonText)
     {
         shownButtonText = text;
@@ -150,22 +238,31 @@ void SamplePanel::refresh()
     }
 
     // The bank list: its names, and which one is showing (none once the picked list has been changed since).
+    // (in the LOOP section the list starts with "Same as MAIN")
     const auto names = bank.getBankNames();
-    const auto active = bank.getActiveBank();
-    const String state = names.joinIntoString("|") + "#" + active + (bank.selectionMatchesActiveBank() ? "=" : "~");
+    const auto active = bank.getActiveBank(section);
+    const int first = editingLoop() ? 2 : 1;
+    const String state = String(section) + (sameAsMain ? "S" : "O") + names.joinIntoString("|") + "#" + active
+                         + (bank.selectionMatchesActiveBank(section) ? "=" : "~");
     if (state != shownBankState)
     {
         shownBankState = state;
         const ScopedValueSetter<bool> guard(updatingControls, true);
         bankBox.clear(dontSendNotification);
+        if (editingLoop())
+            bankBox.addItem("Same as MAIN", 1);
         for (int i = 0; i < names.size(); ++i)
-            bankBox.addItem(names[i], i + 1);
+            bankBox.addItem(names[i], i + first);
         bankBox.setTextWhenNothingSelected(names.isEmpty() ? "No banks yet" : (active.isEmpty() ? "Sound bank" : "Custom list"));
-        if (bank.selectionMatchesActiveBank())
+        if (sameAsMain)
+        {
+            bankBox.setSelectedId(1, dontSendNotification);
+        }
+        else if (bank.selectionMatchesActiveBank(section))
         {
             const int index = names.indexOf(active, true);
             if (index >= 0)
-                bankBox.setSelectedId(index + 1, dontSendNotification);
+                bankBox.setSelectedId(index + first, dontSendNotification);
         }
         deleteButton.setEnabled(!active.isEmpty());
         deleteButton.setAlpha(active.isEmpty() ? 0.45f : 1.0f);
@@ -178,18 +275,18 @@ void SamplePanel::refresh()
 void SamplePanel::previewAt(float volumeDb)
 {
     if (volumeDb > bitvibe::Engine::kSampleOffDb + 0.05f)
-        proc.requestSamplePreview(volumeDb, previewPick);
+        proc.requestSamplePreview(volumeDb, previewPick, section);
 }
 
 // The same sound at the base volume, then at the max volume.
 void SamplePanel::previewBoth()
 {
     previewPick = (std::uint32_t) Random::getSystemRandom().nextInt();
-    const float baseDb = rawValue(ids::sampleBase), maxDb = rawValue(ids::sampleMax);
+    const float baseDb = rawValue(baseId()), maxDb = rawValue(maxId());
     const bool baseAudible = baseDb > bitvibe::Engine::kSampleOffDb + 0.05f;
     if (baseAudible)
         previewAt(baseDb);
-    const int waitMs = baseAudible ? (int) jlimit(400.0, 2500.0, bank.getClipSeconds(previewPick) * 1000.0 + 300.0) : 0;
+    const int waitMs = baseAudible ? (int) jlimit(400.0, 2500.0, bank.getClipSeconds(previewPick, section) * 1000.0 + 300.0) : 0;
     const auto pick = previewPick;
     Component::SafePointer<SamplePanel> safe(this);
     Timer::callAfterDelay(waitMs, [safe, maxDb, pick]
@@ -211,7 +308,7 @@ void SamplePanel::openFolder()
 
 void SamplePanel::askBankName()
 {
-    const auto suggestion = bank.getActiveBank().isNotEmpty() ? bank.getActiveBank() : String("My bank");
+    const auto suggestion = bank.getActiveBank(section).isNotEmpty() ? bank.getActiveBank(section) : String("My bank");
     auto* window = new AlertWindow("Save sound bank", "Name this bank. Saving under a name that exists replaces that bank.",
                                    MessageBoxIconType::NoIcon, this);
     window->addTextEditor("name", suggestion);
@@ -224,7 +321,7 @@ void SamplePanel::askBankName()
                                 {
                                     if (result == 1 && safe != nullptr)
                                     {
-                                        safe->bank.saveBank(window->getTextEditorContents("name"));
+                                        safe->bank.saveBank(window->getTextEditorContents("name"), safe->section);
                                         safe->refresh();
                                     }
                                 }),
@@ -233,7 +330,7 @@ void SamplePanel::askBankName()
 
 void SamplePanel::askDeleteBank()
 {
-    const auto name = bank.getActiveBank();
+    const auto name = bank.getActiveBank(section);
     if (name.isEmpty())
         return;
     Component::SafePointer<SamplePanel> safe(this);
@@ -256,7 +353,7 @@ void SamplePanel::showChooser()
 {
     const auto files = SampleBank::libraryFiles();
     numAvailable = files.size();
-    const auto picked = bank.getSelected();
+    const auto picked = bank.getSelected(section); // in the LOOP section, the main list until it has its own
 
     PopupMenu menu;
     menu.addItem(1, "Pick all");
@@ -281,11 +378,11 @@ void SamplePanel::showChooser()
                            }
                            if (result == 1)
                            {
-                               self.bank.selectAll();
+                               self.bank.selectAll(self.section);
                            }
                            else if (result == 2)
                            {
-                               self.bank.selectNone();
+                               self.bank.selectNone(self.section);
                            }
                            else if (result >= 100 && result < 100 + files.size())
                            {
@@ -295,7 +392,7 @@ void SamplePanel::showChooser()
                                    list.removeString(name);
                                else
                                    list.add(name);
-                               self.bank.setSelected(list);
+                               self.bank.setSelected(list, true, self.section);
                            }
                            self.refresh();
                            self.showChooser();
@@ -311,7 +408,7 @@ void SamplePanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    g.drawText("SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 26, 4, 290, 12, Justification::left);
+    g.drawText(loopShown ? "SAMPLE BLEND" : "SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 26, 4, 290, 12, Justification::left);
     {
         // lit while a sequence or stutter plays: that is when the sounds come in
         const bool live = proc.getEngine().isEffectSideActive();
@@ -327,10 +424,10 @@ void SamplePanel::paint(Graphics& g)
 
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
-    const Entry entries[] = { { "SAMPLE MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322, 76 },
-                              { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 402, 76 },
-                              { "BASE", volumeText(rawValue(ids::sampleBase)), 62, 180 },
-                              { "MAX", volumeText(rawValue(ids::sampleMax)), 154, 180 } };
+    const Entry entries[] = { { "SAMPLE MIX", String(roundToInt(rawValue(mixId()) * 100.0f)) + "%", 322, 76 },
+                              { "CHANCE", String(roundToInt(rawValue(chanceId()) * 100.0f)) + "%", 402, 76 },
+                              { "BASE", volumeText(rawValue(baseId())), 62, 180 },
+                              { "MAX", volumeText(rawValue(maxId())), 154, 180 } };
     for (const auto& e : entries)
     {
         g.setColour(ink);

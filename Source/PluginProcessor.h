@@ -62,6 +62,12 @@ inline constexpr const char* sampleMix = "sampleMix";
 inline constexpr const char* sampleChance = "sampleChance";
 inline constexpr const char* sampleBase = "sampleBase";
 inline constexpr const char* sampleMax = "sampleMax";
+// The sequence's loop section: its own sample volumes (when sampleLoopOwn is on; otherwise the ones above).
+inline constexpr const char* sampleLoopOwn = "sampleLoopOwn";
+inline constexpr const char* sampleLoopMix = "sampleLoopMix";
+inline constexpr const char* sampleLoopChance = "sampleLoopChance";
+inline constexpr const char* sampleLoopBase = "sampleLoopBase";
+inline constexpr const char* sampleLoopMax = "sampleLoopMax";
 inline constexpr const char* reverbLowCut = "reverbLowCut";
 inline constexpr const char* reverbHighCut = "reverbHighCut";
 inline constexpr const char* beatPlay = "beatPlay";
@@ -72,6 +78,8 @@ inline constexpr const char* stepClock = "stepClock";
 inline constexpr const char* beatOutput = "beatOutput";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
+// What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
+inline juce::String stepType(int index) { return "stepType" + juce::String(index + 1); }
 } // namespace ids
 
 class BitVibeProcessor : public juce::AudioProcessor
@@ -147,10 +155,11 @@ public:
 
     // Plays one of the picked sounds (the one that pick selects) at a volume of its own, so the player can hear the
     // base and max volumes while setting them. Message thread; the audio thread picks the request up.
-    void requestSamplePreview(float volumeDb, std::uint32_t pick)
+    void requestSamplePreview(float volumeDb, std::uint32_t pick, int section = SampleBank::kMain)
     {
         previewDb.store(volumeDb, std::memory_order_relaxed);
         previewPick.store(pick, std::memory_order_relaxed);
+        previewSection.store(section, std::memory_order_relaxed);
         previewCounter.fetch_add(1, std::memory_order_release);
     }
 
@@ -198,6 +207,7 @@ private:
     std::atomic<int> previewCounter { 0 };
     std::atomic<float> previewDb { -60.0f };
     std::atomic<std::uint32_t> previewPick { 0 };
+    std::atomic<int> previewSection { 0 };
     int seenPreviewCounter = 0; // audio thread
     std::array<bitvibe::TriggerEvent, 256> triggerEvents {};
 
@@ -255,6 +265,11 @@ private:
     std::atomic<float>* pSampleChance = nullptr;
     std::atomic<float>* pSampleBase = nullptr;
     std::atomic<float>* pSampleMax = nullptr;
+    std::atomic<float>* pSampleLoopOwn = nullptr;
+    std::atomic<float>* pSampleLoopMix = nullptr;
+    std::atomic<float>* pSampleLoopChance = nullptr;
+    std::atomic<float>* pSampleLoopBase = nullptr;
+    std::atomic<float>* pSampleLoopMax = nullptr;
     std::atomic<float>* pReverbLowCut = nullptr;
     std::atomic<float>* pReverbHighCut = nullptr;
     std::atomic<float>* pBeatPlay = nullptr;
@@ -264,6 +279,7 @@ private:
     std::atomic<float>* pStepClock = nullptr;
     std::atomic<float>* pBeatOutput = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
+    std::array<std::atomic<float>*, bitvibe::kNumSteps> pStepTypes {};
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
     mutable juce::SpinLock morphLock;

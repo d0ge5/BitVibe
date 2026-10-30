@@ -2,7 +2,9 @@
 
 // The EQ's reference sound. The sequenced sound as it reaches the EQ is kept for the last few seconds, so the player can
 // capture it as a clip and loop it through the EQ (and save it), and a short feed of the sound before and after the EQ
-// lets the editor draw its spectrum. Header-only and free of JUCE so the tests can drive it.
+// lets the editor draw its spectrum. A capture keeps up to kMaxClipSeconds; the clip length the player sets decides
+// how much of its end is used (played and saved), so it can be changed after capturing. Header-only and free of JUCE
+// so the tests can drive it.
 //
 // Threads: record / endSample / clipSample run on the audio thread; requestCapture, setAudition, the clip queries,
 // copyClip and readScope on the message thread. A capture is done by the audio thread (it swaps the history and clip
@@ -19,7 +21,8 @@ namespace bitvibe
 class EqReference
 {
 public:
-    static constexpr double kClipSeconds = 4.0;
+    static constexpr double kMaxClipSeconds = 8.0;
+    static constexpr float kDefaultClipSeconds = 4.0f;
     static constexpr int kScopeSize = 8192; // a power of two
     static constexpr int kMaxChannels = 2;
 
@@ -27,7 +30,8 @@ public:
     // stays the same (hosts prepare again on many occasions), and forgotten when it changes.
     void prepare(double sampleRate)
     {
-        const int newLength = std::max(1, (int) std::lround(sampleRate * kClipSeconds));
+        rate = sampleRate;
+        const int newLength = std::max(1, (int) std::lround(sampleRate * kMaxClipSeconds));
         writePos = filled = playPos = 0;
         recordChannels = 1;
         served = captureRequests.load(std::memory_order_acquire);
@@ -64,7 +68,10 @@ public:
             served = requests;
             capture();
         }
-        playing = auditionOn.load(std::memory_order_relaxed) && clipLength > 0;
+        useLength = clipLength > 0 ? std::clamp(lengthFor(useSeconds.load(std::memory_order_relaxed)), 1, clipLength) : 0;
+        if (playPos >= useLength)
+            playPos = 0;
+        playing = auditionOn.load(std::memory_order_relaxed) && useLength > 0;
     }
 
     // True while the clip plays through the EQ instead of the live sound.
@@ -79,7 +86,7 @@ public:
     float clipSample(int channel) const
     {
         const int c = channel < clipChannels ? channel : 0;
-        return clip[(size_t) c][(size_t) ((clipStart + playPos) % length)];
+        return clip[(size_t) c][(size_t) ((clipStart + (clipLength - useLength) + playPos) % length)];
     }
 
     // End of a sample: moves the recording or the playback on, and feeds the spectrum (mono, before and after the EQ).
@@ -87,7 +94,7 @@ public:
     {
         if (playing)
         {
-            if (++playPos >= clipLength)
+            if (++playPos >= useLength)
                 playPos = 0;
         }
         else if (!history[0].empty())
@@ -108,21 +115,26 @@ public:
     bool isCapturePending() const { return captureRequests.load(std::memory_order_acquire) != servedOut.load(std::memory_order_acquire); }
     void setAudition(bool on) { auditionOn.store(on, std::memory_order_relaxed); }
     bool getAudition() const { return auditionOn.load(std::memory_order_relaxed); }
-    // The clip's length in samples (0 = none, or the last capture heard only silence).
+    // The whole captured clip's length in samples (0 = none, or the last capture heard only silence).
     int getClipSamples() const { return clipSamples.load(std::memory_order_acquire); }
+    // How much of the end of the clip is played and saved: the clip length the player has set, or all of it when it is shorter.
+    void setClipSeconds(float seconds) { useSeconds.store(std::clamp(seconds, 0.1f, (float) kMaxClipSeconds), std::memory_order_relaxed); }
+    float getClipSeconds() const { return useSeconds.load(std::memory_order_relaxed); }
+    int getUsedSamples() const { return std::min(getClipSamples(), lengthFor(getClipSeconds())); }
 
-    // Copies the clip, one vector per channel. False (and nothing copied) while there is none or a capture is pending.
+    // Copies the part of the clip in use, one vector per channel. False (and nothing copied) while there is none or a
+    // capture is pending.
     bool copyClip(std::vector<std::vector<float>>& out) const
     {
-        const int n = getClipSamples();
-        if (n <= 0 || isCapturePending())
+        const int n = getClipSamples(), used = getUsedSamples();
+        if (n <= 0 || used <= 0 || isCapturePending())
             return false;
         out.assign((size_t) clipChannelsOut.load(std::memory_order_acquire), {});
         for (size_t c = 0; c < out.size(); ++c)
         {
-            out[c].resize((size_t) n);
-            for (int i = 0; i < n; ++i)
-                out[c][(size_t) i] = clip[c][(size_t) ((clipStart + i) % length)];
+            out[c].resize((size_t) used);
+            for (int i = 0; i < used; ++i)
+                out[c][(size_t) i] = clip[c][(size_t) ((clipStart + (n - used) + i) % length)];
         }
         return true;
     }
@@ -141,6 +153,8 @@ public:
     }
 
 private:
+    int lengthFor(float seconds) const { return std::max(1, (int) std::lround((double) seconds * rate)); }
+
     // The history becomes the clip (a swap, no copying), trimmed to where the sound is louder than -60 dBFS.
     void capture()
     {
@@ -170,12 +184,14 @@ private:
 
     std::array<std::vector<float>, kMaxChannels> history, clip;
     int length = 1, writePos = 0, filled = 0;
-    int clipStart = 0, clipLength = 0, clipChannels = 1, playPos = 0, recordChannels = 1;
+    double rate = 48000.0;
+    int clipStart = 0, clipLength = 0, useLength = 0, clipChannels = 1, playPos = 0, recordChannels = 1;
     int served = 0;
     bool playing = false;
 
     std::atomic<int> captureRequests { 0 }, servedOut { 0 }, clipSamples { 0 }, clipChannelsOut { 1 };
     std::atomic<bool> auditionOn { false };
+    std::atomic<float> useSeconds { kDefaultClipSeconds };
 
     std::vector<std::atomic<float>> preScope = std::vector<std::atomic<float>>(kScopeSize); // on the heap: engines live on the stack in tests
     std::vector<std::atomic<float>> postScope = std::vector<std::atomic<float>>(kScopeSize);

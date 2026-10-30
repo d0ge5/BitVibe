@@ -76,7 +76,8 @@ StringArray readFiles(const XmlElement& parent)
 SampleBank::SampleBank()
 {
     loadSettings();
-    rebuild();
+    rebuild(kMain);
+    rebuild(kLoop);
 }
 
 File SampleBank::userFolder()
@@ -159,27 +160,40 @@ void SampleBank::loadSettings()
     banks.clear();
     activeBank = {};
     haveLevels = false;
+    loopOwn = false;
+    selected[kLoop].clear();
 
     std::unique_ptr<XmlElement> xml(XmlDocument::parse(settingsFile()));
     if (xml == nullptr || !xml->hasTagName("BITVIBE_SAMPLES"))
     {
         // First run: every sound found is picked.
-        selected.clear();
+        selected[kMain].clear();
         for (const auto& f : libraryFiles())
-            selected.add(f.getFileName());
+            selected[kMain].add(f.getFileName());
+        loopOwnForAudio.store(false);
         return;
     }
 
-    selected.clear();
+    selected[kMain].clear();
     if (auto* last = xml->getChildByName("LAST"))
-        selected = readFiles(*last);
-    activeBank = xml->getStringAttribute("activeBank");
+        selected[kMain] = readFiles(*last);
+    if (auto* last = xml->getChildByName("LAST_LOOP"))
+        selected[kLoop] = readFiles(*last);
+    loopOwn = xml->getBoolAttribute("loopOwnSounds", false);
+    activeBank[kMain] = xml->getStringAttribute("activeBank");
+    activeBank[kLoop] = xml->getStringAttribute("loopActiveBank");
     if (xml->hasAttribute("mix"))
     {
-        remembered.mix = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("mix", 0.0));
-        remembered.chance = jlimit(0.0f, 1.0f, (float) xml->getDoubleAttribute("chance", 1.0));
-        remembered.baseDb = jlimit(-60.0f, 6.0f, (float) xml->getDoubleAttribute("baseDb", -60.0));
-        remembered.maxDb = jlimit(-60.0f, 6.0f, (float) xml->getDoubleAttribute("maxDb", -9.0));
+        auto level = [&](const char* name, float fallback, float lo, float hi) { return jlimit(lo, hi, (float) xml->getDoubleAttribute(name, fallback)); };
+        remembered.mix = level("mix", 0.0f, 0.0f, 1.0f);
+        remembered.chance = level("chance", 1.0f, 0.0f, 1.0f);
+        remembered.baseDb = level("baseDb", -60.0f, -60.0f, 6.0f);
+        remembered.maxDb = level("maxDb", -9.0f, -60.0f, 6.0f);
+        remembered.loopOwn = xml->getBoolAttribute("loopOwnLevels", false);
+        remembered.loopMix = level("loopMix", remembered.mix, 0.0f, 1.0f);
+        remembered.loopChance = level("loopChance", remembered.chance, 0.0f, 1.0f);
+        remembered.loopBaseDb = level("loopBaseDb", remembered.baseDb, -60.0f, 6.0f);
+        remembered.loopMaxDb = level("loopMaxDb", remembered.maxDb, -60.0f, 6.0f);
         haveLevels = true;
     }
     for (auto* b : xml->getChildWithTagNameIterator("BANK"))
@@ -188,6 +202,7 @@ void SampleBank::loadSettings()
         if (name.isNotEmpty() && (int) banks.size() < kMaxBanks)
             banks.push_back({ name, readFiles(*b) });
     }
+    loopOwnForAudio.store(loopOwn);
 }
 
 void SampleBank::saveSettings() const
@@ -195,15 +210,23 @@ void SampleBank::saveSettings() const
     XmlElement xml("BITVIBE_SAMPLES");
     {
         const ScopedLock sl(lock);
-        xml.setAttribute("activeBank", activeBank);
+        xml.setAttribute("activeBank", activeBank[kMain]);
+        xml.setAttribute("loopActiveBank", activeBank[kLoop]);
+        xml.setAttribute("loopOwnSounds", loopOwn);
         if (haveLevels)
         {
             xml.setAttribute("mix", (double) remembered.mix);
             xml.setAttribute("chance", (double) remembered.chance);
             xml.setAttribute("baseDb", (double) remembered.baseDb);
             xml.setAttribute("maxDb", (double) remembered.maxDb);
+            xml.setAttribute("loopOwnLevels", remembered.loopOwn);
+            xml.setAttribute("loopMix", (double) remembered.loopMix);
+            xml.setAttribute("loopChance", (double) remembered.loopChance);
+            xml.setAttribute("loopBaseDb", (double) remembered.loopBaseDb);
+            xml.setAttribute("loopMaxDb", (double) remembered.loopMaxDb);
         }
-        addFiles(*xml.createNewChildElement("LAST"), selected);
+        addFiles(*xml.createNewChildElement("LAST"), selected[kMain]);
+        addFiles(*xml.createNewChildElement("LAST_LOOP"), selected[kLoop]);
         for (const auto& b : banks)
         {
             auto* e = xml.createNewChildElement("BANK");
@@ -233,74 +256,112 @@ bool SampleBank::getRememberedLevels(Levels& levels) const
     return haveLevels;
 }
 
-double SampleBank::getClipSeconds(std::uint32_t pick) const
+double SampleBank::getClipSeconds(std::uint32_t pick, int section) const
 {
     const ScopedLock sl(lock);
-    return clipSeconds.empty() ? 0.0 : clipSeconds[pick % clipSeconds.size()];
+    const auto& seconds = clipSeconds[(size_t) listFor(section)];
+    return seconds.empty() ? 0.0 : seconds[pick % seconds.size()];
 }
 
-// ---- the picked list ----------------------------------------------------------------------------
+// ---- the picked lists ---------------------------------------------------------------------------
 
-StringArray SampleBank::getSelected() const
+int SampleBank::listFor(int section) const
+{
+    return clampSection(section) == kLoop && loopOwn ? kLoop : kMain;
+}
+
+StringArray SampleBank::getSelected(int section) const
 {
     const ScopedLock sl(lock);
-    return selected;
+    return selected[(size_t) listFor(section)];
 }
 
-int SampleBank::getNumSelected() const
+int SampleBank::getNumSelected(int section) const
 {
     const ScopedLock sl(lock);
-    return numLoaded;
+    return numLoaded[(size_t) listFor(section)];
 }
 
-void SampleBank::setSelected(const StringArray& fileNames, bool remember)
+bool SampleBank::loopHasOwnSounds() const
+{
+    const ScopedLock sl(lock);
+    return loopOwn;
+}
+
+void SampleBank::setLoopOwnSounds(bool own, bool remember)
 {
     {
         const ScopedLock sl(lock);
-        selected = fileNames;
+        if (own && !loopOwn && selected[kLoop].isEmpty())
+            selected[kLoop] = selected[kMain]; // starts from the main list
+        loopOwn = own;
     }
-    rebuild();
+    rebuild(kLoop);
     if (remember)
         saveSettings();
 }
 
-void SampleBank::selectAll()
+void SampleBank::setSelected(const StringArray& fileNames, bool remember, int section)
+{
+    section = clampSection(section);
+    {
+        const ScopedLock sl(lock);
+        selected[(size_t) section] = fileNames;
+        if (section == kLoop)
+            loopOwn = true;
+    }
+    rebuild(section);
+    if (remember)
+        saveSettings();
+}
+
+void SampleBank::selectAll(int section)
 {
     StringArray names;
     for (const auto& f : libraryFiles())
         names.add(f.getFileName());
-    setSelected(names);
+    setSelected(names, true, section);
 }
 
-void SampleBank::rebuild()
+// Decodes a list's sounds and hands the set to the audio thread. The loop section's set is published empty-handed
+// (nullptr for the audio thread) while it plays the main list.
+void SampleBank::rebuild(int section)
 {
+    section = clampSection(section);
     StringArray names;
+    bool own = true;
     {
         const ScopedLock sl(lock);
-        names = selected;
+        names = selected[(size_t) section];
+        if (section == kLoop)
+            own = loopOwn;
     }
-    AudioFormatManager formats;
-    formats.registerBasicFormats();
-
     auto holder = std::make_unique<Holder>();
     std::vector<double> seconds;
-    for (const auto& f : libraryFiles())
+    if (own)
     {
-        if (!names.contains(f.getFileName()))
-            continue;
-        auto clip = loadClip(formats, f);
-        if (!clip.data.empty())
+        AudioFormatManager formats;
+        formats.registerBasicFormats();
+        for (const auto& f : libraryFiles())
         {
-            seconds.push_back((double) clip.data.size() / clip.rate);
-            holder->set.clips.push_back(std::move(clip));
+            if (!names.contains(f.getFileName()))
+                continue;
+            auto clip = loadClip(formats, f);
+            if (!clip.data.empty())
+            {
+                seconds.push_back((double) clip.data.size() / clip.rate);
+                holder->set.clips.push_back(std::move(clip));
+            }
         }
     }
     {
         const ScopedLock sl(lock);
-        numLoaded = (int) holder->set.clips.size();
-        clipSeconds = std::move(seconds);
+        numLoaded[(size_t) section] = (int) holder->set.clips.size();
+        clipSeconds[(size_t) section] = std::move(seconds);
     }
-    slot.publish(std::move(holder));
+    slot[(size_t) section].publish(std::move(holder));
+    if (section == kLoop)
+        loopOwnForAudio.store(own, std::memory_order_release);
 }
 
 // ---- sound banks --------------------------------------------------------------------------------
@@ -314,10 +375,10 @@ StringArray SampleBank::getBankNames() const
     return names;
 }
 
-String SampleBank::getActiveBank() const
+String SampleBank::getActiveBank(int section) const
 {
     const ScopedLock sl(lock);
-    return activeBank;
+    return activeBank[(size_t) listFor(section)];
 }
 
 StringArray SampleBank::getBankFiles(const String& name) const
@@ -329,13 +390,14 @@ StringArray SampleBank::getBankFiles(const String& name) const
     return {};
 }
 
-bool SampleBank::selectionMatchesActiveBank() const
+bool SampleBank::selectionMatchesActiveBank(int section) const
 {
     const ScopedLock sl(lock);
+    const auto list = (size_t) listFor(section);
     for (const auto& b : banks)
-        if (b.name == activeBank)
+        if (b.name == activeBank[list])
         {
-            auto a = b.files, c = selected;
+            auto a = b.files, c = selected[list];
             a.sort(true);
             c.sort(true);
             return a == c;
@@ -343,37 +405,38 @@ bool SampleBank::selectionMatchesActiveBank() const
     return false;
 }
 
-bool SampleBank::saveBank(const String& rawName)
+bool SampleBank::saveBank(const String& rawName, int section)
 {
     const auto name = cleanName(rawName);
     if (name.isEmpty())
         return false;
     {
         const ScopedLock sl(lock);
+        const auto list = (size_t) listFor(section);
         bool replaced = false;
         for (auto& b : banks)
             if (b.name.equalsIgnoreCase(name))
             {
                 b.name = name;
-                b.files = selected;
+                b.files = selected[list];
                 replaced = true;
             }
         if (!replaced)
         {
             if ((int) banks.size() >= kMaxBanks)
                 return false;
-            banks.push_back({ name, selected });
+            banks.push_back({ name, selected[list] });
         }
-        activeBank = name;
+        activeBank[list] = name;
     }
     saveSettings();
     return true;
 }
 
-bool SampleBank::loadBank(const String& name)
+bool SampleBank::loadBank(const String& name, int section)
 {
+    section = clampSection(section);
     StringArray files;
-    String exact;
     {
         const ScopedLock sl(lock);
         bool found = false;
@@ -381,14 +444,13 @@ bool SampleBank::loadBank(const String& name)
             if (b.name.equalsIgnoreCase(name))
             {
                 files = b.files;
-                exact = b.name;
+                activeBank[(size_t) section] = b.name;
                 found = true;
             }
         if (!found)
             return false;
-        activeBank = exact;
     }
-    setSelected(files); // also saves
+    setSelected(files, true, section); // also saves (and gives the loop section its own sounds)
     return true;
 }
 
@@ -397,8 +459,9 @@ void SampleBank::deleteBank(const String& name)
     {
         const ScopedLock sl(lock);
         banks.erase(std::remove_if(banks.begin(), banks.end(), [&](const Bank& b) { return b.name.equalsIgnoreCase(name); }), banks.end());
-        if (activeBank.equalsIgnoreCase(name))
-            activeBank = {};
+        for (auto& active : activeBank)
+            if (active.equalsIgnoreCase(name))
+                active = {};
     }
     saveSettings();
 }
@@ -408,8 +471,12 @@ void SampleBank::deleteBank(const String& name)
 ValueTree SampleBank::toState() const
 {
     ValueTree t("SAMPLES");
-    t.setProperty("selected", getSelected().joinIntoString("|"), nullptr);
-    t.setProperty("bank", getActiveBank(), nullptr);
+    const ScopedLock sl(lock);
+    t.setProperty("selected", selected[kMain].joinIntoString("|"), nullptr);
+    t.setProperty("bank", activeBank[kMain], nullptr);
+    t.setProperty("loopOwn", loopOwn, nullptr);
+    t.setProperty("loopSelected", selected[kLoop].joinIntoString("|"), nullptr);
+    t.setProperty("loopBank", activeBank[kLoop], nullptr);
     return t;
 }
 
@@ -417,18 +484,30 @@ void SampleBank::fromState(const ValueTree& t)
 {
     if (!t.isValid() || !t.hasProperty("selected"))
         return; // a project from before the sample blend: whatever is picked now stays
-    StringArray names;
-    names.addTokens(t.getProperty("selected").toString(), "|", "");
-    names.removeEmptyStrings();
+    auto list = [&](const char* key)
+    {
+        StringArray names;
+        names.addTokens(t.getProperty(key).toString(), "|", "");
+        names.removeEmptyStrings();
+        return names;
+    };
     {
         const ScopedLock sl(lock);
-        activeBank = t.getProperty("bank").toString();
+        activeBank[kMain] = t.getProperty("bank").toString();
+        activeBank[kLoop] = t.getProperty("loopBank").toString();
+        selected[kMain] = list("selected");
+        selected[kLoop] = list("loopSelected");
+        loopOwn = (bool) t.getProperty("loopOwn", false); // a project from before the loop section: the main list
     }
-    setSelected(names, false); // the project's list; the remembered one is not touched
+    // the project's lists; the remembered ones are not touched
+    rebuild(kMain);
+    rebuild(kLoop);
 }
 
-const bitvibe::SampleSet* SampleBank::beginBlock()
+const bitvibe::SampleSet* SampleBank::beginBlock(int section)
 {
-    const Holder* h = slot.get();
+    if (clampSection(section) == kLoop && !loopOwnForAudio.load(std::memory_order_acquire))
+        return nullptr;
+    const Holder* h = slot[(size_t) clampSection(section)].get();
     return h != nullptr ? &h->set : nullptr;
 }

@@ -54,6 +54,10 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
+    // each step can control something else than the sequencer type (stored in the preset slots)
+    for (int i = 0; i < kNumSteps; ++i)
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
+                                                          StringArray { "Sequencer Type", "Pitch", "Filter", "Sample Rate" }, 0));
 
     // ---- the loop section of the sequence (stored in the preset slots) ----------------------
     {
@@ -181,6 +185,14 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMax), "Sample Max Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
+    // the loop section's own volumes (used when Loop Own Levels is on)
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleLoopOwn), "Sample Loop Own Levels", false));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMix), "Sample Loop Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopChance), "Sample Loop Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopBase), "Sample Loop Base Volume",
+                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
+    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMax), "Sample Loop Max Volume",
+                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
     {
         // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
         auto hzText = [](float off, bool low)
@@ -229,6 +241,8 @@ std::vector<String> presetParameterIds()
     std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult };
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         list.push_back(ids::step(i));
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        list.push_back(ids::stepType(i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats })
         list.emplace_back(id);
     return list;
@@ -342,6 +356,11 @@ BitVibeProcessor::BitVibeProcessor()
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
     pSampleMax = raw(ids::sampleMax);
+    pSampleLoopOwn = raw(ids::sampleLoopOwn);
+    pSampleLoopMix = raw(ids::sampleLoopMix);
+    pSampleLoopChance = raw(ids::sampleLoopChance);
+    pSampleLoopBase = raw(ids::sampleLoopBase);
+    pSampleLoopMax = raw(ids::sampleLoopMax);
     pReverbLowCut = raw(ids::reverbLowCut);
     pReverbHighCut = raw(ids::reverbHighCut);
     pBeatPlay = raw(ids::beatPlay);
@@ -352,6 +371,8 @@ BitVibeProcessor::BitVibeProcessor()
     pStepClock = raw(ids::stepClock);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        pStepTypes[(size_t) i] = apvts.getRawParameterValue(ids::stepType(i));
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -360,8 +381,11 @@ BitVibeProcessor::BitVibeProcessor()
         SampleBank::Levels remembered;
         if (sampleBank.getRememberedLevels(remembered))
         {
-            const std::array<std::pair<const char*, float>, 4> levels { { { ids::sampleMix, remembered.mix }, { ids::sampleChance, remembered.chance },
-                                                                          { ids::sampleBase, remembered.baseDb }, { ids::sampleMax, remembered.maxDb } } };
+            const std::array<std::pair<const char*, float>, 9> levels { { { ids::sampleMix, remembered.mix }, { ids::sampleChance, remembered.chance },
+                                                                          { ids::sampleBase, remembered.baseDb }, { ids::sampleMax, remembered.maxDb },
+                                                                          { ids::sampleLoopOwn, remembered.loopOwn ? 1.0f : 0.0f },
+                                                                          { ids::sampleLoopMix, remembered.loopMix }, { ids::sampleLoopChance, remembered.loopChance },
+                                                                          { ids::sampleLoopBase, remembered.loopBaseDb }, { ids::sampleLoopMax, remembered.loopMaxDb } } };
             for (const auto& level : levels)
                 if (auto* param = apvts.getParameter(level.first))
                     param->setValueNotifyingHost(param->convertTo0to1(level.second));
@@ -439,6 +463,8 @@ bitvibe::Params BitVibeProcessor::readParams()
         bitvibe::applyKnobs(p, bitvibe::morph::blend(cachedToeUp, cachedToeDown, pExpression->load()));
     }
 
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        p.stepTypes[(size_t) i] = jlimit(0, 3, roundToInt(pStepTypes[(size_t) i]->load())) - 1;
     p.loopOn = pLoopOn->load() > 0.5f;
     p.loopFrom = roundToInt(pLoopFrom->load());
     p.loopTo = roundToInt(pLoopTo->load());
@@ -510,7 +536,22 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.sampleChance = pSampleChance->load();
     p.sampleBaseDb = pSampleBase->load();
     p.sampleMaxDb = pSampleMax->load();
-    p.sampleSet = sampleBank.beginBlock();
+    p.sampleSet = sampleBank.beginBlock(SampleBank::kMain);
+    p.loopSampleSet = sampleBank.beginBlock(SampleBank::kLoop);
+    if (pSampleLoopOwn->load() > 0.5f)
+    {
+        p.loopSampleMix = pSampleLoopMix->load();
+        p.loopSampleChance = pSampleLoopChance->load();
+        p.loopSampleBaseDb = pSampleLoopBase->load();
+        p.loopSampleMaxDb = pSampleLoopMax->load();
+    }
+    else
+    {
+        p.loopSampleMix = p.sampleMix;
+        p.loopSampleChance = p.sampleChance;
+        p.loopSampleBaseDb = p.sampleBaseDb;
+        p.loopSampleMaxDb = p.sampleMaxDb;
+    }
     p.reverbLowCutHz = pReverbLowCut->load();
     p.reverbHighCutHz = pReverbHighCut->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
@@ -544,8 +585,9 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
     if (const int counter = previewCounter.load(std::memory_order_acquire); counter != seenPreviewCounter)
     {
         seenPreviewCounter = counter; // the player asked to hear a sound at the base or the max volume
-        engine.previewSample(params.sampleSet, previewPick.load(std::memory_order_relaxed),
-                             std::pow(10.0f, previewDb.load(std::memory_order_relaxed) / 20.0f));
+        const bool loopSet = previewSection.load(std::memory_order_relaxed) == SampleBank::kLoop && params.loopSampleSet != nullptr;
+        engine.previewSample(loopSet ? params.loopSampleSet : params.sampleSet, previewPick.load(std::memory_order_relaxed),
+                             std::pow(10.0f, previewDb.load(std::memory_order_relaxed) / 20.0f), loopSet);
     }
     engine.process(mainOut.getArrayOfWritePointers(), numChannels, numSamples, params, triggerEvents.data(), numEvents);
 
@@ -849,6 +891,12 @@ std::unique_ptr<XmlElement> BitVibeProcessor::exportPreset() const
     auto* sounds = xml->createNewChildElement("SOUNDS");
     for (const auto& name : sampleBank.getSelected())
         sounds->createNewChildElement("FILE")->setAttribute("name", name);
+    if (sampleBank.loopHasOwnSounds()) // the loop section's own sounds
+    {
+        auto* loopSounds = xml->createNewChildElement("LOOP_SOUNDS");
+        for (const auto& name : sampleBank.getSelected(SampleBank::kLoop))
+            loopSounds->createNewChildElement("FILE")->setAttribute("name", name);
+    }
     return xml;
 }
 
@@ -900,21 +948,31 @@ bool BitVibeProcessor::importPreset(const XmlElement& xml, String& message)
 
     // the sounds: those this player has
     int missing = 0;
-    if (const auto* sounds = xml.getChildByName("SOUNDS"))
+    StringArray available;
+    for (const auto& f : SampleBank::libraryFiles())
+        available.add(f.getFileName());
+    StringArray missingNames;
+    auto wantedIn = [&](const XmlElement& list)
     {
-        StringArray available, wanted;
-        for (const auto& f : SampleBank::libraryFiles())
-            available.add(f.getFileName());
-        for (const auto* f : sounds->getChildWithTagNameIterator("FILE"))
+        StringArray wanted;
+        for (const auto* f : list.getChildWithTagNameIterator("FILE"))
         {
             const auto name = f->getStringAttribute("name");
             if (available.contains(name))
                 wanted.add(name);
-            else if (name.isNotEmpty())
-                ++missing;
+            else if (name.isNotEmpty() && !missingNames.contains(name))
+                missingNames.add(name);
         }
-        sampleBank.setSelected(wanted, false); // the remembered list stays as the player left it
-    }
+        return wanted;
+    };
+    // the remembered lists stay as the player left them
+    if (const auto* sounds = xml.getChildByName("SOUNDS"))
+        sampleBank.setSelected(wantedIn(*sounds), false);
+    if (const auto* loopSounds = xml.getChildByName("LOOP_SOUNDS"))
+        sampleBank.setSelected(wantedIn(*loopSounds), false, SampleBank::kLoop);
+    else
+        sampleBank.setLoopOwnSounds(false, false);
+    missing = missingNames.size();
 
     updateHostDisplay(ChangeDetails().withProgramChanged(true).withParameterInfoChanged(true));
     message = "Loaded \"" + slot.name + "\" into slot " + String(program + 1) + ".";

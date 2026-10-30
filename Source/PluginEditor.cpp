@@ -637,6 +637,21 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         content.addAndMakeVisible(*b);
     showSeqType();
 
+    // what each step controls (Alt layer): the sequencer type, or a type of its own
+    for (int i = 0; i < kKnobs; ++i)
+    {
+        auto& box = stepTypeBoxes[(size_t) i];
+        const String name = "STEP " + String(i + 1) + ": ";
+        box.addItemList({ name + "SEQ TYPE", name + "PITCH", name + "FILTER", name + "SAMPLE" }, 1);
+        box.setLookAndFeel(&laf);
+        box.setColour(ComboBox::textColourId, kAccent);
+        box.setJustificationType(Justification::centred);
+        box.setTooltip("STEP " + String(i + 1) + " TYPE: what this step changes. SEQ TYPE follows the PITCH / FILTER / SAMPLE "
+                       "buttons; PITCH, FILTER or SAMPLE makes this step change that instead, whatever the others do.");
+        stepTypeAtts[(size_t) i] = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stepType(i), box);
+        content.addChildComponent(box);
+    }
+
     // preset bar: previous / next slot, the name (double-click to rename) and SAVE
     // the tempo read-out in the middle of the pedal: click it and type a BPM (Enter to set, Esc to cancel)
     tempoLabel.setLookAndFeel(&laf);
@@ -791,6 +806,8 @@ BitVibeEditor::~BitVibeEditor()
     tempoLabel.setLookAndFeel(nullptr);
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
+    for (auto& box : stepTypeBoxes)
+        box.setLookAndFeel(nullptr);
     loopButton.setLookAndFeel(nullptr);
     loopFromBox.setLookAndFeel(nullptr);
     loopToBox.setLookAndFeel(nullptr);
@@ -837,6 +854,8 @@ void BitVibeEditor::setAltLayer(bool on)
         k.front.setVisible(!on);
         k.step.setVisible(on);
     }
+    for (auto& box : stepTypeBoxes)
+        box.setVisible(on);
     altButton.lit = on;
     altButton.repaint();
     repaint();
@@ -996,12 +1015,13 @@ String BitVibeEditor::readoutText(int i) const
     if (altLayer)
     {
         const float v = rawValue(ids::step(i).toRawUTF8());
-        const auto step = mapping::decodeStep(v, seqType());
+        const auto type = stepType(i);
+        const auto step = mapping::decodeStep(v, type);
         if (step.kind == mapping::Step::Kind::Skip)
             return "SKIP";
         if (step.kind == mapping::Step::Kind::Mute)
             return "MUTE";
-        if (seqType() == SeqType::Pitch)
+        if (type == SeqType::Pitch)
             return step.semitones == 0.0f ? String("DRY") : String(step.semitones > 0 ? "+" : "") + String((int) step.semitones) + " st";
         return String(roundToInt(step.factor * 100.0f)) + "%";
     }
@@ -1112,16 +1132,28 @@ void BitVibeEditor::setTooltips()
     morphButton.setTooltip("MORPH: when on, the sound follows the expression slider instead of the knobs.");
 }
 
+// The step knobs' descriptions follow what each step controls. tooltipSeqType remembers the types they were written
+// for (one base-3 digit per step).
 void BitVibeEditor::updateStepTooltips()
 {
-    const auto type = seqType();
-    const char* what = type == bitvibe::SeqType::Pitch
-                           ? "its pitch shift, from -12 to +12 semitones (centre = unshifted)"
-                           : (type == bitvibe::SeqType::Filter ? "its filter cutoff, as a percent of the FILTER knob"
-                                                               : "its sample rate, as a percent of the SAMPLE knob");
-    for (int i = 0; i < kKnobs; ++i)
+    int types = 0;
+    for (int i = kKnobs - 1; i >= 0; --i)
+    {
+        const auto type = stepType(i);
+        types = types * 3 + (int) type;
+        const char* what = type == bitvibe::SeqType::Pitch
+                               ? "its pitch shift, from -12 to +12 semitones (centre = unshifted)"
+                               : (type == bitvibe::SeqType::Filter ? "its filter cutoff, as a percent of the FILTER knob"
+                                                                   : "its sample rate, as a percent of the SAMPLE knob");
         knobs[(size_t) i].step.setTooltip("STEP " + String(i + 1) + ": " + what + ". Fully left skips this step, fully right mutes it.");
-    tooltipSeqType = (int) type;
+    }
+    tooltipSeqType = types;
+}
+
+bitvibe::SeqType BitVibeEditor::stepType(int step) const
+{
+    const int own = roundToInt(rawValue(ids::stepType(step).toRawUTF8()));
+    return own <= 0 ? seqType() : (bitvibe::SeqType) jlimit(0, 2, own - 1);
 }
 
 void BitVibeEditor::buildBackground()
@@ -1235,6 +1267,8 @@ void BitVibeEditor::resized()
     {
         knobs[(size_t) i].front.setBounds(face(knobBounds(i)));
         knobs[(size_t) i].step.setBounds(face(knobBounds(i)));
+        const auto c = knobCentre(i).toInt();
+        stepTypeBoxes[(size_t) i].setBounds(face(Rectangle<int>(136, 18).withCentre({ c.x, c.y - 62 })).translated(0, kTabsH)); // not in pedalComponents: shown with the Alt layer only
     }
 
     typePitchButton.setBounds(face({ 18, 371, 50, 22 }));
@@ -1361,8 +1395,8 @@ void BitVibeEditor::paintContent(Graphics& g)
 
         g.setColour(ink);
         g.setFont(bold(12.5f));
-        const String label = altLayer ? "STEP " + String(i + 1) : String(knobs[(size_t) i].label);
-        g.drawText(label, Rectangle<int>(112, 16).withCentre({ (int) c.x, (int) c.y - 62 }), Justification::centred);
+        if (!altLayer) // on the Alt layer the step's type box sits there instead
+            g.drawText(knobs[(size_t) i].label, Rectangle<int>(112, 16).withCentre({ (int) c.x, (int) c.y - 62 }), Justification::centred);
 
         g.setColour(ink.withAlpha(morphOn ? 0.4f : 0.75f)); // with the morph on, the knob values are not what you hear
         g.setFont(plain(11.5f));
@@ -1508,9 +1542,9 @@ void BitVibeEditor::paintContent(Graphics& g)
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
-        { "REV TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%", true },
-        { "REV MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
-        { "REV LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB", true },
+        { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%", true },
+        { "MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
+        { "LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB", true },
         { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut), true },
         { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut), true },
     }};
@@ -1575,11 +1609,10 @@ void BitVibeEditor::timerCallback()
     }
     {
         std::array<StepStrip::Step, 6> steps {};
-        const auto type = seqType();
         for (int i = 0; i < 6; ++i)
         {
             const float knob = rawValue(ids::step(i).toRawUTF8());
-            const auto decoded = bitvibe::mapping::decodeStep(knob, type);
+            const auto decoded = bitvibe::mapping::decodeStep(knob, stepType(i));
             steps[(size_t) i] = { knob, decoded.kind == bitvibe::mapping::Step::Kind::Skip ? 0 : (decoded.kind == bitvibe::mapping::Step::Kind::Mute ? 1 : 2) };
         }
         const bool loop = rawValue(ids::loopOn) > 0.5f;
@@ -1613,12 +1646,17 @@ void BitVibeEditor::timerCallback()
     flash(saveButton, flashSaveUntil);
     expressionSlider.getProperties().set("active", rawValue(ids::morph) > 0.5f);
 
-    const auto type = seqType();
-    if ((int) type != tooltipSeqType)
-        updateStepTooltips();
-    for (auto& k : knobs)
     {
-        const int ticks = type == bitvibe::SeqType::Pitch ? 27 : 11;
+        int types = 0;
+        for (int i = kKnobs - 1; i >= 0; --i)
+            types = types * 3 + (int) stepType(i);
+        if (types != tooltipSeqType)
+            updateStepTooltips();
+    }
+    for (int i = 0; i < kKnobs; ++i)
+    {
+        auto& k = knobs[(size_t) i];
+        const int ticks = stepType(i) == bitvibe::SeqType::Pitch ? 27 : 11;
         if ((int) k.step.getProperties().getWithDefault("ticks", 11) != ticks)
             k.step.getProperties().set("ticks", ticks);
     }

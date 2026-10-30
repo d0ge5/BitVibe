@@ -1,4 +1,5 @@
 #include "EqPanel.h"
+#include "UiSettings.h"
 
 using namespace juce;
 using namespace bitvibe;
@@ -9,6 +10,7 @@ namespace
 constexpr double kGraphRate = 48000.0; // the curve is drawn as it sounds at 48 kHz
 constexpr float kRangeDb = 15.0f;
 constexpr int kRowY = 132, kKnobY = 158;
+constexpr std::array<float, 7> kClipLengths { 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f }; // seconds, in the length box
 } // namespace
 
 EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), laf(lookAndFeel)
@@ -54,8 +56,8 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
     if (auto* param = proc.apvts.getParameter(ids::eqOutput))
         outputSlider.setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
 
-    captureButton.setTooltip("CAPTURE: keep the last few seconds (up to 4) of the sound reaching the EQ as a reference clip. "
-                             "Play a part, then press it.");
+    captureButton.setTooltip("CAPTURE: keep the last few seconds (up to 8) of the sound reaching the EQ as a reference clip. "
+                             "Play a part, then press it. The box next to it sets how much of it is used.");
     playButton.setTooltip("PLAY CLIP: loop the captured clip through the EQ instead of the live sound, so you can set the EQ "
                           "with your hands free. Press again to go back to the live sound.");
     saveClipButton.setTooltip("SAVE CLIP: save the captured clip as a WAV file (before the EQ), to use as a reference elsewhere.");
@@ -74,6 +76,31 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
         updateClipButtons();
     };
     saveClipButton.onClick = [this] { saveClip(); };
+    {
+        const float remembered = uisettings::eqClipSeconds();
+        int chosen = 4;
+        for (int i = 0; i < (int) kClipLengths.size(); ++i)
+        {
+            const float s = kClipLengths[(size_t) i];
+            lengthBox.addItem(s < 1.0f ? String(s, 1) + " s" : String((int) s) + " s", i + 1);
+            if (std::abs(s - remembered) < 0.01f)
+                chosen = i;
+        }
+        lengthBox.setSelectedId(chosen + 1, dontSendNotification);
+        proc.getEngine().getEqReference().setClipSeconds(kClipLengths[(size_t) chosen]);
+        lengthBox.onChange = [this]
+        {
+            const float s = kClipLengths[(size_t) jlimit(0, (int) kClipLengths.size() - 1, lengthBox.getSelectedId() - 1)];
+            proc.getEngine().getEqReference().setClipSeconds(s);
+            uisettings::setEqClipSeconds(s);
+            clipStatus = {};
+            updateClipButtons();
+        };
+        lengthBox.setLookAndFeel(&laf);
+        lengthBox.setTooltip("CLIP LENGTH: how much of the captured clip is played and saved (its last part). You can change it "
+                             "after capturing; a capture keeps up to 8 seconds.");
+        addAndMakeVisible(lengthBox);
+    }
     for (auto* b : { &captureButton, &playButton, &saveClipButton })
         addAndMakeVisible(*b);
     for (int i = 0; i < kColumns; ++i)
@@ -87,7 +114,7 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
 EqPanel::~EqPanel()
 {
     proc.getEngine().getEqReference().setAudition(false); // the clip never plays without its button in sight
-    for (Component* c : std::initializer_list<Component*> { &onButton, &bandOnButton, &typeBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
+    for (Component* c : std::initializer_list<Component*> { &onButton, &bandOnButton, &typeBox, &lengthBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
         c->setLookAndFeel(nullptr);
 }
 
@@ -133,9 +160,10 @@ void EqPanel::selectBand(int band)
 void EqPanel::resized()
 {
     onButton.setBounds(kWidth - 70, 3, 56, 20);
-    captureButton.setBounds(40, 2, 66, 20);
-    playButton.setBounds(110, 2, 72, 20);
-    saveClipButton.setBounds(186, 2, 72, 20);
+    captureButton.setBounds(34, 2, 62, 20);
+    lengthBox.setBounds(99, 2, 54, 20);
+    playButton.setBounds(157, 2, 68, 20);
+    saveClipButton.setBounds(229, 2, 68, 20);
     for (int b = 0; b < kNumEqBands; ++b)
         bandButtons[(size_t) b]->setBounds(12 + b * 25, kRowY, 23, 22);
     typeBox.setBounds(216, kRowY, 112, 22);
@@ -285,8 +313,12 @@ void EqPanel::updateClipButtons()
         clipStatus = samples > 0 ? String() : String("heard nothing");
     const bool has = samples > 0 && !pending;
     if (has && clipStatus.isEmpty())
-        clipStatus = String(samples / proc.getEngine().getSampleRate(), 1) + " s clip";
-    if (!has && clipStatus.endsWith("clip"))
+    {
+        const double rate = proc.getEngine().getSampleRate();
+        const int used = ref.getUsedSamples();
+        clipStatus = used < samples ? String(used / rate, 1) + " of " + String(samples / rate, 1) + " s" : String(samples / rate, 1) + " s clip";
+    }
+    if (!has && (clipStatus.endsWith("clip") || clipStatus.endsWith(" s")))
         clipStatus = {};
     const bool playing = has && ref.getAudition();
     if (playButton.lit != playing)
@@ -377,7 +409,7 @@ void EqPanel::paint(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("EQ", 14, 4, 24, 12, Justification::left);
     g.setFont(plain(10.0f));
-    g.drawText(clipStatus, 262, 4, 112, 14, Justification::left);
+    g.drawText(clipStatus, 301, 4, 84, 14, Justification::left);
 
     const bool on = rawValue(ids::eqOn) > 0.5f;
     const auto bands = currentBands();

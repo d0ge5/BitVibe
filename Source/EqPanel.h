@@ -7,8 +7,8 @@
 // numbered point per band to drag (left/right = frequency, up/down = gain, the mouse wheel = Q, a double-click switches
 // the band on or off), and below it the settings of the band that is selected and the EQ's output level. Behind the
 // curve is the spectrum of the sound before the EQ (grey) and after it (orange). CAPTURE keeps the last few seconds
-// of the sound reaching the EQ as a clip, PLAY CLIP loops it through the EQ in place of the live sound, and SAVE CLIP
-// writes it to a WAV file.
+// of the sound reaching the EQ as a clip, the length box sets how much of its end is used, PLAY CLIP loops it through
+// the EQ in place of the live sound, and SAVE CLIP writes it to a WAV file.
 class EqPanel : public juce::Component
 {
 public:
@@ -61,6 +61,7 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> freqAtt, gainAtt, qAtt, outputAtt;
 
     PedalButton captureButton { "CAPTURE" }, playButton { "PLAY CLIP" }, saveClipButton { "SAVE CLIP" };
+    juce::ComboBox lengthBox;
     std::unique_ptr<juce::FileChooser> clipChooser;
     juce::String clipStatus;
 

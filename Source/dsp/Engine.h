@@ -57,6 +57,8 @@ struct Params
         mapping::pitchStepKnob(7),  mapping::pitchStepKnob(4),  mapping::pitchStepKnob(0)
     };
     SeqType seqType = SeqType::Pitch;
+    // What each step controls: -1 = the sequencer type above, 0..2 = its own (pitch, filter, sample rate).
+    std::array<int, kNumSteps> stepTypes { -1, -1, -1, -1, -1, -1 };
 
     // A loop section: steps loopFrom..loopTo (0..5, either order) play loopPlays times in a row (0 = forever) before
     // the sequence goes on to the steps after them. A restart still begins at step 1, so the steps before the
@@ -123,6 +125,12 @@ struct Params
     float sampleBaseDb = -60.0f, sampleMaxDb = -9.0f;
     float sampleChance = 1.0f;
     const SampleSet* sampleSet = nullptr;
+    // The steps of the loop section (see loopOn) can have sounds and volumes of their own: loopSampleSet (nullptr = the
+    // same sounds as the other steps) and the four values below, which work like the ones above.
+    const SampleSet* loopSampleSet = nullptr;
+    float loopSampleMix = 0.0f;
+    float loopSampleBaseDb = -60.0f, loopSampleMaxDb = -9.0f;
+    float loopSampleChance = 1.0f;
 
     // Beat pattern: an action fired at the lit steps of a bar of sixteenth notes, from the plug-in's own tempo.
     // patternSteps has a bit per step (bit 0 = the first step of the bar) and patternBarSteps is the length of the
@@ -159,15 +167,17 @@ public:
     }
 
     // Plays one of the picked sounds (chosen by pick) at a volume of its own, outside the sequence: the preview the
-    // player asks for while setting the base and max volumes. Call it on the audio thread before process().
-    void previewSample(const SampleSet* set, uint32_t pick, float gain)
+    // player asks for while setting the base and max volumes. Call it on the audio thread before process(), with the
+    // set the next block's Params bring (loopSection: the loop section's own set).
+    void previewSample(const SampleSet* set, uint32_t pick, float gain, bool loopSection = false)
     {
         if (set == nullptr || set->clips.empty() || !(gain > 0.0f))
             return;
-        if (set != lastSampleSet) // a new set: whatever is sounding still points into the old one
+        auto& last = loopSection ? lastLoopSampleSet : lastSampleSet;
+        if (set != last) // a new set: whatever is sounding still points into the old one
         {
             samplePlayer.reset();
-            lastSampleSet = set;
+            last = set;
         }
         samplePlayer.trigger(&set->clips[pick % set->clips.size()], gain, true);
     }
@@ -213,6 +223,7 @@ public:
         reverbHighSm.setTime(fs, 15.0f);
         reverbDecaySm.setTime(fs, 40.0f);
         sampleMixSm.setTime(fs, 15.0f);
+        loopSampleMixSm.setTime(fs, 15.0f);
         distOnSm.setTime(fs, 10.0f);
         reverbOnSm.setTime(fs, 15.0f);
         eqOnSm.setTime(fs, 10.0f);
@@ -320,11 +331,12 @@ public:
             if (seqRunning)
             {
                 const auto& st = steps[(size_t) active[(size_t) seqIdx]];
+                const auto type = stepType[(size_t) active[(size_t) seqIdx]];
                 if (st.kind == mapping::Step::Kind::Mute)
                     mute = true;
-                else if (seqType == SeqType::Pitch)
+                else if (type == SeqType::Pitch)
                     semitones = st.semitones;
-                else if (seqType == SeqType::Filter)
+                else if (type == SeqType::Filter)
                     filterFactor = st.factor;
                 else
                     srFactor = st.factor;
@@ -386,7 +398,8 @@ public:
             const bool eqRun = blk.eqOn || eqAmount > 1.0e-4f;
             const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
             const auto heard = samplePlayer.process();
-            const float sampleSignal = heard.sequence * sampleMixSm.next(blk.sampleGain) * sampleOnGain + heard.preview;
+            const float sampleSignal = (heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.loopSequence * loopSampleMixSm.next(blk.loopSampleGain))
+                                           * sampleOnGain + heard.preview;
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
@@ -540,6 +553,8 @@ private:
         float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
         float sampleGain = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
+        float loopSampleGain = 0.0f, loopSampleChance = 1.0f;
+        const SampleSet* loopSampleSet = nullptr;
         int stutterLength = 0;
     };
 
@@ -590,10 +605,14 @@ private:
         blk.sampleGain = sampleGain(p.sampleMix, p.sampleBaseDb, p.sampleMaxDb);
         blk.sampleChance = std::clamp(p.sampleChance, 0.0f, 1.0f);
         blk.sampleSet = p.sampleSet;
-        if (p.sampleSet != lastSampleSet) // a new set: whatever is sounding still points into the old one
+        blk.loopSampleGain = sampleGain(p.loopSampleMix, p.loopSampleBaseDb, p.loopSampleMaxDb);
+        blk.loopSampleChance = std::clamp(p.loopSampleChance, 0.0f, 1.0f);
+        blk.loopSampleSet = p.loopSampleSet;
+        if (p.sampleSet != lastSampleSet || p.loopSampleSet != lastLoopSampleSet) // whatever is sounding still points into the old set
         {
             samplePlayer.reset();
             lastSampleSet = p.sampleSet;
+            lastLoopSampleSet = p.loopSampleSet;
         }
         blk.reverbLowCut = std::clamp(p.reverbLowCutHz, 20.0f, 2000.0f);
         blk.reverbHighCut = std::clamp(p.reverbHighCutHz, 200.0f, 20000.0f);
@@ -618,6 +637,7 @@ private:
             reverbHighSm.snap(blk.reverbHighCut);
             reverbDecaySm.snap(blk.reverbDecay);
             sampleMixSm.snap(blk.sampleGain);
+            loopSampleMixSm.snap(blk.loopSampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
             eqOnSm.snap(blk.eqOn ? 1.0f : 0.0f);
@@ -645,7 +665,9 @@ private:
         numActive = 0;
         for (int i = 0; i < kNumSteps; ++i)
         {
-            steps[(size_t) i] = mapping::decodeStep(p.steps[(size_t) i], p.seqType);
+            const int own = p.stepTypes[(size_t) i];
+            stepType[(size_t) i] = own < 0 ? p.seqType : (SeqType) std::clamp(own, 0, 2);
+            steps[(size_t) i] = mapping::decodeStep(p.steps[(size_t) i], stepType[(size_t) i]);
             if (steps[(size_t) i].kind != mapping::Step::Kind::Skip)
                 active[(size_t) numActive++] = i;
         }
@@ -820,17 +842,21 @@ private:
         stepStarted();
     }
 
-    // A sequencer step has just begun: maybe bring in one of the picked sounds, chosen at random. Muted steps stay silent.
+    // A sequencer step has just begun: maybe bring in one of the picked sounds, chosen at random. Muted steps stay
+    // silent. A step of the loop section uses the loop section's sounds, volume and chance.
     void stepStarted()
     {
-        if (!blk.sampleOn || blk.sampleGain <= 0.0f || blk.sampleSet == nullptr || blk.sampleSet->clips.empty() || numActive == 0)
+        const bool inLoop = loopFirst >= 0 && seqIdx >= loopFirst && seqIdx <= loopLast;
+        const SampleSet* set = inLoop && blk.loopSampleSet != nullptr ? blk.loopSampleSet : blk.sampleSet;
+        const float gain = inLoop ? blk.loopSampleGain : blk.sampleGain;
+        const float chance = inLoop ? blk.loopSampleChance : blk.sampleChance;
+        if (!blk.sampleOn || gain <= 0.0f || set == nullptr || set->clips.empty() || numActive == 0)
             return;
         if (steps[(size_t) active[(size_t) seqIdx]].kind == mapping::Step::Kind::Mute)
             return;
-        if (blk.sampleChance < 1.0f && (float) (nextRandom() >> 8) * (1.0f / 16777216.0f) >= blk.sampleChance)
+        if (chance < 1.0f && (float) (nextRandom() >> 8) * (1.0f / 16777216.0f) >= chance)
             return;
-        const auto& clips = blk.sampleSet->clips;
-        samplePlayer.trigger(&clips[(size_t) (nextRandom() >> 4) % clips.size()]);
+        samplePlayer.trigger(&set->clips[(size_t) (nextRandom() >> 4) % set->clips.size()], 1.0f, false, inLoop);
     }
 
     // Moves to the next active step; counts passes and stops after the last one. False when stopped. At the end of
@@ -917,7 +943,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm, reverbOnSm, sampleOnSm, eqOnSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, reverbOnSm, sampleOnSm, eqOnSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)
@@ -934,10 +960,12 @@ private:
     std::atomic<int> patternRestartRequests { 0 };
     int seenPatternRestarts = 0;
     const SampleSet* lastSampleSet = nullptr;
+    const SampleSet* lastLoopSampleSet = nullptr;
     float reverbSend = 0.0f; // 1 while a sequence or stutter plays (smoothed): the reverb hears only that
 
     // sequencer
     std::array<mapping::Step, kNumSteps> steps {};
+    std::array<SeqType, kNumSteps> stepType {}; // what each step controls
     std::array<int, kNumSteps> active {};
     int numActive = 0, seqIdx = 0, seqCycles = 0, seqRepeats = 0;
     int loopFirst = -1, loopLast = -1, loopPlays = 0, loopCount = 0; // the loop section, as indices into active

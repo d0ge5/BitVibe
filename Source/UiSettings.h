@@ -47,6 +47,16 @@ inline void setAdvancedRight(bool advanced)
     write(*xml);
 }
 
+// The length of the EQ's reference clip, in seconds.
+inline float eqClipSeconds() { return (float) read()->getDoubleAttribute("eqClipSeconds", 4.0); }
+
+inline void setEqClipSeconds(float seconds)
+{
+    auto xml = read();
+    xml->setAttribute("eqClipSeconds", (double) seconds);
+    write(*xml);
+}
+
 inline bool helpSeen() { return read()->getBoolAttribute("helpSeen", false); }
 
 inline void markHelpSeen()

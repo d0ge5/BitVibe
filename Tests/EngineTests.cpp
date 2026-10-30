@@ -1864,6 +1864,37 @@ size_t firstIndexOf(const std::vector<int>& v, int value, size_t from = 0)
 
 // The loop section: the chosen steps repeat (a number of times or forever) before the sequence goes on, and a
 // restart still begins at step 1.
+// Each step can control its own thing: with the sequencer on pitch, a step set to FILTER changes the filter instead of
+// the pitch, and a step set to SAMPLE changes the sample rate.
+void testStepTypes()
+{
+    std::puts("step types");
+    Params p = neutral();
+    p.seqPlay = 5;           // continuous
+    p.seqMult = 0;
+    p.tempoBpm = 60.0f;      // one step per second
+    p.pickTriggers = false;
+    p.seqType = SeqType::Pitch;
+    p.steps = { mapping::pitchStepKnob(0), 0.1f, 0.1f, mapping::pitchStepKnob(0), mapping::pitchStepKnob(0), mapping::pitchStepKnob(0) };
+    p.stepTypes = { -1, 1, 2, -1, -1, -1 };  // step 2 the filter at 10%, step 3 the sample rate at 10%
+    const Signal in = sine(3000.0, 3.0, 0.3f);
+    const Signal out = render(p, in);
+    // compared with the same steps all on pitch (a 0.1 knob is about -9 semitones there)
+    Params allPitch = p;
+    allPitch.stepTypes = { -1, -1, -1, -1, -1, -1 };
+    const Signal pitchOnly = render(allPitch, in);
+    CHECK(rmsDiff(out, pitchOnly, 0.1, 0.9) < 1.0e-3, "a step that follows the sequencer type is unchanged");
+    CHECK(rmsDiff(out, pitchOnly, 1.1, 1.9) > 0.01, "a FILTER step does something else than the pitch step it was");
+    Params filterSeq = p;
+    filterSeq.seqType = SeqType::Filter;
+    filterSeq.stepTypes = { 0, -1, 2, 0, 0, 0 }; // the same steps, written the other way round
+    const Signal swapped = render(filterSeq, in);
+    CHECK(rmsDiff(out, swapped, 0.1, 2.9) < 1.0e-4, "the same per-step choice gives the same sound whatever the sequencer type");
+    Params rateStep = p;
+    rateStep.stepTypes = { -1, -1, 2, -1, -1, -1 };
+    CHECK(rmsDiff(render(rateStep, in), pitchOnly, 2.1, 2.9) > 0.01, "a SAMPLE step crushes the sample rate");
+}
+
 void testSequenceLoop()
 {
     std::puts("sequence loop");
@@ -1971,6 +2002,14 @@ void testEqReference()
     CHECK(std::abs(n - (int) tone.size()) < 64, "the clip is the second of tone without the silence (%d samples)", n);
     std::vector<std::vector<float>> clip;
     CHECK(ref.copyClip(clip) && clip.size() == 1 && clip[0].size() == (size_t) n, "the clip can be copied out");
+    // the clip length: only the last part is played and copied, and it can be changed after capturing
+    ref.setClipSeconds(0.5f);
+    std::vector<std::vector<float>> part;
+    CHECK(ref.getUsedSamples() == (int) (0.5 * kFs) && ref.copyClip(part) && part[0].size() == (size_t) (0.5 * kFs)
+              && std::equal(part[0].begin(), part[0].end(), clip[0].end() - (long) part[0].size()),
+          "a 0.5 s length uses the last half second of the clip");
+    ref.setClipSeconds(4.0f);
+    CHECK(ref.getUsedSamples() == n, "a length longer than the clip uses all of it");
     float diff = 0.0f;
     const size_t offset = (size_t) std::distance(tone.begin(), std::find_if(tone.begin(), tone.end(), [](float v) { return std::abs(v) > 1.0e-3f; }));
     for (size_t i = 0; i < clip[0].size() && i + offset < tone.size(); ++i)
@@ -2019,6 +2058,78 @@ void testEqReference()
     CHECK(ref.getClipSamples() == n, "preparing again at the same rate keeps it");
     e.prepare(44100.0);
     CHECK(ref.getClipSamples() == 0, "a new sample rate forgets it");
+}
+
+// The loop section's sounds: its steps play the loop section's own sounds (or the main ones when it has none), with
+// its own volume and chance; the other steps keep the main ones.
+void testLoopSectionSamples()
+{
+    std::puts("loop section samples");
+    auto makeSet = [](float level)
+    {
+        SampleSet s;
+        SampleClip c;
+        c.data.assign(6000, level); // longer than a step, so a step always sounds
+        c.rate = kFs;
+        s.clips.push_back(std::move(c));
+        return s;
+    };
+    const SampleSet mainSet = makeSet(0.2f), loopSet = makeSet(-0.4f);
+    Params p = neutral();
+    p.seqPlay = 1;
+    p.seqMult = 0;
+    p.tempoBpm = 600.0f; // 100 ms steps
+    p.steps.fill(mapping::pitchStepKnob(0));
+    p.pickTriggers = false;
+    p.sampleSet = &mainSet;
+    p.sampleMix = p.loopSampleMix = 1.0f;
+    p.sampleBaseDb = p.loopSampleBaseDb = -60.0f;
+    p.sampleMaxDb = p.loopSampleMaxDb = 0.0f;
+    p.loopOn = true;
+    p.loopFrom = 3;
+    p.loopTo = 5;
+    p.loopPlays = 2; // steps 1-3 (0..0.3 s), then 4-6 twice (0.3..0.9 s)
+    auto play = [&](const Params& q)
+    {
+        Engine e;
+        e.prepare(kFs);
+        Signal out((size_t) kFs, 0.0f);
+        for (size_t pos = 0; pos < out.size(); pos += 256)
+        {
+            float* ch = out.data() + pos;
+            const TriggerEvent start { 0, TriggerAction::RestartSequence };
+            e.process(&ch, 1, (int) std::min<size_t>(256, out.size() - pos), q, pos == 0 ? &start : nullptr, pos == 0 ? 1 : 0);
+        }
+        return out;
+    };
+    auto mean = [](const Signal& s, double t0, double t1)
+    {
+        double sum = 0.0;
+        for (size_t i = (size_t) (t0 * kFs); i < (size_t) (t1 * kFs); ++i)
+            sum += s[i];
+        return sum / ((t1 - t0) * kFs);
+    };
+
+    Params own = p;
+    own.loopSampleSet = &loopSet;
+    const auto a = play(own);
+    CHECK(std::abs(mean(a, 0.05, 0.28) - 0.2) < 0.01 && std::abs(mean(a, 0.4, 0.88) + 0.4) < 0.01,
+          "the main steps play the main sounds (%.3f), the loop steps their own (%.3f)", mean(a, 0.05, 0.28), mean(a, 0.4, 0.88));
+    const auto b = play(p);
+    CHECK(std::abs(mean(b, 0.4, 0.88) - 0.2) < 0.01, "a loop section without sounds of its own plays the main ones (%.3f)", mean(b, 0.4, 0.88));
+    Params quietLoop = own;
+    quietLoop.loopSampleMaxDb = -60.0f;
+    const auto c = play(quietLoop);
+    CHECK(std::abs(mean(c, 0.4, 0.88)) < 0.005 && std::abs(mean(c, 0.05, 0.28) - 0.2) < 0.01, "the loop section's own volume (silent here) leaves the main steps alone");
+    Params louderLoop = own;
+    louderLoop.loopSampleMaxDb = -6.0f;
+    CHECK(std::abs(mean(play(louderLoop), 0.4, 0.88) + 0.4 * 0.501) < 0.01, "the loop section's max volume sets its level");
+    Params never = own;
+    never.loopSampleChance = 0.0f;
+    CHECK(std::abs(mean(play(never), 0.45, 0.88)) < 0.005, "a loop chance of 0 gives the loop steps no sounds");
+    Params noLoop = own;
+    noLoop.loopOn = false;
+    CHECK(std::abs(mean(play(noLoop), 0.05, 0.58) - 0.2) < 0.01, "with the loop off every step plays the main sounds");
 }
 
 void testTriggerEvents()
@@ -2761,7 +2872,9 @@ int main(int argc, char** argv)
     testEffectsOnTriggers();
     testBeatRoute();
     testBeatPattern();
+    testStepTypes();
     testSequenceLoop();
+    testLoopSectionSamples();
     testEqReference();
     testReverb();
     testSampleBlend();

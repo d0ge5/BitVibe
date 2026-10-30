@@ -198,6 +198,7 @@ private:
     juce::String readoutText(int index) const;
     float rawValue(const char* id) const;
     bitvibe::SeqType seqType() const;
+    bitvibe::SeqType stepType(int step) const; // what that step controls (its own type, or the sequencer type)
 
     Content content { *this };
     LevelMeter triggerMeter;
@@ -225,6 +226,9 @@ private:
     juce::Image background;
 
     std::array<Knob, kKnobs> knobs;
+    // on the Alt layer, in place of each step's name: what the step controls
+    std::array<juce::ComboBox, kKnobs> stepTypeBoxes;
+    std::array<std::unique_ptr<APVTS::ComboBoxAttachment>, kKnobs> stepTypeAtts;
 
     // global panel
     KnobSlider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;
