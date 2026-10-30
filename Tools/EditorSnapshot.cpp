@@ -414,9 +414,9 @@ void testSampleBlendParams()
     MemoryBlock oldState;
     if (auto xml = makeProcessor()->apvts.copyState().createXml())
         AudioProcessor::copyXmlToBinary(*xml, oldState);
-    q->getSampleBank().selectNone();
+    q->getSampleBank().setSelected({ library[0].getFileName() }, false);
     q->setStateInformation(oldState.getData(), (int) oldState.getSize());
-    check(q->getSampleBank().getNumSelected() == library.size(), "a state from before the sample blend picks every sound");
+    check(q->getSampleBank().getSelected() == StringArray { library[0].getFileName() }, "a project from before the sample blend keeps the current list");
 }
 
 // The distortion parameters reach the engine.
@@ -435,6 +435,81 @@ void testDistortionParams()
     check(maxDifference(driven, plain) > 0.02f && isFinite(driven), "distortion on: the sequenced sound changes (max diff " + String(maxDifference(driven, plain), 3) + ")");
     setValue(*p, ids::mix, 0.0f);
     check(maxDifference(run(*p, in), in) < 1.0e-5f, "dry/wet mix 0 still gives the clean signal");
+}
+
+// Sound banks and the remembered sample settings (the test settings file lives in a temp folder).
+void testSoundBanks()
+{
+    std::puts("sound banks and remembered sample settings");
+    const auto library = SampleBank::libraryFiles();
+    if (library.size() < 3)
+    {
+        std::puts("  (fewer than three sounds in the sounds folders: these checks are skipped)");
+        return;
+    }
+    SampleBank::settingsFile().deleteFile();
+
+    {
+        auto p = makeProcessor();
+        auto& bank = p->getSampleBank();
+        check(bank.getNumSelected() == library.size() && bank.getBankNames().isEmpty(), "a first run picks every sound and has no banks");
+
+        const StringArray lowList { library[0].getFileName(), library[1].getFileName() };
+        bank.setSelected(lowList);
+        check(bank.saveBank("  Low  sounds "), "a bank can be saved");
+        check(bank.getBankNames() == StringArray { "Low sounds" } && bank.getActiveBank() == "Low sounds" && bank.selectionMatchesActiveBank(),
+              "its name is tidied up and it becomes the showing bank");
+
+        bank.setSelected({ library[2].getFileName() });
+        check(!bank.selectionMatchesActiveBank(), "changing the list afterwards means it is no longer the bank");
+        check(bank.saveBank("Single"), "a second bank");
+        check(bank.loadBank("low SOUNDS") && bank.getSelected() == lowList && bank.getNumSelected() == 2, "loading a bank brings its list back (name case ignored)");
+        check(!bank.loadBank("nope") && bank.getSelected() == lowList, "an unknown bank changes nothing");
+        check(bank.saveBank("Single") && bank.getBankNames().size() == 2 && bank.getBankFiles("Single") == lowList,
+              "saving under an existing name replaces that bank");
+        check(!bank.saveBank("   ") && !bank.saveBank("%%%"), "an empty name is refused");
+
+        // the knobs, as the panel records them when the player lets go
+        setValue(*p, ids::sampleMix, 0.35f);
+        setValue(*p, ids::sampleChance, 0.6f);
+        bank.rememberLevels(0.35f, 0.6f);
+    }
+
+    {
+        // a new instance (a new project, a restart of the host): the list, the banks and the knobs come back
+        auto p = makeProcessor();
+        auto& bank = p->getSampleBank();
+        check(bank.getSelected().size() == 2 && bank.getBankNames().size() == 2 && bank.getActiveBank() == "Single",
+              "a new instance starts with the remembered list and banks");
+        check(std::abs(getValue(*p, ids::sampleMix) - 0.35f) < 0.01f && std::abs(getValue(*p, ids::sampleChance) - 0.6f) < 0.01f,
+              "and with the sample MIX and CHANCE the player left");
+
+        // a saved project brings its own list and does not disturb what is remembered
+        bank.setSelected({ library[2].getFileName() });
+        MemoryBlock project;
+        p->getStateInformation(project);
+        bank.setSelected({ library[0].getFileName(), library[1].getFileName() });
+        auto other = makeProcessor();
+        other->setStateInformation(project.getData(), (int) project.getSize());
+        check(other->getSampleBank().getSelected() == StringArray { library[2].getFileName() }, "a project brings back its own list");
+        auto third = makeProcessor();
+        check(third->getSampleBank().getSelected().size() == 2, "and loading it left the remembered list alone");
+
+        bank.deleteBank("Single");
+        check(bank.getBankNames() == StringArray { "Low sounds" } && bank.getActiveBank().isEmpty(), "a bank can be deleted");
+    }
+
+    {
+        auto p = makeProcessor();
+        check(p->getSampleBank().getBankNames() == StringArray { "Low sounds" }, "the deletion was remembered too");
+    }
+
+    // A damaged settings file is ignored rather than crashing, and the first-run defaults come back.
+    SampleBank::settingsFile().replaceWithText("<not xml");
+    {
+        auto p = makeProcessor();
+        check(p->getSampleBank().getNumSelected() == library.size() && p->getSampleBank().getBankNames().isEmpty(), "a damaged settings file falls back to the defaults");
+    }
 }
 
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
@@ -1105,6 +1180,10 @@ int main(int argc, char** argv)
         return 2;
     }
     ScopedJuceInitialiser_GUI init;
+    // The sample settings are remembered in a file: keep the tests away from the player's real one.
+    const File testSettings = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_settings");
+    testSettings.deleteRecursively();
+    SampleBank::setSettingsFolderOverride(testSettings);
     const File outDir(argv[1]);
     outDir.createDirectory();
 
@@ -1180,6 +1259,7 @@ int main(int argc, char** argv)
     testBeatPatternProcessor();
     testReverbParams();
     testSampleBlendParams();
+    testSoundBanks();
     testDistortionParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

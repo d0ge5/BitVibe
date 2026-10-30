@@ -156,6 +156,12 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   seconds each, every one is levelled to the same peak): **OPEN SOUNDS FOLDER** opens `Documents/BitVibe/Sounds`
   (builds from the source tree also read the `GoodSounds` folder next to the code). BitVibe ships no sounds
   of its own. The picked list is saved with your project.
+  **Sound banks** are named, saved lists: pick your sounds with CHOOSE SOUNDS, press **SAVE**, type a name, and
+  from then on choose that bank in the list at the top of the panel to switch to it in one click (**DELETE**
+  removes the bank that is showing; your files are never touched). What you pick, your banks and where you leave
+  the sample MIX and CHANCE knobs are remembered between sessions in `sample_settings.xml` (in `%LOCALAPPDATA%\BitVibe`
+  on Windows, `~/Library/Application Support/BitVibe` on macOS), so a new instance of the plug-in starts the way
+  you left it. A saved project still brings back its own list. Set the environment variable `BITVIBE_SETTINGS_DIR` to keep that file somewhere else.
 - None of these settings is stored in a preset: like the output level, they belong to your rig and keep their
   values when you change preset.
 

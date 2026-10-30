@@ -118,6 +118,12 @@ void writeWav(const AudioBuffer<float>& b, const File& f)
 
 int main(int argc, char** argv)
 {
+    // The hosted plug-in remembers the sample settings in a file; keep this test away from the real one.
+   #if JUCE_WINDOWS
+    _putenv_s("BITVIBE_SETTINGS_DIR", (File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_smoke_settings")).getFullPathName().toRawUTF8());
+   #else
+    setenv("BITVIBE_SETTINGS_DIR", File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_smoke_settings").getFullPathName().toRawUTF8(), 1);
+   #endif
     if (argc < 3)
     {
         std::puts("usage: BitVibeSmokeTest <plugin.vst3> <output dir>");

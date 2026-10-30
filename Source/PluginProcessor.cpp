@@ -269,6 +269,18 @@ BitVibeProcessor::BitVibeProcessor()
 
     bypassParam = apvts.getParameter(ids::bypass);
 
+    // A new instance starts with the sample MIX and CHANCE the player last set (a saved project overrides them).
+    {
+        float rememberedMix = 0.0f, rememberedChance = 1.0f;
+        if (sampleBank.getRememberedLevels(rememberedMix, rememberedChance))
+        {
+            const std::array<std::pair<const char*, float>, 2> levels { { { ids::sampleMix, rememberedMix }, { ids::sampleChance, rememberedChance } } };
+            for (const auto& level : levels)
+                if (auto* param = apvts.getParameter(level.first))
+                    param->setValueNotifyingHost(param->convertTo0to1(level.second));
+        }
+    }
+
     for (const auto& id : presetParameterIds())
         presetParams.push_back({ id, apvts.getParameter(id) });
     jassert(std::none_of(presetParams.begin(), presetParams.end(), [](const PresetParam& p) { return p.param == nullptr; }));
@@ -701,7 +713,7 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
         toeDown = knobsFromTree(morphNode.getChildWithName("DOWN"), bitvibe::KnobSet {});
     }
     drumBeat.fromState(drums); // a state from before the drum map resets it
-    sampleBank.fromState(samples); // a state from before the sample blend picks every sound
+    sampleBank.fromState(samples); // a project from before the sample blend keeps the current list
 
     const ScopedLock lock(presetLock);
     for (int i = 0; i < bitvibe::kNumPresets; ++i)

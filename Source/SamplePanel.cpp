@@ -14,22 +14,42 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         s->setRotaryParameters(MathConstants<float>::pi * 1.2f, MathConstants<float>::pi * 2.8f, true);
         s->setMouseDragSensitivity(180);
         s->setLookAndFeel(&laf);
+        // Remember where the player leaves the knobs (a change made by the host or a project load is not the player's).
+        s->onValueChange = [this, s] { if (s->isMouseOver(true)) rememberKnobs(); };
         addAndMakeVisible(*s);
     }
     mixAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMix, mixSlider);
     chanceAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleChance, chanceSlider);
 
+    bankBox.setLookAndFeel(&laf);
+    bankBox.onChange = [this]
+    {
+        if (updatingControls)
+            return;
+        const auto name = bankBox.getText();
+        if (name.isNotEmpty())
+            bank.loadBank(name);
+        refresh();
+    };
+    addAndMakeVisible(bankBox);
+
+    saveButton.onClick = [this] { askBankName(); };
+    deleteButton.onClick = [this] { askDeleteBank(); };
     chooseButton.onClick = [this] { showChooser(); };
     folderButton.onClick = [this] { openFolder(); };
-    addAndMakeVisible(chooseButton);
-    addAndMakeVisible(folderButton);
+    for (auto* b : { &saveButton, &deleteButton, &chooseButton, &folderButton })
+        addAndMakeVisible(*b);
 
+    bankBox.setTooltip("SOUND BANK: a saved list of sounds. Pick one to switch to its list straight away. "
+                       "Make your own with CHOOSE SOUNDS and SAVE.");
+    saveButton.setTooltip("SAVE: store the sounds you have picked as a sound bank. Type a name; saving under an existing name replaces that bank.");
+    deleteButton.setTooltip("DELETE: remove the sound bank that is showing. Your sound files are not touched.");
     chooseButton.setTooltip("CHOOSE SOUNDS: pick the list of sounds to choose from. At every step of the sequence one of "
-                            "them is picked at random and blended in.");
+                            "them is picked at random and blended in. Your picks are remembered next time.");
     folderButton.setTooltip("OPEN SOUNDS FOLDER: opens the folder for your own sounds (WAV, AIFF, FLAC or OGG files). "
                             "Put files in it, then pick them with CHOOSE SOUNDS.");
-    mixSlider.setTooltip("SAMPLE MIX: how loud the random sound is in the sequence. Fully left = no sounds (the default).");
-    chanceSlider.setTooltip("SAMPLE CHANCE: how often a step gets a sound. 100% = every step, lower = now and then.");
+    mixSlider.setTooltip("SAMPLE MIX: how loud the random sound is in the sequence. Fully left = no sounds (the default). Remembered next time.");
+    chanceSlider.setTooltip("SAMPLE CHANCE: how often a step gets a sound. 100% = every step, lower = now and then. Remembered next time.");
 
     numAvailable = SampleBank::libraryFiles().size();
     refresh();
@@ -39,6 +59,7 @@ SamplePanel::~SamplePanel()
 {
     mixSlider.setLookAndFeel(nullptr);
     chanceSlider.setLookAndFeel(nullptr);
+    bankBox.setLookAndFeel(nullptr);
 }
 
 float SamplePanel::rawValue(const char* id) const
@@ -46,12 +67,20 @@ float SamplePanel::rawValue(const char* id) const
     return proc.apvts.getRawParameterValue(id)->load();
 }
 
+void SamplePanel::rememberKnobs()
+{
+    bank.rememberLevels(rawValue(ids::sampleMix), rawValue(ids::sampleChance));
+}
+
 void SamplePanel::resized()
 {
-    chooseButton.setBounds(12, 24, 196, 24);
-    folderButton.setBounds(12, 56, 196, 24);
-    mixSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 300, 36 }));
-    chanceSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 396, 36 }));
+    bankBox.setBounds(12, 24, 108, 24);
+    saveButton.setBounds(124, 24, 60, 24);
+    deleteButton.setBounds(188, 24, 62, 24);
+    chooseButton.setBounds(12, 52, 238, 24);
+    folderButton.setBounds(12, 80, 238, 24);
+    mixSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 322, 44 }));
+    chanceSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 402, 44 }));
 }
 
 void SamplePanel::refresh()
@@ -66,6 +95,28 @@ void SamplePanel::refresh()
         shownButtonText = text;
         chooseButton.setText(text);
     }
+
+    // The bank list: its names, and which one is showing (none once the picked list has been changed since).
+    const auto names = bank.getBankNames();
+    const auto active = bank.getActiveBank();
+    const String state = names.joinIntoString("|") + "#" + active + (bank.selectionMatchesActiveBank() ? "=" : "~");
+    if (state != shownBankState)
+    {
+        shownBankState = state;
+        const ScopedValueSetter<bool> guard(updatingControls, true);
+        bankBox.clear(dontSendNotification);
+        for (int i = 0; i < names.size(); ++i)
+            bankBox.addItem(names[i], i + 1);
+        bankBox.setTextWhenNothingSelected(names.isEmpty() ? "No banks yet" : (active.isEmpty() ? "Sound bank" : "Custom list"));
+        if (bank.selectionMatchesActiveBank())
+        {
+            const int index = names.indexOf(active, true);
+            if (index >= 0)
+                bankBox.setSelectedId(index + 1, dontSendNotification);
+        }
+        deleteButton.setEnabled(!active.isEmpty());
+        deleteButton.setAlpha(active.isEmpty() ? 0.45f : 1.0f);
+    }
     repaint();
 }
 
@@ -74,6 +125,47 @@ void SamplePanel::openFolder()
     const auto folder = SampleBank::userFolder();
     folder.createDirectory();
     folder.startAsProcess();
+}
+
+void SamplePanel::askBankName()
+{
+    const auto suggestion = bank.getActiveBank().isNotEmpty() ? bank.getActiveBank() : String("My bank");
+    auto* window = new AlertWindow("Save sound bank", "Name this bank. Saving under a name that exists replaces that bank.",
+                                   MessageBoxIconType::NoIcon, this);
+    window->addTextEditor("name", suggestion);
+    window->addButton("Save", 1, KeyPress(KeyPress::returnKey));
+    window->addButton("Cancel", 0, KeyPress(KeyPress::escapeKey));
+    Component::SafePointer<SamplePanel> safe(this);
+    window->enterModalState(true,
+                            ModalCallbackFunction::create(
+                                [safe, window](int result)
+                                {
+                                    if (result == 1 && safe != nullptr)
+                                    {
+                                        safe->bank.saveBank(window->getTextEditorContents("name"));
+                                        safe->refresh();
+                                    }
+                                }),
+                            true);
+}
+
+void SamplePanel::askDeleteBank()
+{
+    const auto name = bank.getActiveBank();
+    if (name.isEmpty())
+        return;
+    Component::SafePointer<SamplePanel> safe(this);
+    AlertWindow::showOkCancelBox(MessageBoxIconType::QuestionIcon, "Delete sound bank",
+                                 "Delete the bank \"" + name + "\"? Your sound files are not deleted.", "Delete", "Cancel", this,
+                                 ModalCallbackFunction::create(
+                                     [safe, name](int result)
+                                     {
+                                         if (result == 1 && safe != nullptr)
+                                         {
+                                             safe->bank.deleteBank(name);
+                                             safe->refresh();
+                                         }
+                                     }));
 }
 
 // A menu of every sound with a tick on the picked ones. A click flips the sound and the menu comes straight back,
@@ -93,21 +185,25 @@ void SamplePanel::showChooser()
     if (files.isEmpty())
         menu.addItem(3, "No sounds found. Put audio files in the sounds folder.", false, false);
 
+    Component::SafePointer<SamplePanel> safe(this);
     menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&chooseButton).withMinimumWidth(240),
-                       [this, files, picked](int result)
+                       [safe, files, picked](int result)
                        {
+                           if (safe == nullptr)
+                               return;
+                           auto& self = *safe;
                            if (result == 0)
                            {
-                               refresh();
+                               self.refresh();
                                return;
                            }
                            if (result == 1)
                            {
-                               bank.selectAll();
+                               self.bank.selectAll();
                            }
                            else if (result == 2)
                            {
-                               bank.selectNone();
+                               self.bank.selectNone();
                            }
                            else if (result >= 100 && result < 100 + files.size())
                            {
@@ -117,10 +213,10 @@ void SamplePanel::showChooser()
                                    list.removeString(name);
                                else
                                    list.add(name);
-                               bank.setSelected(list);
+                               self.bank.setSelected(list);
                            }
-                           refresh();
-                           showChooser();
+                           self.refresh();
+                           self.showChooser();
                        });
 }
 
@@ -136,15 +232,15 @@ void SamplePanel::paint(Graphics& g)
     g.drawText("SAMPLE BLEND (RANDOM SOUND ON EACH STEP)", 14, 4, 290, 12, Justification::left);
 
     struct Entry { const char* name; String value; int cx; };
-    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 300 },
-                              { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 396 } };
+    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(ids::sampleMix) * 100.0f)) + "%", 322 },
+                              { "CHANCE", String(roundToInt(rawValue(ids::sampleChance) * 100.0f)) + "%", 402 } };
     for (const auto& e : entries)
     {
         g.setColour(ink);
         g.setFont(bold(11.0f));
-        g.drawText(e.name, Rectangle<int>(90, 14).withCentre({ e.cx, 63 }), Justification::centred);
+        g.drawText(e.name, Rectangle<int>(80, 14).withCentre({ e.cx, 76 }), Justification::centred);
         g.setColour(inkDim);
         g.setFont(plain(10.5f));
-        g.drawText(e.value, Rectangle<int>(90, 13).withCentre({ e.cx, 77 }), Justification::centred);
+        g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, 90 }), Justification::centred);
     }
 }
