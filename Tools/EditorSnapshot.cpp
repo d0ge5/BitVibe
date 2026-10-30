@@ -659,6 +659,24 @@ void testRightModes(const File& outDir)
     uisettings::setAdvancedRight(true); // the other screenshots show every control
 }
 
+// The EQ through the processor: off by default, then the bands reach the engine.
+void testEqParams()
+{
+    std::puts("eq (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f);
+    setValue(*p, ids::tempo, 120.0f);
+    const auto plain = run(*p, in);
+    setValue(*p, ids::eqBand(3, "Gain").toRawUTF8(), 12.0f);
+    check(maxDifference(run(*p, in), plain) < 1.0e-6f, "the EQ does nothing until it is switched on");
+    setValue(*p, ids::eqOn, 1.0f);
+    const auto boosted = run(*p, in);
+    check(maxDifference(boosted, plain) > 0.01f && isFinite(boosted), "switched on, a +12 dB band changes the sound (max diff " + String(maxDifference(boosted, plain), 3) + ")");
+    setValue(*p, ids::mix, 0.0f);
+    check(maxDifference(run(*p, in), in) < 1.0e-5f, "the clean signal is untouched");
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -870,7 +888,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 57, "57 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 99, "99 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1420,6 +1438,7 @@ int main(int argc, char** argv)
     testResizing();
     testRightModes(outDir);
     testDistortionParams();
+    testEqParams();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

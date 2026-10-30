@@ -37,6 +37,10 @@ inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
 inline constexpr const char* reverbOn = "reverbOn";
 inline constexpr const char* sampleOn = "sampleOn";
+inline constexpr const char* eqOn = "eqOn";
+inline constexpr const char* eqOutput = "eqOutput";
+// One set per EQ band (1..8): eq3Freq, eq3Gain, eq3Q, eq3Type, eq3On.
+inline juce::String eqBand(int band, const char* what) { return "eq" + juce::String(band + 1) + what; }
 inline constexpr const char* reverbDecay = "reverbDecay";
 inline constexpr const char* reverbReverseRoom = "reverbRevRoom";
 inline constexpr const char* reverbReverseHall = "reverbRevHall";
@@ -206,6 +210,17 @@ private:
     std::atomic<float>* pReverbType = nullptr;
     std::atomic<float>* pReverbOn = nullptr;
     std::atomic<float>* pSampleOn = nullptr;
+    std::atomic<float>* pEqOn = nullptr;
+    std::atomic<float>* pEqOutput = nullptr;
+    struct EqBandParams
+    {
+        std::atomic<float>* on = nullptr;
+        std::atomic<float>* type = nullptr;
+        std::atomic<float>* freq = nullptr;
+        std::atomic<float>* gain = nullptr;
+        std::atomic<float>* q = nullptr;
+    };
+    std::array<EqBandParams, bitvibe::kNumEqBands> pEqBands {};
     std::atomic<float>* pReverbDecay = nullptr;
     std::array<std::atomic<float>*, 6> pReverbReverse {}; // one per type of reverb, in the order of the types
     std::atomic<float>* pDistOn = nullptr;

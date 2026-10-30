@@ -25,6 +25,8 @@ and are used here only to say what this software is modelled on.
   published in Jon Dattorro, "Effect Design Part 1: Reverberator and Other Filters", *Journal of the Audio
   Engineering Society* 45(9), 1997; none of the existing implementations of it was used. The **Spring**, **Shimmer**,
   **Gated** and reversed reverbs are our own designs.
+* **EQ.** The band filters use the well-known biquad formulas from Robert Bristow-Johnson's "Audio EQ Cookbook";
+  the code is our own.
 * **Overdrive and fuzz.** Modelled from the published circuit values of the two classic pedals they are named after
   in the README; no firmware, schematics' artwork or third-party code is included.
 

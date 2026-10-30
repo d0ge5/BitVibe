@@ -132,6 +132,7 @@ public:
 };
 
 class PatternPanel;
+class EqPanel;
 class SamplePanel;
 
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -243,6 +244,7 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;
+    std::unique_ptr<EqPanel> eqPanel;
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 

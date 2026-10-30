@@ -1726,6 +1726,111 @@ void testFuzz()
 }
 
 // ---------------------------------------------------------------------------------------------
+// The EQ: eight bands on the sequenced sound, last in its chain
+
+// The level (dB) of a sine through one Equalizer with these bands, after it has settled.
+double eqGainAt(const std::array<EqBand, kNumEqBands>& bands, double hz, float outputDb = 0.0f)
+{
+    Equalizer eq;
+    eq.prepare(kFs);
+    eq.setBands(bands, outputDb, 512);
+    const Signal in = sine(hz, 0.5, 0.25f);
+    Signal out(in.size());
+    for (size_t i = 0; i < in.size(); ++i)
+        out[i] = eq.process(in[i]);
+    return db(rms(out, 0.25, 0.5) / rms(in, 0.25, 0.5));
+}
+
+void testEqualizer()
+{
+    std::puts("eq: eight bands, flat by default, each kind of band, the curve, last on the sequenced sound");
+    auto flat = defaultEqBands();
+    CHECK(std::abs(eqGainAt(flat, 100.0)) < 0.05 && std::abs(eqGainAt(flat, 1000.0)) < 0.05 && std::abs(eqGainAt(flat, 8000.0)) < 0.05,
+          "the default bands are flat");
+
+    auto one = [](EqType type, float hz, float gainDb, float q = 0.71f)
+    {
+        auto bands = defaultEqBands();
+        for (auto& b : bands)
+            b.on = false;
+        bands[0] = { true, type, hz, gainDb, q };
+        return bands;
+    };
+    CHECK(std::abs(eqGainAt(one(EqType::Bell, 1000.0f, 12.0f, 1.0f), 1000.0) - 12.0) < 0.3 && std::abs(eqGainAt(one(EqType::Bell, 1000.0f, 12.0f, 1.0f), 100.0)) < 1.0,
+          "a bell: +12 dB at its frequency, little change far away");
+    CHECK(eqGainAt(one(EqType::Bell, 1000.0f, -12.0f, 1.0f), 1000.0) < -11.7, "a bell can cut too");
+    CHECK(eqGainAt(one(EqType::LowCut, 400.0f, 0.0f), 50.0) < -30.0 && std::abs(eqGainAt(one(EqType::LowCut, 400.0f, 0.0f), 5000.0)) < 0.2,
+          "a low cut removes the lows and leaves the highs");
+    CHECK(eqGainAt(one(EqType::HighCut, 1000.0f, 0.0f), 8000.0) < -30.0 && std::abs(eqGainAt(one(EqType::HighCut, 1000.0f, 0.0f), 100.0)) < 0.2,
+          "a high cut removes the highs and leaves the lows");
+    CHECK(eqGainAt(one(EqType::Notch, 1000.0f, 0.0f, 4.0f), 1000.0) < -30.0 && std::abs(eqGainAt(one(EqType::Notch, 1000.0f, 0.0f, 4.0f), 3000.0)) < 1.0,
+          "a notch takes out one frequency");
+    CHECK(std::abs(eqGainAt(one(EqType::LowShelf, 200.0f, 9.0f), 40.0) - 9.0) < 0.6 && std::abs(eqGainAt(one(EqType::LowShelf, 200.0f, 9.0f), 5000.0)) < 0.3,
+          "a low shelf lifts everything below it");
+    CHECK(std::abs(eqGainAt(one(EqType::HighShelf, 4000.0f, -9.0f), 16000.0) + 9.0) < 0.8 && std::abs(eqGainAt(one(EqType::HighShelf, 4000.0f, -9.0f), 200.0)) < 0.3,
+          "a high shelf lowers everything above it");
+    CHECK(std::abs(eqGainAt(flat, 1000.0, 6.0f) - 6.0) < 0.05, "the output gain");
+
+    // The curve the editor draws is the response that is heard.
+    {
+        auto bands = defaultEqBands();
+        bands[2] = { true, EqType::Bell, 300.0f, 8.0f, 2.0f };
+        bands[6] = { true, EqType::HighShelf, 6000.0f, -6.0f, 0.71f };
+        bands[0] = { true, EqType::LowCut, 60.0f, 0.0f, 0.71f };
+        double worst = 0.0;
+        for (double hz : { 40.0, 100.0, 300.0, 1000.0, 3000.0, 10000.0 })
+            worst = std::max(worst, std::abs(eqResponseDb(bands, 2.0f, hz, kFs) - eqGainAt(bands, hz, 2.0f)));
+        CHECK(worst < 0.3, "the drawn curve matches what is heard (worst %.2f dB)", worst);
+    }
+
+    // Stays stable while every setting is thrown around.
+    {
+        Equalizer eq;
+        eq.prepare(kFs);
+        Rng rng(5);
+        bool finite = true;
+        for (int block = 0; block < 400; ++block)
+        {
+            auto bands = defaultEqBands();
+            for (auto& b : bands)
+            {
+                b.on = rng.next() > 0.0f;
+                b.type = (EqType) (std::abs((int) (rng.next() * 100.0f)) % kNumEqTypes);
+                b.freq = 20.0f * std::pow(1000.0f, 0.5f + 0.5f * rng.next());
+                b.gainDb = 15.0f * rng.next();
+                b.q = 0.1f + 9.0f * (0.5f + 0.5f * rng.next());
+            }
+            eq.setBands(bands, 0.0f, 256);
+            for (int i = 0; i < 256; ++i)
+                finite = finite && std::isfinite(eq.process(0.3f * rng.next()));
+        }
+        CHECK(finite, "random settings changed every block stay finite");
+    }
+
+    // In the engine: last on the sequenced sound, off by default, never on the clean signal.
+    {
+        const Signal in = quietToneWithPick();
+        Params seq = neutral();
+        seq.seqPlay = 5;
+        seq.tempoBpm = 120.0f;
+        seq.steps.fill(mapping::pitchStepKnob(0));
+        const Signal plain = render(seq, in);
+        Params withEq = seq;
+        withEq.eqBands = one(EqType::HighCut, 300.0f, 0.0f);
+        CHECK(maxAbsDiff(render(withEq, in), plain) == 0.0, "the EQ is off until it is switched on");
+        withEq.eqOn = true;
+        const Signal eqd = render(withEq, in);
+        CHECK(rmsDiff(eqd, plain, 0.6, 1.0) > 1.0e-4, "switched on it changes the sequenced sound (%g)", rmsDiff(eqd, plain, 0.6, 1.0));
+        Params dry = withEq;
+        dry.mix = 0.0f;
+        CHECK(maxAbsDiff(render(dry, in), in) < 1.0e-6, "dry/wet at 0 is still the clean signal");
+        Params byp = withEq;
+        byp.bypass = true;
+        CHECK(maxAbsDiff(render(byp, in), in) < 1.0e-6, "bypass is clean");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Drum map: trigger events into the engine, the loop scheduler, the tempo estimate
 
 // Runs an engine sample by sample (so the step can be read after every sample) and returns the step
@@ -2501,6 +2606,7 @@ int main(int argc, char** argv)
     testSampleBlend();
     testDistortion();
     testFuzz();
+    testEqualizer();
     testTriggerEvents();
     testDrumScheduler();
     testTempoEstimate();

@@ -127,6 +127,38 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", true));
+
+    // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain ----
+    {
+        layout.add(std::make_unique<AudioParameterBool>(id(ids::eqOn), "EQ On", false));
+        auto dbText = AudioParameterFloatAttributes()
+                          .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
+                          .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); });
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::eqOutput), "EQ Output", NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
+        NormalisableRange<float> freqRange(bitvibe::kEqMinHz, bitvibe::kEqMaxHz);
+        freqRange.setSkewForCentre(1000.0f);
+        NormalisableRange<float> qRange(bitvibe::kEqMinQ, bitvibe::kEqMaxQ);
+        qRange.setSkewForCentre(1.0f);
+        auto hzText = AudioParameterFloatAttributes()
+                          .withStringFromValueFunction([](float v, int) { return v >= 1000.0f ? String(v / 1000.0f, 2) + " kHz" : String(v, 1) + " Hz"; })
+                          .withValueFromStringFunction([](const String& t) { return t.containsIgnoreCase("k") ? t.getFloatValue() * 1000.0f : t.getFloatValue(); });
+        StringArray types;
+        for (int t = 0; t < bitvibe::kNumEqTypes; ++t)
+            types.add(bitvibe::eqTypeName((bitvibe::EqType) t));
+        const auto eqDefaults = bitvibe::defaultEqBands();
+        for (int b = 0; b < bitvibe::kNumEqBands; ++b)
+        {
+            const auto& d = eqDefaults[(size_t) b];
+            const String n = "EQ " + String(b + 1) + " ";
+            layout.add(std::make_unique<AudioParameterBool>(ParameterID { ids::eqBand(b, "On"), 1 }, n + "On", d.on));
+            layout.add(std::make_unique<AudioParameterChoice>(ParameterID { ids::eqBand(b, "Type"), 1 }, n + "Type", types, (int) d.type));
+            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Freq"), 1 }, n + "Frequency", freqRange, d.freq, hzText));
+            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Gain"), 1 }, n + "Gain",
+                                                             NormalisableRange<float>(-bitvibe::kEqMaxGainDb, bitvibe::kEqMaxGainDb, 0.1f), d.gainDb, dbText));
+            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Q"), 1 }, n + "Q", qRange, d.q,
+                                                             AudioParameterFloatAttributes().withStringFromValueFunction([](float v, int) { return String(v, 2); })));
+        }
+    }
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
     // The volume range of the sounds: MIX goes from the base volume (0) to the max volume (1). The bottom of a knob is silence.
@@ -270,6 +302,17 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbType = raw(ids::reverbType);
     pReverbOn = raw(ids::reverbOn);
     pSampleOn = raw(ids::sampleOn);
+    pEqOn = raw(ids::eqOn);
+    pEqOutput = raw(ids::eqOutput);
+    for (int b = 0; b < bitvibe::kNumEqBands; ++b)
+    {
+        auto& e = pEqBands[(size_t) b];
+        e.on = apvts.getRawParameterValue(ids::eqBand(b, "On"));
+        e.type = apvts.getRawParameterValue(ids::eqBand(b, "Type"));
+        e.freq = apvts.getRawParameterValue(ids::eqBand(b, "Freq"));
+        e.gain = apvts.getRawParameterValue(ids::eqBand(b, "Gain"));
+        e.q = apvts.getRawParameterValue(ids::eqBand(b, "Q"));
+    }
     pReverbDecay = raw(ids::reverbDecay);
     pReverbReverse = { raw(ids::reverbReverseRoom), raw(ids::reverbReverseHall), raw(ids::reverbReverseSpring),
                        raw(ids::reverbReversePlate), raw(ids::reverbReverseShimmer), raw(ids::reverbReverseGated) };
@@ -419,6 +462,18 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbType = roundToInt(pReverbType->load());
     p.reverbOn = pReverbOn->load() > 0.5f;
     p.sampleOn = pSampleOn->load() > 0.5f;
+    p.eqOn = pEqOn->load() > 0.5f;
+    p.eqOutputDb = pEqOutput->load();
+    for (int b = 0; b < bitvibe::kNumEqBands; ++b)
+    {
+        const auto& e = pEqBands[(size_t) b];
+        auto& band = p.eqBands[(size_t) b];
+        band.on = e.on->load() > 0.5f;
+        band.type = (bitvibe::EqType) jlimit(0, bitvibe::kNumEqTypes - 1, roundToInt(e.type->load()));
+        band.freq = e.freq->load();
+        band.gainDb = e.gain->load();
+        band.q = e.q->load();
+    }
     p.reverbDecay = pReverbDecay->load();
     p.reverbReverse = pReverbReverse[(size_t) jlimit(0, 5, p.reverbType)]->load() > 0.5f;
     p.distOn = pDistOn->load() > 0.5f;

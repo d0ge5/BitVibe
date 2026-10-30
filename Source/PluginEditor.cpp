@@ -3,6 +3,7 @@
 #include "DrumPage.h"
 #include "PatternPanel.h"
 #include "SamplePanel.h"
+#include "EqPanel.h"
 #include "UiSettings.h"
 
 #include <functional>
@@ -536,6 +537,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     reverbTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::reverbType, reverbTypeBox);
     samplePanel = std::make_unique<SamplePanel>(proc, laf);
     content.addAndMakeVisible(*samplePanel);
+    eqPanel = std::make_unique<EqPanel>(proc, laf);
+    content.addAndMakeVisible(*eqPanel);
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     content.addAndMakeVisible(*patternPanel);
 
@@ -657,7 +660,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -829,6 +832,7 @@ void BitVibeEditor::applyRightMode()
                                                             &reverbLowSlider, &reverbHighSlider })
         c->setVisible(show);
     samplePanel->setAdvanced(advancedRight);
+    eqPanel->setVisible(show); // the EQ is an ADVANCED control
     patternPanel->setAdvanced(advancedRight);
     simpleButton.lit = !advancedRight;
     advancedButton.lit = advancedRight;
@@ -840,7 +844,7 @@ void BitVibeEditor::applyRightMode()
 
 int BitVibeEditor::patternTop() const
 {
-    return kSamplesY + samplePanel->currentHeight() + 8;
+    return kSamplesY + samplePanel->currentHeight() + 8 + (advancedRight ? EqPanel::kHeight + 8 : 0);
 }
 
 void BitVibeEditor::stepProgram(int direction)
@@ -1175,6 +1179,7 @@ void BitVibeEditor::resized()
              { &reverbLowSlider, true }, { &reverbHighSlider, true } },
            44, kReverb.getY() + 46);
     samplePanel->setBounds(face({ kSideX, kSamplesY, SamplePanel::kWidth, samplePanel->currentHeight() }));
+    eqPanel->setBounds(face({ kSideX, kSamplesY + samplePanel->currentHeight() + 8, EqPanel::kWidth, EqPanel::kHeight }));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
@@ -1504,6 +1509,8 @@ void BitVibeEditor::timerCallback()
     if (!drumsShown)
     {
         samplePanel->refresh();
+        if (eqPanel->isVisible())
+            eqPanel->refresh();
         patternPanel->refresh();
         repaint();
     }

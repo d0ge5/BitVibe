@@ -178,6 +178,12 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   compressed note), then a tone stack that crossfades a low-pass and a high-pass, which leaves the famous scoop in
   the middle with TONE at noon, then VOLUME. Both run their clippers at twice the sample rate to keep aliasing
   down. They are modelled from the circuits' published values, not copied from any hardware or software.
+- **EQ** (ADVANCED mode, above the beat pattern) is an eight-band equalizer and the last thing the sequenced sound goes
+  through, after the distortion and the reverb (your clean signal never goes through it). Switch it on with **ON**.
+  The graph shows the curve the bands make; drag a numbered point left and right for its frequency and up and down for
+  its gain, turn the mouse wheel over it for its width (Q), and double-click it to switch the band on or off. The row
+  below edits the selected band: its type (**Low Cut**, **Low Shelf**, **Bell**, **Notch**, **High Shelf**, **High Cut**),
+  **BAND ON**, **FREQ**, **GAIN** and **Q**, plus the EQ's **OUTPUT** level. It starts flat and switched off.
 - **SAMPLE BLEND** (panel in the right-hand column) has an **ON** button in its top corner that switches the random sounds on or off without touching the list, banks or volumes. brings a random sound into the sequence: at the start of
   every sequencer step one sound is picked at random from your list and fed into the signal before the pitch
   shifter and the bit-crush, sample-rate and filter stage, so it is shifted by the sequence's pitch steps and
@@ -431,7 +437,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 425 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 440 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

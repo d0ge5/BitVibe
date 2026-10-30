@@ -157,12 +157,12 @@ int main(int argc, char** argv)
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 58 && findParam(*plugin, "Program") != nullptr
+    check(plugin->getParameters().size() == 100 && findParam(*plugin, "Program") != nullptr
               && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
               && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
               && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr
               && findParam(*plugin, "Beat Output") != nullptr,
-          "exposes " + String(plugin->getParameters().size()) + " parameters (57 + Program selector, incl. the drum-map ones and Beat Output)");
+          "exposes " + String(plugin->getParameters().size()) + " parameters (99 + Program selector, incl. the drum-map ones and Beat Output)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 

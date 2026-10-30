@@ -82,6 +82,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/DrumPage.cpp
         Source/PatternPanel.cpp
         Source/SamplePanel.cpp
+        Source/EqPanel.cpp
         Source/SampleBank.cpp
         Source/DrumBeat.cpp)
 
@@ -133,6 +134,7 @@ if(BITVIBE_BUILD_PLUGIN)
             Source/DrumPage.cpp
         Source/PatternPanel.cpp
         Source/SamplePanel.cpp
+        Source/EqPanel.cpp
         Source/SampleBank.cpp
             Source/DrumBeat.cpp)
         target_include_directories(BitVibeEditorSnapshot PRIVATE Source)

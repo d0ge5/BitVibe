@@ -12,6 +12,7 @@
 
 #include "Components.h"
 #include "Distortion.h"
+#include "Equalizer.h"
 #include "Fuzz.h"
 #include "Mapping.h"
 #include "Reverb.h"
@@ -99,6 +100,12 @@ struct Params
     bool reverbOn = true;
     bool sampleOn = true;
 
+    // The EQ: the last thing the sequenced sound goes through, after the distortion and the reverb and before the
+    // dry/wet blend (the clean signal never goes through it). Off by default.
+    bool eqOn = false;
+    float eqOutputDb = 0.0f;
+    std::array<EqBand, kNumEqBands> eqBands = defaultEqBands();
+
     // Sample blend: at the start of every sequencer step (with this chance) one of the picked sounds, chosen at
     // random, is mixed into the sequenced sound. The volume is set by two levels and the MIX knob between them:
     // sampleMix 0 plays at sampleBaseDb, 1 at sampleMaxDb (a base at the bottom, -60 dB, means silence). The set is
@@ -177,6 +184,7 @@ public:
             ch.distReverb.prepare(fs);
             ch.fuzz.prepare(fs);
             ch.fuzzReverb.prepare(fs);
+            ch.eq.prepare(fs);
         }
 
         srKnobSm.setTime(fs, 10.0f);
@@ -198,6 +206,7 @@ public:
         sampleMixSm.setTime(fs, 15.0f);
         distOnSm.setTime(fs, 10.0f);
         reverbOnSm.setTime(fs, 15.0f);
+        eqOnSm.setTime(fs, 10.0f);
         sampleOnSm.setTime(fs, 15.0f);
         fxAttack = 1.0f - std::exp(-1.0f / (float) (fs * 0.002));
         fxRelease = 1.0f - std::exp(-1.0f / (float) (fs * 0.025));
@@ -221,6 +230,7 @@ public:
             ch.distReverb.reset();
             ch.fuzz.reset();
             ch.fuzzReverb.reset();
+            ch.eq.reset();
             ch.held = 0.0f;
         }
         primed = false;
@@ -253,6 +263,8 @@ public:
             return;
 
         beginBlock(p);
+        for (auto& ch : channels)
+            ch.eq.setBands(p.eqBands, p.eqOutputDb, numSamples);
         int nextEvent = 0;
 
         for (int n = 0; n < numSamples; ++n)
@@ -359,6 +371,8 @@ public:
                 samplePlayer.release(); // switched off: what is sounding fades out
             const float distAmount = distOnSm.next(blk.distOn ? 1.0f : 0.0f);
             const bool distRun = blk.distOn || distAmount > 1.0e-4f;
+            const float eqAmount = eqOnSm.next(blk.eqOn ? 1.0f : 0.0f);
+            const bool eqRun = blk.eqOn || eqAmount > 1.0e-4f;
             const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
             const auto heard = samplePlayer.process();
             const float sampleSignal = heard.sequence * sampleMixSm.next(blk.sampleGain) * sampleOnGain + heard.preview;
@@ -410,6 +424,11 @@ public:
                 y *= muteGain;
                 y *= invHeadroom;
                 y += reverbOut * (revMix * revLevel * invHeadroom); // added to the sequenced sound, which stays as it is
+                if (eqRun) // the EQ comes last, on everything the sequenced sound has become
+                {
+                    const float equalized = ch.eq.process(y);
+                    y += (equalized - y) * eqAmount;
+                }
 
                 if (!std::isfinite(y))
                 {
@@ -466,6 +485,7 @@ private:
         Reverb reverb;
         Distortion dist, distReverb; // the second one distorts the reverb when the player asks for that
         Fuzz fuzz, fuzzReverb;       // the same two jobs for the fuzz setting
+        Equalizer eq;
         float held = 0.0f;
     };
 
@@ -482,7 +502,7 @@ private:
         int reverbType = 0;
         bool reverbReverse = false;
         bool distOn = false, distReverb = false;
-        bool reverbOn = true, sampleOn = true;
+        bool reverbOn = true, sampleOn = true, eqOn = false;
         int distType = 0;
         bool patternOn = false;
         bool patternLock = false;
@@ -525,6 +545,7 @@ private:
             patternIdx = 0;
         blk.distOn = p.distOn;
         blk.reverbOn = p.reverbOn;
+        blk.eqOn = p.eqOn;
         blk.sampleOn = p.sampleOn;
         blk.distType = std::clamp(p.distType, 0, 1);
         blk.distReverb = p.distReverb;
@@ -571,6 +592,7 @@ private:
             sampleMixSm.snap(blk.sampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
+            eqOnSm.snap(blk.eqOn ? 1.0f : 0.0f);
             sampleOnSm.snap(blk.sampleOn ? 1.0f : 0.0f);
             primed = true;
         }
@@ -839,7 +861,7 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm, reverbOnSm, sampleOnSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, distOnSm, reverbOnSm, sampleOnSm, eqOnSm;
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)
