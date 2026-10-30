@@ -5,6 +5,8 @@
 #include "SamplePanel.h"
 #include "UiSettings.h"
 
+#include <functional>
+
 using namespace juce;
 
 namespace
@@ -258,6 +260,128 @@ void FootSwitch::mouseUp(const MouseEvent&)
         onRelease();
 }
 
+void StepStrip::set(const std::array<Step, 6>& steps, int playing)
+{
+    bool changed = playing != current;
+    for (size_t i = 0; i < 6 && !changed; ++i)
+        changed = std::abs(steps[i].knob - shown[i].knob) > 0.002f || steps[i].kind != shown[i].kind;
+    if (changed)
+    {
+        shown = steps;
+        current = playing;
+        repaint();
+    }
+}
+
+void StepStrip::mouseUp(const MouseEvent& e)
+{
+    if (contains(e.getPosition()) && onClick)
+        onClick();
+}
+
+void StepStrip::paint(Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    g.setColour(Colour(0xff0e0e10).withAlpha(0.8f));
+    g.fillRoundedRectangle(b, 3.0f);
+    const float slot = b.getWidth() / 6.0f;
+    for (int i = 0; i < 6; ++i)
+    {
+        const auto cell = Rectangle<float>(b.getX() + slot * (float) i, b.getY(), slot, b.getHeight()).reduced(2.0f, 3.0f);
+        const bool lit = i == current;
+        const auto& s = shown[(size_t) i];
+        g.setColour(lit ? kAccent : kInkDim.withAlpha(0.8f));
+        if (s.kind == 0) // skipped
+            g.fillRect(cell.getX() + 1.0f, cell.getCentreY() - 0.75f, cell.getWidth() - 2.0f, 1.5f);
+        else if (s.kind == 1) // muted
+        {
+            const auto x = cell.reduced(cell.getWidth() * 0.2f, cell.getHeight() * 0.2f);
+            g.drawLine(x.getX(), x.getY(), x.getRight(), x.getBottom(), 1.4f);
+            g.drawLine(x.getX(), x.getBottom(), x.getRight(), x.getY(), 1.4f);
+        }
+        else
+        {
+            const float h = jmax(2.0f, cell.getHeight() * jlimit(0.0f, 1.0f, s.knob));
+            g.fillRoundedRectangle(cell.withTop(cell.getBottom() - h), 1.5f);
+        }
+    }
+    g.setColour(Colour(0xff3c3c42));
+    g.drawRoundedRectangle(b.reduced(0.5f), 3.0f, 1.0f);
+}
+
+void HelpOverlay::paint(Graphics& g)
+{
+    g.fillAll(Colours::black.withAlpha(0.84f));
+    const auto card = getLocalBounds().reduced(60, 185).toFloat();
+    g.setColour(Colour(0xff17171a));
+    g.fillRoundedRectangle(card, 12.0f);
+    g.setColour(kAccent);
+    g.drawRoundedRectangle(card.reduced(0.5f), 12.0f, 1.5f);
+
+    auto area = card.reduced(28.0f, 22.0f).toNearestInt();
+    g.setColour(kInk);
+    g.setFont(bold(20.0f));
+    g.drawText("QUICK START", area.removeFromTop(28), Justification::left);
+    g.setColour(kInkDim);
+    g.setFont(plain(11.0f));
+    g.drawText("Click anywhere to close. Open it again with the HELP button at the top.", area.removeFromTop(18), Justification::left);
+    area.removeFromTop(10);
+
+    static const char* steps[] = {
+        "1.  Play. A picked note starts the STUTTER and the SEQUENCER. TRIGGER sets how hard you must pick; the thin meter "
+        "next to it shows your playing against that line and flashes when a pick is caught.",
+        "2.  Turn up SEQUENCER (how many times the six-step sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
+        "the steps change: pitch, filter or sample rate. ALT, or a click on the little bars above TEMPO, shows the six step knobs.",
+        "3.  SAMPLE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal; OUTPUT sets the level.",
+        "4.  The right-hand column works on the sequenced sound only, while a sequence or stutter plays (their lights show it): "
+        "distortion or fuzz, a reverb, and random sounds from your own files. The BEAT PATTERN can start the sequence on chosen "
+        "steps of a bar instead of on your picks (PATTERN LOCK makes it the only thing that does).",
+        "5.  Hover over anything for a short description. Double-click a knob to reset it. Drag the bottom-right corner to resize the window.",
+    };
+    g.setFont(plain(12.5f));
+    for (const auto* text : steps)
+    {
+        g.setColour(kInk);
+        g.drawFittedText(text, area.removeFromTop(48), Justification::topLeft, 3, 1.0f); // wrap, never squeeze
+        area.removeFromTop(4);
+    }
+
+    // where the sound goes
+    area.removeFromTop(8);
+    g.setColour(kInkDim);
+    g.setFont(bold(11.0f));
+    g.drawText("WHERE THE SOUND GOES", area.removeFromTop(18), Justification::left);
+    area.removeFromTop(6);
+    static const char* boxes[] = { "INPUT", "STUTTER +\nSEQUENCE", "CRUSH +\nFILTER", "DISTORTION\n/ FUZZ", "+ REVERB", "DRY/WET", "OUTPUT" };
+    auto row = area.removeFromTop(48);
+    const int n = (int) std::size(boxes);
+    const float w = (float) row.getWidth() / (float) n;
+    for (int i = 0; i < n; ++i)
+    {
+        const auto box = Rectangle<float>((float) row.getX() + w * (float) i, (float) row.getY(), w, (float) row.getHeight()).reduced(8.0f, 4.0f);
+        g.setColour(Colour(0xff26262b));
+        g.fillRoundedRectangle(box, 6.0f);
+        g.setColour(i == 0 || i == n - 1 ? kInkDim : kAccent);
+        g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, 1.0f);
+        g.setColour(kInk);
+        g.setFont(bold(10.5f));
+        g.drawFittedText(boxes[i], box.toNearestInt().reduced(3, 2), Justification::centred, 2);
+        if (i + 1 < n)
+        {
+            g.setColour(kInkDim);
+            const float y = box.getCentreY(), x0 = box.getRight() + 1.0f, x1 = box.getRight() + 15.0f;
+            g.drawArrow(Line<float>(x0, y, x1, y), 1.5f, 6.0f, 6.0f);
+        }
+    }
+    area.removeFromTop(8);
+    g.setColour(kInkDim);
+    g.setFont(plain(11.5f));
+    g.drawFittedText("The random sounds of the SAMPLE BLEND join the sequence before the crush, so they are crushed with it. The reverb hears the "
+                     "sequence before the distortion (tick REVERB TOO to distort the reverb as well). DRY/WET then blends all of it with your "
+                     "clean signal, which never gets distortion or reverb.",
+                     area.removeFromTop(48), Justification::topLeft, 3, 1.0f);
+}
+
 void LevelMeter::set(float levelDb, float thresholdDb, bool flash)
 {
     if (std::abs(levelDb - level) > 0.2f || std::abs(thresholdDb - threshold) > 0.05f || flash != lit)
@@ -363,6 +487,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     triggerMeter.setTooltip("INPUT METER: how hard you are playing (after INPUT). The white line is how hard a pick has to be to start the "
                             "stutter and sequencer (set with TRIGGER); the bar lights orange when a pick is caught.");
     content.addAndMakeVisible(triggerMeter);
+    stepStrip.setTooltip("THE SEQUENCE: one bar per step, as set on the step knobs (a dash = skipped, a cross = muted). "
+                         "The lit bar is the step playing now. Click to show the step knobs (the same as ALT).");
+    stepStrip.onClick = [this] { setAltLayer(!altLayer); };
+    content.addAndMakeVisible(stepStrip);
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
@@ -528,7 +656,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
                         &reverbDecaySlider, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -563,6 +691,21 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setResizable(true, true);
     applySize();
     buildBackground();
+
+    // the quick-start guide: on top of everything, opens by itself the first time
+    helpButton.setTooltip("HELP: a one-page quick start, and how the sound travels through BitVibe.");
+    helpButton.onClick = [this]
+    {
+        helpOverlay.setVisible(true);
+        helpOverlay.toFront(false);
+    };
+    content.addAndMakeVisible(helpButton);
+    content.addChildComponent(helpOverlay);
+    if (!uisettings::helpSeen())
+    {
+        helpOverlay.setVisible(true);
+        uisettings::markHelpSeen();
+    }
     startTimerHz(30);
 }
 
@@ -726,15 +869,16 @@ String BitVibeEditor::readoutText(int i) const
                 return "OFF";
             if (m.random)
                 return "RANDOM";
-            const char* speed = m.speed > 1.5f ? "DBL" : (m.speed < 0.75f ? "HALF" : "FULL");
-            return String(speed) + " x" + String(m.repeats);
+            // how many repeats, and how fast they play (normal, twice as fast, half as fast)
+            const String repeats = String(m.repeats) + (m.repeats == 1 ? " REPEAT" : " REPEATS");
+            return m.speed > 1.5f ? repeats + ", FAST" : (m.speed < 0.75f ? repeats + ", SLOW" : repeats);
         }
         case 4:
         {
             static const char* names[] = { "OFF", "ONCE", "TWICE", "4 TIMES", "8 TIMES", "LOOP" };
             return names[jlimit(0, 5, roundToInt(rawValue(ids::seqPlay)))];
         }
-        default: return "x" + String(mapping::seqMultiplier(roundToInt(rawValue(ids::seqMult))));
+        default: return "x" + String(mapping::seqMultiplier(roundToInt(rawValue(ids::seqMult)))) + " TEMPO";
     }
 }
 
@@ -955,6 +1099,7 @@ void BitVibeEditor::resized()
     headroomBox.setBounds(face({ 170, 654, 124, 24 }));
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
     triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
+    stepStrip.setBounds(face({ 190, 355, 100, 24 }));
     fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
@@ -978,6 +1123,8 @@ void BitVibeEditor::resized()
     for (auto* c : pedalComponents)
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
+    helpButton.setBounds(kWidth - 140 - 76, 8, 70, 24);
+    helpOverlay.setBounds(0, 0, baseWidth, baseHeight);
     pedalTab.setBounds(12, 8, 96, 24);
     drumsTab.setBounds(114, 8, 96, 24);
     drumPage->setBounds(0, kTabsH, kWidth, baseHeight - kTabsH);
@@ -1221,6 +1368,17 @@ void BitVibeEditor::timerCallback()
             meterFlashUntil = nowMs + 180.0;
         }
         triggerMeter.set(meterDb, bitvibe::AttackDetector::floorDb(rawValue(ids::sensitivity)), nowMs < meterFlashUntil);
+    }
+    {
+        std::array<StepStrip::Step, 6> steps {};
+        const auto type = seqType();
+        for (int i = 0; i < 6; ++i)
+        {
+            const float knob = rawValue(ids::step(i).toRawUTF8());
+            const auto decoded = bitvibe::mapping::decodeStep(knob, type);
+            steps[(size_t) i] = { knob, decoded.kind == bitvibe::mapping::Step::Kind::Skip ? 0 : (decoded.kind == bitvibe::mapping::Step::Kind::Mute ? 1 : 2) };
+        }
+        stepStrip.set(steps, proc.getEngine().getCurrentStep());
     }
     refreshPresetName();
     showSeqType();

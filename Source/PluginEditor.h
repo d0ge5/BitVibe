@@ -102,6 +102,35 @@ private:
     bool lit = false;
 };
 
+// A small picture of the six sequencer steps on the front of the pedal: one bar per step (its knob position), skipped
+// steps drawn as a dash, muted ones as a cross, and the step that is playing lit. Clicking it shows the step knobs.
+class StepStrip : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    struct Step
+    {
+        float knob = 0.5f;
+        int kind = 2; // 0 = skip, 1 = mute, 2 = plays
+    };
+    std::function<void()> onClick;
+    void set(const std::array<Step, 6>& steps, int playing);
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+
+private:
+    std::array<Step, 6> shown {};
+    int current = -1;
+};
+
+// The quick-start guide: what to do first and where the sound goes. Opens by itself the first time, and with the
+// HELP button at the top; a click anywhere closes it.
+class HelpOverlay : public juce::Component
+{
+public:
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override { setVisible(false); }
+};
+
 class PatternPanel;
 class SamplePanel;
 
@@ -162,6 +191,9 @@ private:
 
     Content content { *this };
     LevelMeter triggerMeter;
+    StepStrip stepStrip;
+    PedalButton helpButton { "? HELP" };
+    HelpOverlay helpOverlay;
     float meterDb = -100.0f;
     int seenAttacks = 0;
     double meterFlashUntil = 0.0;

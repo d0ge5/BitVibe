@@ -84,10 +84,13 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 ## Using it
 
-**Finding your way:** hover over anything for a short description, double-click a knob to put it back to its
+**Finding your way:** the **? HELP** button at the top opens a one-page quick start with a picture of where the
+sound goes (it opens by itself the first time). Hover over anything for a short description, double-click a knob to put it back to its
 default, and watch the bubble that shows a knob's value while you turn it. The thin **input meter** next to TRIGGER
 shows how hard you are playing; the white line on it is how hard a pick has to be to start the stutter and
-sequencer, and the bar lights orange when a pick is caught. The small lights next to DISTORTION / FUZZ, REVERB and
+sequencer, and the bar lights orange when a pick is caught. The row of six little bars above TEMPO is the sequence (one bar per step, a dash for a skipped step, a cross for
+a muted one, the playing step lit); click it to see the step knobs. The STUTTER readout says how many repeats and
+how fast (for example "6 REPEATS, FAST"). The small lights next to DISTORTION / FUZZ, REVERB and
 SAMPLE BLEND come on while a sequence or stutter plays, which is when those effects act; with both the sequencer
 and the stutter off, a note under the right-hand column says so.
 

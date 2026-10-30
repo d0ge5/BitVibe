@@ -127,7 +127,7 @@ void SamplePanel::refresh()
     if (numAvailable == 0)
         text = "NO SOUNDS FOUND";
     else
-        text = "SOUNDS: " + String(bank.getNumSelected()) + " OF " + String(numAvailable);
+        text = "CHOOSE SOUNDS (" + String(bank.getNumSelected()) + " OF " + String(numAvailable) + ")";
     if (text != shownButtonText)
     {
         shownButtonText = text;

@@ -612,6 +612,21 @@ void testResizing()
     uisettings::saveWindowScale(5.0f);
     check(uisettings::loadWindowScale() <= uisettings::kMaxScale, "a remembered size is kept inside the limits");
     SampleBank::settingsFolder().getChildFile("ui_settings.xml").deleteFile();
+
+    // The quick-start help opens by itself the first time only.
+    {
+        std::unique_ptr<BitVibeEditor> first(static_cast<BitVibeEditor*>(p->createEditor()));
+        bool shown = false;
+        for (auto* c : first->getContent().getChildren())
+            shown = shown || (dynamic_cast<HelpOverlay*>(c) != nullptr && c->isVisible());
+        std::unique_ptr<BitVibeEditor> second(static_cast<BitVibeEditor*>(p->createEditor()));
+        bool shownAgain = false;
+        for (auto* c : second->getContent().getChildren())
+            shownAgain = shownAgain || (dynamic_cast<HelpOverlay*>(c) != nullptr && c->isVisible());
+        check(shown && !shownAgain, "the quick-start help opens by itself the first time, and not after that");
+        save(*first, File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_help.png"));
+    }
+    uisettings::markHelpSeen();
 }
 
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
@@ -682,7 +697,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 51 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 51 and 0)");
+    check(controls == 52 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 52 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1294,6 +1309,7 @@ int main(int argc, char** argv)
     const File testSettings = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_settings");
     testSettings.deleteRecursively();
     SampleBank::setSettingsFolderOverride(testSettings);
+    uisettings::markHelpSeen(); // the quick-start help would otherwise cover the screenshots
     const File outDir(argv[1]);
     outDir.createDirectory();
 
