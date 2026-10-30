@@ -12,7 +12,7 @@ with a distortion, reverb, random-sample and EQ section that works only on the s
 plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from scratch in C++ with
 [JUCE](https://juce.com) and inspired by a hardware pedal (see [Credits](#credits-and-licence)).
 
-> **Status: early version (0.1.0), work in progress.** The sound engine is covered by automated tests
+> **Status: early version (0.2.0), work in progress.** The sound engine is covered by automated tests
 > and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
 > macOS build has not been run on a real Mac yet. Bug reports are welcome.
 >
