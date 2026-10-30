@@ -104,6 +104,16 @@ public:
     void saveCurrentPreset();            // writes the live sound into the selected slot
     bool isCurrentPresetModified() const; // live sound differs from the selected slot
 
+    // Preset files to share with other players (message thread). A file holds the sound as it is heard now: the
+    // preset slot's knobs, steps, tempo and morph sets, the effects on the right-hand side (distortion, reverb, sample
+    // blend, EQ, dry/wet, FX only on triggers), the beat pattern and the names of the picked sounds. Settings that
+    // belong to one player's rig stay out: input and output level, headroom, trigger sensitivity, sync and bypass.
+    std::unique_ptr<juce::XmlElement> exportPreset() const;
+    // Loads a file into the selected slot (its name and sound) and applies its effects. False, with a reason, when the
+    // file is not a BitVibe preset. Sounds the receiver does not have are left out of the list.
+    bool importPreset(const juce::XmlElement&, juce::String& message);
+    static juce::File presetFolder(); // Documents/BitVibe/Presets
+
     // Expression morph: the two knob sets the expression parameter sweeps between.
     void captureToeUp();   // stores the current knob values as the toe-up set
     void captureToeDown(); // stores the current knob values as the toe-down set

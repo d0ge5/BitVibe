@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <limits>
+#include <map>
 
 using namespace juce;
 
@@ -733,6 +735,139 @@ bool BitVibeProcessor::isCurrentPresetModified() const
         if (std::abs(now.values[i] - slot.values[i]) > 1.0e-4f)
             return true;
     return false;
+}
+
+// ------------------------------------------------------------------------------------------
+// Preset files
+//
+//   <BITVIBE_PRESET version="1" name="My sound">
+//     <PRESET name=".." sample=".." ...> <UP/> <DOWN/> </PRESET>     the slot, as in the project state
+//     <EFFECTS> <PARAM id="reverbMix" value="0.4"/> ... </EFFECTS>     plain values (dB, Hz, %) of the shared effects
+//     <PATTERN action="1" steps="4369" randomBeats="31" signature="0"/>
+//     <SOUNDS> <FILE name="snare.wav"/> ... </SOUNDS>
+//   </BITVIBE_PRESET>
+
+namespace
+{
+// The parameters outside the preset slots that are part of a shared sound.
+bool isSharedEffect(const String& id)
+{
+    for (const char* prefix : { "reverb", "dist", "sample", "eq" })
+        if (id.startsWith(prefix))
+            return true;
+    return id == ids::mix || id == ids::fxTriggers || id == ids::patternLock;
+}
+} // namespace
+
+File BitVibeProcessor::presetFolder()
+{
+    return File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Presets");
+}
+
+std::unique_ptr<XmlElement> BitVibeProcessor::exportPreset() const
+{
+    auto slot = snapshotCurrent();
+    {
+        const ScopedLock lock(presetLock);
+        slot.name = slots[(size_t) currentProgram.load()].name;
+    }
+    auto xml = std::make_unique<XmlElement>("BITVIBE_PRESET");
+    xml->setAttribute("version", 1);
+    xml->setAttribute("name", slot.name);
+    xml->addChildElement(slotToTree(slot).createXml().release());
+
+    auto* effects = xml->createNewChildElement("EFFECTS");
+    for (auto* p : getParameters())
+        if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p); ranged != nullptr && isSharedEffect(ranged->paramID))
+        {
+            auto* e = effects->createNewChildElement("PARAM");
+            e->setAttribute("id", ranged->paramID);
+            e->setAttribute("value", (double) ranged->convertFrom0to1(ranged->getValue()));
+        }
+
+    const auto pattern = drumBeat.getPattern();
+    auto* pat = xml->createNewChildElement("PATTERN");
+    pat->setAttribute("action", (int) pattern.action);
+    pat->setAttribute("steps", (int) pattern.steps);
+    pat->setAttribute("randomBeats", (int) pattern.randomBeats);
+    pat->setAttribute("signature", pattern.signature);
+
+    auto* sounds = xml->createNewChildElement("SOUNDS");
+    for (const auto& name : sampleBank.getSelected())
+        sounds->createNewChildElement("FILE")->setAttribute("name", name);
+    return xml;
+}
+
+bool BitVibeProcessor::importPreset(const XmlElement& xml, String& message)
+{
+    const auto* slotXml = xml.getChildByName("PRESET");
+    if (!xml.hasTagName("BITVIBE_PRESET") || slotXml == nullptr)
+    {
+        message = "This is not a BitVibe preset file.";
+        return false;
+    }
+
+    // the slot: name and sound, into the selected slot
+    const int program = currentProgram.load();
+    auto slot = slotFromTree(ValueTree::fromXml(*slotXml), program);
+    slot.name = cleanPresetName(xml.getStringAttribute("name", slot.name), slot.name);
+    {
+        const ScopedLock lock(presetLock);
+        slots[(size_t) program] = slot;
+    }
+    applySlot(slot);
+
+    // the effects: everything shared starts from its default, then takes what the file says (so a file from an older
+    // version of BitVibe sounds the way it did there)
+    std::map<String, double> values;
+    if (const auto* effects = xml.getChildByName("EFFECTS"))
+        for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
+            values[e->getStringAttribute("id")] = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN());
+    for (auto* p : getParameters())
+        if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p); ranged != nullptr && isSharedEffect(ranged->paramID))
+        {
+            float normalised = ranged->getDefaultValue();
+            if (const auto it = values.find(ranged->paramID); it != values.end() && std::isfinite(it->second))
+                normalised = ranged->convertTo0to1((float) jlimit((double) ranged->getNormalisableRange().start,
+                                                                  (double) ranged->getNormalisableRange().end, it->second));
+            ranged->setValueNotifyingHost(normalised);
+        }
+
+    // the beat pattern
+    bitvibe::DrumPattern pattern;
+    if (const auto* pat = xml.getChildByName("PATTERN"))
+    {
+        pattern.action = (bitvibe::DrumAction) jlimit(0, bitvibe::kNumDrumActions - 1, pat->getIntAttribute("action", 0));
+        pattern.steps = (uint32_t) pat->getIntAttribute("steps", 0) & bitvibe::kPatternMask;
+        pattern.randomBeats = (uint32_t) pat->getIntAttribute("randomBeats", 0x1F) & 0x1Fu;
+        pattern.signature = jlimit(0, bitvibe::kNumTimeSignatures - 1, pat->getIntAttribute("signature", 0));
+    }
+    drumBeat.setPattern(pattern);
+
+    // the sounds: those this player has
+    int missing = 0;
+    if (const auto* sounds = xml.getChildByName("SOUNDS"))
+    {
+        StringArray available, wanted;
+        for (const auto& f : SampleBank::libraryFiles())
+            available.add(f.getFileName());
+        for (const auto* f : sounds->getChildWithTagNameIterator("FILE"))
+        {
+            const auto name = f->getStringAttribute("name");
+            if (available.contains(name))
+                wanted.add(name);
+            else if (name.isNotEmpty())
+                ++missing;
+        }
+        sampleBank.setSelected(wanted, false); // the remembered list stays as the player left it
+    }
+
+    updateHostDisplay(ChangeDetails().withProgramChanged(true).withParameterInfoChanged(true));
+    message = "Loaded \"" + slot.name + "\" into slot " + String(program + 1) + ".";
+    if (missing > 0)
+        message << " " << missing << (missing == 1 ? " sound it uses is" : " sounds it uses are")
+                << " not in your sounds folder, so the sample blend plays without " << (missing == 1 ? "it." : "them.");
+    return true;
 }
 
 // ------------------------------------------------------------------------------------------

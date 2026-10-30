@@ -201,6 +201,10 @@ private:
     LevelMeter triggerMeter;
     StepStrip stepStrip;
     PedalButton helpButton { "? HELP" };
+    PedalButton exportButton { "EXPORT" }, importButton { "IMPORT" };
+    std::unique_ptr<juce::FileChooser> presetChooser;
+    void exportPresetFile();
+    void importPresetFile();
     PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
     bool advancedRight = false;
     HelpOverlay helpOverlay;

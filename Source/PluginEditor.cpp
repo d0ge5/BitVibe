@@ -705,6 +705,14 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         helpOverlay.toFront(false);
     };
     content.addAndMakeVisible(helpButton);
+    exportButton.setTooltip("EXPORT: save the sound you hear as a preset file (XML) to give to other players: the knobs, the sequence, "
+                            "the effects, the beat pattern and the list of sounds. Your levels and trigger setting stay out.");
+    importButton.setTooltip("IMPORT: load a preset file someone gave you into the preset slot that is showing (it replaces that slot's "
+                            "name and sound; pick a free slot first if you want to keep it).");
+    exportButton.onClick = [this] { exportPresetFile(); };
+    importButton.onClick = [this] { importPresetFile(); };
+    content.addAndMakeVisible(exportButton);
+    content.addAndMakeVisible(importButton);
     simpleButton.setTooltip("SIMPLE: the right-hand side shows only the controls you need to make a sound. What it hides keeps its settings.");
     advancedButton.setTooltip("ADVANCED: the right-hand side shows every control: tone, cuts, levels, sound banks, sample volumes, time signature and more.");
     simpleButton.onClick = [this] { setRightMode(false); };
@@ -814,6 +822,59 @@ void BitVibeEditor::showDrums(bool on)
     pedalTab.repaint();
     drumsTab.repaint();
     repaint();
+}
+
+void BitVibeEditor::exportPresetFile()
+{
+    const auto folder = BitVibeProcessor::presetFolder();
+    folder.createDirectory();
+    const auto name = File::createLegalFileName(proc.getProgramName(proc.getCurrentProgram()).trim());
+    presetChooser = std::make_unique<FileChooser>("Export preset", folder.getChildFile((name.isEmpty() ? String("BitVibe preset") : name) + ".xml"), "*.xml");
+    Component::SafePointer<BitVibeEditor> safe(this);
+    presetChooser->launchAsync(FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
+                               [safe](const FileChooser& chooser)
+                               {
+                                   if (safe == nullptr)
+                                       return;
+                                   auto file = chooser.getResult();
+                                   if (file == File())
+                                       return;
+                                   if (!file.hasFileExtension(".xml"))
+                                       file = file.withFileExtension(".xml");
+                                   const auto xml = safe->proc.exportPreset();
+                                   const bool ok = xml->writeTo(file);
+                                   AlertWindow::showMessageBoxAsync(ok ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
+                                                                    ok ? "Preset exported" : "Could not export",
+                                                                    ok ? "Saved to " + file.getFullPathName() + ". Give this file to another BitVibe player and they can load it with IMPORT."
+                                                                       : "BitVibe could not write " + file.getFullPathName() + ".");
+                               });
+}
+
+void BitVibeEditor::importPresetFile()
+{
+    const auto folder = BitVibeProcessor::presetFolder();
+    folder.createDirectory();
+    presetChooser = std::make_unique<FileChooser>("Import preset", folder, "*.xml");
+    Component::SafePointer<BitVibeEditor> safe(this);
+    presetChooser->launchAsync(FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
+                               [safe](const FileChooser& chooser)
+                               {
+                                   if (safe == nullptr)
+                                       return;
+                                   const auto file = chooser.getResult();
+                                   if (file == File())
+                                       return;
+                                   String message;
+                                   bool ok = false;
+                                   if (auto xml = XmlDocument::parse(file))
+                                       ok = safe->proc.importPreset(*xml, message);
+                                   else
+                                       message = "This file could not be read as XML.";
+                                   AlertWindow::showMessageBoxAsync(ok ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
+                                                                    ok ? "Preset imported" : "Could not import", message);
+                                   safe->refreshPresetName();
+                                   safe->repaint();
+                               });
 }
 
 void BitVibeEditor::setRightMode(bool advanced)
@@ -1187,6 +1248,8 @@ void BitVibeEditor::resized()
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
     helpButton.setBounds(kWidth - 140 - 76, 8, 70, 24);
+    exportButton.setBounds(12, 8, 78, 24);
+    importButton.setBounds(94, 8, 78, 24);
     simpleButton.setBounds(kSideX + 300, 8, 76, 24);
     advancedButton.setBounds(kSideX + 380, 8, 76, 24);
     helpOverlay.setBounds(0, 0, baseWidth, baseHeight);

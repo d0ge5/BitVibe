@@ -94,6 +94,14 @@ how fast (for example "6 REPEATS, FAST"). The small lights next to DISTORTION / 
 SAMPLE BLEND come on while a sequence or stutter plays, which is when those effects act; with both the sequencer
 and the stutter off, a note under the right-hand column says so.
 
+**Sharing a sound:** **EXPORT** (top left) saves the sound you hear as a preset file (XML, in `Documents/BitVibe/Presets`
+by default) that you can give to other players: the knobs and steps, tempo, the expression morph, the effects on the
+right-hand side (distortion, reverb, sample blend, EQ), DRY/WET, the beat pattern and the names of the picked sounds.
+**IMPORT** loads such a file into the preset slot that is showing (it replaces that slot's name and sound, so pick a
+free slot first to keep yours). Settings that belong to your own rig stay as they are: input and output level,
+headroom, trigger sensitivity, sync and bypass. Sound files are not inside the preset: the receiver needs the same
+files in their sounds folder, and BitVibe says how many it could not find.
+
 **SIMPLE or ADVANCED:** the two buttons above the right-hand column choose how many controls it shows. **SIMPLE**
 (the default for a new player) keeps what you need to make a sound: the distortion type, ON, DRIVE and level; the
 reverb type, REVERSE, DECAY and REV MIX; the sound bank list, CHOOSE SOUNDS, SAMPLE MIX and CHANCE; the pattern's

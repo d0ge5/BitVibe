@@ -343,7 +343,7 @@ void testAttackDetector()
         for (size_t pos = 0; pos < again.size(); pos += 256)
         {
             float* c = again.data() + pos;
-            f.process(&c, 1, 256, p);
+            f.process(&c, 1, (int) std::min<size_t>(256, again.size() - pos), p); // the last block is shorter
             busy = busy || f.isEffectSideActive();
         }
         CHECK(busy, "with picks on, the stutter it starts lights the effect side");
@@ -2585,6 +2585,7 @@ void testBeatPattern()
 
 int main(int argc, char** argv)
 {
+    std::setvbuf(stdout, nullptr, _IONBF, 0); // so a crash still shows how far the checks got
     gVerbose = argc > 1 && std::string(argv[1]) == "--verbose";
     testMappings();
     testIdentity();

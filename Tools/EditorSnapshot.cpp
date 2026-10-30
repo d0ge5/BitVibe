@@ -677,6 +677,54 @@ void testEqParams()
     check(maxDifference(run(*p, in), in) < 1.0e-5f, "the clean signal is untouched");
 }
 
+// Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
+// rig settings stay as they were; files that are not presets are refused.
+void testPresetFiles()
+{
+    std::puts("preset files");
+    const auto in = makeInput(48000);
+    auto a = makeProcessor();
+    a->setCurrentProgram(3);
+    a->changeProgramName(3, "Shared sound");
+    setValue(*a, ids::sampleRate, 0.4f);
+    setValue(*a, ids::seqPlay, 5.0f);
+    setValue(*a, ids::reverbMix, 0.6f);
+    setValue(*a, ids::reverbType, 3.0f);
+    setValue(*a, ids::distOn, 1.0f);
+    setValue(*a, ids::eqOn, 1.0f);
+    setValue(*a, ids::eqBand(2, "Gain").toRawUTF8(), 9.0f);
+    setValue(*a, ids::mix, 0.8f);
+    a->getDrumBeat().setPattern({ bitvibe::DrumAction::RestartSequence, 0x1111u, 0x1Fu, 3 });
+    const auto library = SampleBank::libraryFiles();
+    if (library.size() >= 2)
+        a->getSampleBank().setSelected({ library[0].getFileName(), library[1].getFileName(), "not-on-this-computer.wav" }, false);
+
+    const auto text = a->exportPreset()->toString();
+    check(text.contains("BITVIBE_PRESET") && text.contains("Shared sound") && !text.contains("\"inputGain\""), "the file holds the sound, not the rig settings");
+
+    auto b = makeProcessor();
+    b->setCurrentProgram(9);
+    setValue(*b, ids::inputGain, 6.0f);
+    String message;
+    const auto parsed = XmlDocument::parse(text);
+    check(parsed != nullptr && b->importPreset(*parsed, message), "another plug-in imports it: " + message);
+    check(b->getProgramName(9) == "Shared sound" && b->getCurrentProgram() == 9, "into the slot that was showing, with its name");
+    check(std::abs(getValue(*b, ids::inputGain) - 6.0f) < 0.01f, "the receiver's input level is left alone");
+    check(b->getDrumBeat().getPattern() == a->getDrumBeat().getPattern(), "the beat pattern comes along");
+    if (library.size() >= 2)
+        check(b->getSampleBank().getSelected().size() == 2 && message.contains("1 sound"), "the sounds it has are picked; the one it lacks is reported");
+    setValue(*b, ids::inputGain, 0.0f);
+    check(maxDifference(run(*a, in), run(*b, in)) < 1.0e-5f, "and it sounds the same");
+
+    String why;
+    check(!b->importPreset(XmlElement("SOMETHING_ELSE"), why) && why.isNotEmpty(), "a file that is not a preset is refused");
+    auto broken = XmlDocument::parse(text);
+    if (auto* fx = broken->getChildByName("EFFECTS"))
+        for (auto* e : fx->getChildIterator())
+            e->setAttribute("value", e->getStringAttribute("id") == ids::reverbMix ? "1e9" : "nan");
+    check(b->importPreset(*broken, why) && getValue(*b, ids::reverbMix) <= 1.0f && isFinite(run(*b, in)), "nonsense values are kept in range");
+}
+
 // The dry/wet mix and the "FX only on triggers" option, through the processor with an engine that is reset
 // before every render (the host test cannot guarantee that).
 void testMixAndTriggerOnly()
@@ -745,7 +793,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 55 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 55 and 0)");
+    check(controls == 57 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 57 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1439,6 +1487,7 @@ int main(int argc, char** argv)
     testRightModes(outDir);
     testDistortionParams();
     testEqParams();
+    testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
