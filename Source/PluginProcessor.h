@@ -57,6 +57,7 @@ inline constexpr const char* reverbHighCut = "reverbHighCut";
 inline constexpr const char* beatPlay = "beatPlay";
 inline constexpr const char* beatLevel = "beatLevel";
 inline constexpr const char* pickTriggers = "pickTriggers";
+inline constexpr const char* patternLock = "patternLock";
 inline constexpr const char* stepClock = "stepClock";
 inline constexpr const char* beatOutput = "beatOutput";
 
@@ -218,6 +219,7 @@ private:
     std::atomic<float>* pBeatPlay = nullptr;
     std::atomic<float>* pBeatLevel = nullptr;
     std::atomic<float>* pPickTriggers = nullptr;
+    std::atomic<float>* pPatternLock = nullptr;
     std::atomic<float>* pStepClock = nullptr;
     std::atomic<float>* pBeatOutput = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};

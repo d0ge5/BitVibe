@@ -113,6 +113,9 @@ struct Params
     std::uint32_t patternSteps = 0;
     int patternBarSteps = 16;
     double hostPpq = -1.0;
+    // Pattern lock: only the beat pattern may restart or step the sequence. The level of the input (picked notes) and
+    // the drum hits can still fire the stutter, but they no longer restart the sequence.
+    bool patternLock = false;
 
     // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
     bool pickTriggers = true;
@@ -248,7 +251,7 @@ public:
         for (int n = 0; n < numSamples; ++n)
         {
             while (nextEvent < numEvents && events[nextEvent].offset <= n)
-                applyTrigger(events[nextEvent++].action);
+                applyExternalTrigger(events[nextEvent++].action);
             advancePattern();
 
             // ---- input stage -------------------------------------------------------------
@@ -410,7 +413,7 @@ public:
         }
 
         while (nextEvent < numEvents)
-            applyTrigger(events[nextEvent++].action);
+            applyExternalTrigger(events[nextEvent++].action);
 
         beatPhaseOut.store((float) beatPhase, std::memory_order_relaxed);
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
@@ -455,6 +458,7 @@ private:
         bool distOn = false, distReverb = false;
         int distType = 0;
         bool patternOn = false;
+        bool patternLock = false;
         TriggerAction patternAction = TriggerAction::RestartSequence;
         std::uint32_t patternSteps = 0;
         int patternBarSteps = 16;
@@ -486,6 +490,7 @@ private:
             patternFresh = true; // the first step of the bar fires on the next sample
         }
         blk.patternOn = p.patternOn;
+        blk.patternLock = p.patternLock;
         blk.patternAction = p.patternAction;
         blk.patternSteps = p.patternSteps;
         blk.patternBarSteps = std::clamp(p.patternBarSteps, 1, 32);
@@ -592,7 +597,21 @@ private:
         holdNow = p.stutterHold;
     }
 
-    void onAttack() { applyTrigger(TriggerAction::RestartAndStutter); }
+    void onAttack() { applyExternalTrigger(TriggerAction::RestartAndStutter); }
+
+    // A trigger that does not come from the beat pattern (a picked note, a drum hit). With the pattern lock on it can
+    // still fire the stutter, but it cannot restart or step the sequence.
+    void applyExternalTrigger(TriggerAction action)
+    {
+        if (blk.patternLock)
+        {
+            if (action == TriggerAction::RestartSequence || action == TriggerAction::NextStep)
+                return;
+            if (action == TriggerAction::RestartAndStutter)
+                action = TriggerAction::Stutter;
+        }
+        applyTrigger(action);
+    }
 
     void applyTrigger(TriggerAction action)
     {

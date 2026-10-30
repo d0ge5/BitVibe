@@ -166,6 +166,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withValueFromStringFunction([](const String& t)
                                          { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::patternLock), "Pattern Lock", false));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
     // Where the beat's sound goes (see BeatRoute.h). Also a rig setting.
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
@@ -284,6 +285,7 @@ BitVibeProcessor::BitVibeProcessor()
     pBeatLevel = raw(ids::beatLevel);
     pBeatOutput = raw(ids::beatOutput);
     pPickTriggers = raw(ids::pickTriggers);
+    pPatternLock = raw(ids::patternLock);
     pStepClock = raw(ids::stepClock);
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
@@ -427,6 +429,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbLowCutHz = pReverbLowCut->load();
     p.reverbHighCutHz = pReverbHighCut->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
+    p.patternLock = pPatternLock->load() > 0.5f;
     p.stepsOnHits = roundToInt(pStepClock->load()) == 1;
     return p;
 }

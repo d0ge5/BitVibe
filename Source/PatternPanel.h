@@ -35,6 +35,8 @@ private:
 
     juce::ComboBox actionBox, signatureBox;
     PedalButton restartButton { "RESTART BAR" };
+    juce::ToggleButton lockButton { "PATTERN LOCK" }; // only the pattern restarts the sequence
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lockAtt;
     PedalButton clearButton { "CLEAR" }, beatsButton { "BEATS" }, offbeatsButton { "OFFBEATS" },
         backbeatButton { "BACKBEAT" }, randomButton { "RANDOM" };
     bitvibe::DrumPattern pattern;

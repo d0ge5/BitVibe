@@ -67,6 +67,11 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
     randomButton.onClick = [this] { randomise(); };
     restartButton.onClick = [this] { proc.getEngine().restartPatternBar(); };
     addAndMakeVisible(restartButton);
+    lockButton.setLookAndFeel(&laf);
+    lockAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(proc.apvts, ids::patternLock, lockButton);
+    addAndMakeVisible(lockButton);
+    lockButton.setTooltip("PATTERN LOCK: tick this and only the beat pattern restarts the sequence. How loud or hard you play (and any drum hits) "
+                          "no longer restarts it, so the sequence stays in time with the bar. Picked notes still fire the stutter.");
     for (auto* b : { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
         addAndMakeVisible(*b);
 
@@ -89,6 +94,7 @@ PatternPanel::~PatternPanel()
 {
     actionBox.setLookAndFeel(nullptr);
     signatureBox.setLookAndFeel(nullptr);
+    lockButton.setLookAndFeel(nullptr);
 }
 
 void PatternPanel::resized()
@@ -102,6 +108,7 @@ void PatternPanel::resized()
     }
     signatureBox.setBounds(112, kSignatureY, 72, 22);
     restartButton.setBounds(332, kSignatureY, 112, 22);
+    lockButton.setBounds(192, kSignatureY, 132, 22);
 }
 
 // One cell per sixteenth note of the bar, grouped into the beats of the time signature, as wide as the room allows.

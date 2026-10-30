@@ -825,7 +825,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 54, "54 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 55, "55 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

@@ -303,6 +303,21 @@ void testAttackDetector()
 
     Signal steady = sine(330.0, 2.0, 0.4f);
     CHECK(count(steady, 0.5f) == 1, "steady tone gave %d triggers", count(steady, 0.5f));
+
+    // How hard a note has to be hit: a pick of a given loudness (peak) after silence. At the lowest setting only hard
+    // picks count, at the highest even very soft ones do, and the middle setting leaves the softest alone.
+    auto pickAt = [&](float peak, float sens)
+    {
+        Signal s((size_t) (1.0 * kFs), 0.0f);
+        Rng rng(3);
+        for (size_t i = 0; i < (size_t) (0.05 * kFs); ++i)
+            s[(size_t) (0.2 * kFs) + i] = peak * rng.next() * std::exp(-(float) i / (0.02f * (float) kFs));
+        return count(s, sens);
+    };
+    CHECK(pickAt(0.08f, 0.0f) == 0 && pickAt(0.2f, 0.0f) == 0, "lowest setting: soft and medium-soft picks (-22 and -14 dBFS) do not trigger");
+    CHECK(pickAt(0.7f, 0.0f) == 1, "lowest setting: a hard pick still triggers");
+    CHECK(pickAt(0.02f, 0.5f) == 0 && pickAt(0.15f, 0.5f) == 1, "middle setting: a very soft pick (-34 dBFS) does not, a normal one does");
+    CHECK(pickAt(0.02f, 1.0f) == 1 && pickAt(0.005f, 0.0f) == 0, "highest setting: a very soft pick triggers");
 }
 
 // A short noise burst at 0.1 s in otherwise silent audio: easy to follow through the stutter.
@@ -2309,6 +2324,59 @@ void testBeatPattern()
         float* ch2 = block.data();
         e.process(&ch2, 1, 6000, p);
         CHECK(e.getPatternStep() >= 0 && e.getPatternStep() < 6, "a shorter bar wraps the position (%d)", e.getPatternStep());
+    }
+
+    // Pattern lock: the level of the input (a pick) and drum hits no longer restart the sequence; only the pattern does.
+    {
+        const Signal in = quietToneWithPick(); // a pick at 0.5 s
+        auto firstStep = [&](const Params& base, const std::vector<TriggerEvent>& events = {})
+        {
+            Engine e;
+            e.prepare(kFs);
+            Params p = base;
+            Signal out = in;
+            size_t first = out.size();
+            bool stuttered = false;
+            for (size_t i = 0; i < out.size(); ++i)
+            {
+                float* ch = out.data() + i;
+                std::vector<TriggerEvent> local;
+                for (const auto& ev : events)
+                    if (i == 7000)
+                        local.push_back({ 0, ev.action });
+                e.process(&ch, 1, 1, p, local.data(), (int) local.size());
+                if (e.getCurrentStep() >= 0 && first == out.size())
+                    first = i;
+                stuttered = stuttered || e.isStuttering();
+            }
+            return std::pair<size_t, bool> { first, stuttered };
+        };
+        Params base = pattern(0u, 16);
+        base.seqPlay = 1;
+        base.patternOn = false;
+        base.pickTriggers = true;
+        base.stutter = 2;
+        const auto picked = firstStep(base);
+        CHECK(picked.first >= 24000 && picked.first < 26000 && picked.second, "no lock: a picked note starts the sequence and the stutter (sequence at %zu)", picked.first);
+
+        Params locked = base;
+        locked.patternLock = true;
+        const auto lockedPick = firstStep(locked);
+        CHECK(lockedPick.first == in.size() && lockedPick.second, "lock on: the pick no longer starts the sequence, but still fires the stutter");
+
+        Params lockedPattern = pattern(0x0002u, 16); // the pattern lights step 2 (0.125 s into the bar)
+        lockedPattern.seqPlay = 1;
+        lockedPattern.pickTriggers = true;
+        lockedPattern.patternLock = true;
+        const auto fromPattern = firstStep(lockedPattern);
+        CHECK(fromPattern.first >= 5990 && fromPattern.first <= 6010, "lock on: the sequence starts when the pattern says so, not at the pick (%zu)", fromPattern.first);
+
+        const auto restartEvent = firstStep(locked, { { 0, TriggerAction::RestartSequence } });
+        CHECK(restartEvent.first == in.size(), "lock on: a restart from a drum hit is ignored");
+        Params unlocked = base;
+        unlocked.pickTriggers = false;
+        const auto eventOnly = firstStep(unlocked, { { 0, TriggerAction::RestartSequence } });
+        CHECK(eventOnly.first >= 7000 && eventOnly.first < 7010, "lock off: the same drum hit restarts the sequence (%zu)", eventOnly.first);
     }
 
     // Restart the bar: the clock goes back to the first step at once, and fires it.

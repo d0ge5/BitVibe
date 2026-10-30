@@ -110,7 +110,8 @@ footswitch and a sequencer type switch, with a preset and expression-morph strip
   before playing so the next note is the one that gets frozen.
 - **BYPASS** switches the effect in and out. It is also wired to your host's bypass.
 - The **Global** panel adds what a plug-in needs: tempo, input/output gain, **Mix**, **Trigger** sensitivity
-  for the attack detector, host tempo **Sync**, instrument/line **Headroom**, the stutter snippet length and
+  for the attack detector (fully left only hard picks, about -12 dBFS and louder, start the stutter and
+  sequencer; fully right even very soft playing does; the middle ignores very soft playing), host tempo **Sync**, instrument/line **Headroom**, the stutter snippet length and
   the **FX ONLY ON TRIGGERS** switch (both explained below).
 
 It starts on preset 1, a factory sound: the pitch sequencer running (steps −7, −3, −12, +7, +4, 0
@@ -269,7 +270,7 @@ what each drum does when it hits hard enough.
   in the grid, so it is easy to see where a step sits in time. CLEAR, BEATS, OFFBEATS and BACKBEAT fill in common
   patterns for the chosen signature. **RANDOM** makes a new random pattern (the first step of a beat is the
   likeliest to fire); click the beat numbers under the steps to choose which beats RANDOM may change, the others
-  keep their steps. **RESTART BAR** starts the bar again from its first step right now, which is the way to line the
+  keep their steps. **PATTERN LOCK** makes the pattern the only thing that restarts or steps the sequence: how loud or hard you play (and any drum hit) no longer restarts it, so it stays in time with the bar (a picked note still fires the stutter). **RESTART BAR** starts the bar again from its first step right now, which is the way to line the
   pattern up with what you are playing (not used with SYNC on, where the DAW sets the bar). The pattern works alongside the drum hits, or alone when the drums are set to Off.
 - The beat file, its hits (with your edits), the pattern and the drum settings are saved with your project. If the file
   has moved, the hits still trigger but the beat is silent. Like the mix and the output level, the drum map
@@ -411,7 +412,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 409 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 418 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of
