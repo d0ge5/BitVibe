@@ -39,6 +39,9 @@ inline constexpr const char* reverbDecay = "reverbDecay";
 inline constexpr const char* reverbReverseRoom = "reverbRevRoom";
 inline constexpr const char* reverbReverseHall = "reverbRevHall";
 inline constexpr const char* reverbReverseSpring = "reverbRevSpring";
+inline constexpr const char* reverbReversePlate = "reverbRevPlate";
+inline constexpr const char* reverbReverseShimmer = "reverbRevShimmer";
+inline constexpr const char* reverbReverseGated = "reverbRevGated";
 inline constexpr const char* distOn = "distOn";
 inline constexpr const char* distType = "distType";
 inline constexpr const char* distDrive = "distDrive";
@@ -199,7 +202,7 @@ private:
     std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
     std::atomic<float>* pReverbDecay = nullptr;
-    std::array<std::atomic<float>*, 3> pReverbReverse {}; // room, hall, spring
+    std::array<std::atomic<float>*, 6> pReverbReverse {}; // one per type of reverb, in the order of the types
     std::atomic<float>* pDistOn = nullptr;
     std::atomic<float>* pDistType = nullptr;
     std::atomic<float>* pDistDrive = nullptr;

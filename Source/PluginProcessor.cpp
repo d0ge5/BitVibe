@@ -107,12 +107,15 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring" }, 0));
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" }, 0));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbDecay), "Reverb Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     // Each type of reverb has its own REVERSE tick (the tail swells up after the sound instead of dying away).
     layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseRoom), "Reverse Room Reverb", false));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseHall), "Reverse Hall Reverb", false));
     layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseSpring), "Reverse Spring Reverb", false));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReversePlate), "Reverse Plate Reverb", false));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseShimmer), "Reverse Shimmer Reverb", false));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseGated), "Reverse Gated Reverb", false));
     // ---- distortion on the sequenced sound (rig settings): drive, tone and level like the classic green pedal ----
     layout.add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::distType), "Distortion Type", StringArray { "Overdrive", "Fuzz" }, 0));
@@ -263,7 +266,8 @@ BitVibeProcessor::BitVibeProcessor()
     pReverbLevel = raw(ids::reverbLevel);
     pReverbType = raw(ids::reverbType);
     pReverbDecay = raw(ids::reverbDecay);
-    pReverbReverse = { raw(ids::reverbReverseRoom), raw(ids::reverbReverseHall), raw(ids::reverbReverseSpring) };
+    pReverbReverse = { raw(ids::reverbReverseRoom), raw(ids::reverbReverseHall), raw(ids::reverbReverseSpring),
+                       raw(ids::reverbReversePlate), raw(ids::reverbReverseShimmer), raw(ids::reverbReverseGated) };
     pDistOn = raw(ids::distOn);
     pDistType = raw(ids::distType);
     pDistDrive = raw(ids::distDrive);
@@ -408,7 +412,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.reverbLevelDb = pReverbLevel->load();
     p.reverbType = roundToInt(pReverbType->load());
     p.reverbDecay = pReverbDecay->load();
-    p.reverbReverse = pReverbReverse[(size_t) jlimit(0, 2, p.reverbType)]->load() > 0.5f;
+    p.reverbReverse = pReverbReverse[(size_t) jlimit(0, 5, p.reverbType)]->load() > 0.5f;
     p.distOn = pDistOn->load() > 0.5f;
     p.distType = roundToInt(pDistType->load());
     p.distDrive = pDistDrive->load();

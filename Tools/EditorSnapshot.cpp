@@ -350,6 +350,21 @@ void testReverbParams()
     setValue(*p, ids::reverbType, 2.0f);
     const auto spring = run(*p, in);
     check(maxDifference(hall, reverbed) > 0.01f && maxDifference(spring, hall) > 0.01f && isFinite(spring), "room, hall and spring sound different");
+    {
+        // the newer types are all reachable and sound different from each other
+        std::vector<AudioBuffer<float>> byType;
+        for (int type = 3; type <= 5; ++type)
+        {
+            setValue(*p, ids::reverbType, (float) type);
+            byType.push_back(run(*p, in));
+            check(isFinite(byType.back()) && maxDifference(byType.back(), plain) > 0.005f, "reverb type " + String(type) + " (plate, shimmer, gated) adds a reverb");
+        }
+        check(maxDifference(byType[0], byType[1]) > 0.005f && maxDifference(byType[1], byType[2]) > 0.005f, "plate, shimmer and gated sound different");
+        setValue(*p, ids::reverbReversePlate, 1.0f);
+        setValue(*p, ids::reverbType, 3.0f);
+        check(maxDifference(run(*p, in), byType[0]) > 0.005f, "the plate has its own REVERSE tick");
+        setValue(*p, ids::reverbReversePlate, 0.0f);
+    }
     setValue(*p, ids::reverbType, 0.0f);
 
     // Decay and reverse: each type of reverb has its own REVERSE tick.
@@ -810,7 +825,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 51, "51 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 54, "54 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

@@ -128,15 +128,18 @@ triggers on noise, adjust **Trigger**, and try feeding the plug-in the dry guita
   The stutter and the sequencer themselves (the repeats, the pitch steps, the muting) work as usual either
   way. With the Sequencer knob on *LOOP* the sequencer never stops, so the effects stay on, and with both the
   sequencer and the stutter off nothing ever triggers, so the signal passes through clean.
-- **REVERB** (in the right-hand column) is a basic reverb, **Room**, **Hall** or **Spring**, that only hears the
+- **REVERB** (in the right-hand column) comes in six types and only hears the
   **sequenced and stuttered** sound: while a sequence or stutter plays it feeds the reverb, and its tail rings on
   afterwards. Your clean signal never gets reverb, and neither does anything when no sequence or stutter is running.
-  **DECAY** stretches or shrinks the tail of any type (a quarter to four times as long as normal; the middle is
+  **Room**, **Hall** and **Spring** are the basic ones; **Plate** is a dense, bright, smooth plate after Jon
+  Dattorro's published "figure of eight" design; **Shimmer** is the Hall with an octave-up pitch shifter in its
+  feedback loop, so the tail climbs; **Gated** is a big, loud room that a gate chops off after a short hold (the
+  1980s drum-room sound; its DECAY sets how long the gate stays open). **DECAY** stretches or shrinks the tail of any type (a quarter to four times as long as normal; the middle is
   normal), **TONE** goes from a dark to a bright reverb, **MIX** sets how much reverb is added (fully left = none,
   the default), **LEVEL** trims its volume from -30 dB to +6 dB, and **LOW CUT** (a high-pass) and **HIGH CUT** (a
   low-pass) filter the reverb only, not your sound (fully left / right = off). Tick **REVERSE** to play the reverb
   backwards: the sound swells up after each note and stops at the end, instead of dying away (DECAY sets how long
-  the swell takes). Room, Hall and Spring each remember their own REVERSE tick, so you can have a reversed hall
+  the swell takes). Every type remembers its own REVERSE tick, so you can have a reversed hall
   and a normal room and just switch the type. The reverse reverb is built as a swell of echoes that get louder and
   sparser towards the end, like a reversed room, rather than by recording and flipping audio, so it adds no delay.
   The reverb is part of the effect side, so the dry/wet **MIX** above still brings back the clean input, and BYPASS
@@ -408,7 +411,7 @@ cmake --build build --parallel
 <summary>Tests and verification tools</summary>
 
 The DSP engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 384 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
+(`Tests/EngineTests.cpp`, 409 checks: the documented mappings, bit-depth levels, sample-rate hold, filter
 response, attack detection, stutter timing, sequencer behaviour, a randomized robustness test, the expression
 morph blend, the factory presets, the dry/wet mix, the effects-only-on-triggers behaviour over time, drum
 trigger events, the drum-map scheduler, the beat pattern, the reverb, the sample blend, the distortion and fuzz, the pattern clock and time signatures, the beat-routing rule, tempo estimation, the FFT and the drum analysis of

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Components.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,13 +15,16 @@ enum class ReverbType
 {
     Room = 0,
     Hall,
-    Spring
+    Spring,
+    Plate,
+    Shimmer,
+    Gated
 };
-inline constexpr int kNumReverbTypes = 3;
+inline constexpr int kNumReverbTypes = 6;
 
 inline const char* reverbTypeName(ReverbType t)
 {
-    static constexpr const char* names[kNumReverbTypes] = { "Room", "Hall", "Spring" };
+    static constexpr const char* names[kNumReverbTypes] = { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" };
     return names[std::clamp((int) t, 0, kNumReverbTypes - 1)];
 }
 
@@ -34,18 +39,25 @@ struct ReverbSettings
     float highCutHz = 20000.0f; // low-pass on the reverb; 19.9 kHz or more = off
 };
 
-// A basic reverb for one channel with three characters:
+// A reverb for one channel with six characters:
 //  - Room: eight damped feedback combs into four allpasses (the classic Schroeder/Freeverb layout), short.
 //  - Hall: the same with longer delays and more feedback, so a big, slow tail.
 //  - Spring: two feedback loops, each with a chain of allpasses in the loop that smear the highs and lows
 //    differently (the "drip" of a spring tank), plus a damping filter.
+//  - Plate: the "figure of eight" plate reverberator of Jon Dattorro, "Effect Design Part 1: Reverberator and Other
+//    Filters", J. Audio Eng. Soc. 45(9), 1997: input diffusion into two cross-coupled tanks of modulated allpasses,
+//    delays and damping, with the output taken from several taps of both tanks. Written from the paper's block
+//    diagram and delay lengths; none of its published implementations were used. A dense, bright, smooth tail.
+//  - Shimmer: the Hall network with an octave-up pitch shifter in its feedback loop, so the tail climbs in pitch.
+//  - Gated: a dense, loud room that a gate chops off after a short hold (the 1980s drum-room sound). DECAY sets how
+//    long the gate stays open.
 // DECAY stretches or shrinks the tail of any of them (a quarter to four times as long as normal).
 //
 // REVERSE turns the tail around: the sound swells up after it has been played and stops at the end, as if a tape of
 // the reverb had been played backwards. It is built the way a reversed reverb behaves statistically: a tapped delay
 // line whose echoes get louder and sparser towards the end (a reversed room's echoes are dense and quiet at first and
-// sparse and loud at the end), smoothed by the same allpass diffusers. Room, Hall and Spring differ in the length of
-// the swell (and how dense the echoes are); DECAY sets how long it takes.
+// sparse and loud at the end), smoothed by the same allpass diffusers. The types differ in the length of the swell
+// (and how dense the echoes are); DECAY sets how long it takes. Shimmer adds an octave-up copy to the swell.
 //
 // Changing the type, REVERSE or (in reverse) DECAY fades the reverb out, clears it and fades back in, so it does
 // not click. The right channel uses slightly different delays so a stereo pair does not collapse to mono.
@@ -71,6 +83,8 @@ public:
                 springAllpass[(size_t) l][(size_t) a].allocate(std::max(1, (int) std::lround((kSpring[a] + (l == 1 ? 17 : 0)) * scale)));
         }
         revLine.assign((size_t) std::lround(kMaxReverseSeconds * fs) + 2, 0.0f);
+        preparePlate();
+        shifter.prepare(fs);
         current = pending = ReverbType::Room;
         currentReverse = pendingReverse = false;
         currentBucket = pendingBucket = -1;
@@ -123,7 +137,14 @@ public:
         else
         {
             applyDecay(s.decay);
-            sum = current == ReverbType::Spring ? processSpring(in) : processRoom(in);
+            switch (current)
+            {
+                case ReverbType::Spring: sum = processSpring(in); break;
+                case ReverbType::Plate: sum = processPlate(in); break;
+                case ReverbType::Shimmer: sum = processShimmer(in); break;
+                case ReverbType::Gated: sum = processGated(in); break;
+                default: sum = processRoom(in); break;
+            }
         }
 
         const float hz = 1200.0f * std::pow(16000.0f / 1200.0f, std::clamp(s.tone, 0.0f, 1.0f));
@@ -160,13 +181,19 @@ private:
     {
         double combScale, feedback, damp, inputGain;
     };
-    // Input gains keep the three characters at about the same loudness (see the unit test).
+    // Comb-network characters (Room, Hall, Shimmer, Gated). Input gains keep the characters at about the same
+    // loudness (see the unit test).
     static constexpr Settings kRoom { 0.55, 0.80, 0.30, 0.040 };
     static constexpr Settings kHall { 1.70, 0.90, 0.18, 0.044 };
+    static constexpr Settings kShimmer { 1.70, 0.86, 0.20, 0.040 };
+    static constexpr Settings kGated { 1.30, 0.93, 0.15, 0.040 };
     static constexpr float kSpringFeedback = 0.80f, kSpringDamp = 0.35f, kSpringInput = 1.25f;
+    static constexpr float kShimmerFeedback = 0.40f;
+    static constexpr float kGateThreshold = 0.004f;
+    static constexpr double kGateHoldSeconds = 0.25;
     // How long the swell of a reversed reverb takes at DECAY = 0.5, per type, in seconds.
-    static constexpr double kReverseSeconds[kNumReverbTypes] { 0.7, 2.2, 1.2 };
-    static constexpr int kReverseTaps[kNumReverbTypes] { 160, 224, 192 };
+    static constexpr double kReverseSeconds[kNumReverbTypes] { 0.7, 2.2, 1.2, 1.6, 2.6, 0.45 };
+    static constexpr int kReverseTaps[kNumReverbTypes] { 160, 224, 192, 224, 224, 128 };
 
     struct Delay
     {
@@ -203,7 +230,7 @@ private:
             return out;
         }
 
-        // A true allpass (gain 1 at every frequency), needed inside the spring's feedback loop.
+        // A true allpass (gain 1 at every frequency), needed inside feedback loops.
         float processUnity(float in, float gain)
         {
             const float delayed = buffer[pos];
@@ -218,6 +245,50 @@ private:
     {
         size_t delay;
         float gain;
+    };
+
+    // A delay line that can be read at any distance behind the write position (the plate takes several taps of
+    // each of its lines) and at fractional distances (its modulated allpasses).
+    struct Line
+    {
+        std::vector<float> buffer;
+        size_t pos = 0; // where the next sample goes
+
+        void allocate(size_t n) { buffer.assign(n, 0.0f); pos = 0; }
+        void clear() { std::fill(buffer.begin(), buffer.end(), 0.0f); pos = 0; }
+        void push(float x)
+        {
+            buffer[pos] = x;
+            if (++pos >= buffer.size())
+                pos = 0;
+        }
+        // The sample written 'back' samples ago (1 = the latest).
+        float tap(size_t back) const
+        {
+            const size_t n = buffer.size();
+            return buffer[(pos + n - std::min(back, n)) % n];
+        }
+        float tapFractional(float back) const
+        {
+            const size_t whole = (size_t) back;
+            const float frac = back - (float) whole;
+            return tap(whole) + (tap(whole + 1) - tap(whole)) * frac;
+        }
+        // An allpass built on this line, 'back' samples long: returns its output and stores its internal value.
+        float allpass(float x, size_t back, float g)
+        {
+            const float delayed = tap(back);
+            const float v = x + g * delayed;
+            push(v);
+            return delayed - g * v;
+        }
+        float allpassFractional(float x, float back, float g)
+        {
+            const float delayed = tapFractional(back);
+            const float v = x + g * delayed;
+            push(v);
+            return delayed - g * v;
+        }
     };
 
     // The decay knob as a stretch factor: 0.25x .. 4x, 1x in the middle.
@@ -237,6 +308,15 @@ private:
         springLow = { 0.0f, 0.0f };
         std::fill(revLine.begin(), revLine.end(), 0.0f);
         revPos = 0;
+        for (auto* l : { &plateIn[0], &plateIn[1], &plateIn[2], &plateIn[3], &plateLeftApMod, &plateLeftDelay1, &plateLeftAp2,
+                         &plateLeftDelay2, &plateRightApMod, &plateRightDelay1, &plateRightAp2, &plateRightDelay2 })
+            l->clear();
+        plateBandwidth = plateLeftDamp = plateRightDamp = plateLeftEnd = plateRightEnd = 0.0f;
+        platePhase = 0.0f;
+        shifter.reset();
+        shimmerLast = 0.0f;
+        gateEnv = gateGain = 0.0f;
+        gateHoldLeft = 0;
     }
 
     void configure()
@@ -252,7 +332,13 @@ private:
             decayApplied = -1.0f;
             return;
         }
-        const Settings& s = current == ReverbType::Hall ? kHall : kRoom;
+        if (current == ReverbType::Plate)
+        {
+            baseFeedback = 0.70f; // the tank's decay coefficient
+            decayApplied = -1.0f;
+            return;
+        }
+        const Settings& s = current == ReverbType::Hall ? kHall : (current == ReverbType::Shimmer ? kShimmer : (current == ReverbType::Gated ? kGated : kRoom));
         const double scale = fs / 44100.0;
         for (int i = 0; i < kNumCombs; ++i)
             combs[(size_t) i].setLength(std::max(1, (int) std::lround((kCombs[i] + spread) * scale * s.combScale)));
@@ -263,14 +349,22 @@ private:
     }
 
     // The feedback that gives a tail 'factor' times as long: the loop gain g falls by 10^(-3 d / T), so stretching T
-    // by a factor means raising g to the power 1 / factor. Done only when the knob has moved.
+    // by a factor means raising g to the power 1 / factor. Done only when the knob has moved. For the gated reverb
+    // the knob sets how long the gate holds instead.
     void applyDecay(float decay)
     {
         if (std::abs(decay - decayApplied) < 0.002f)
             return;
         decayApplied = decay;
-        const float g = std::min(0.985f, std::pow(baseFeedback, 1.0f / decayFactor(decay)));
-        roomFeedback = springFeedback = g;
+        const float factor = decayFactor(decay);
+        if (current == ReverbType::Gated)
+        {
+            roomFeedback = baseFeedback;
+            gateHoldSamples = (int) std::lround(kGateHoldSeconds * (double) factor * fs);
+            return;
+        }
+        const float g = std::min(0.985f, std::pow(baseFeedback, 1.0f / factor));
+        roomFeedback = springFeedback = plateDecay = g;
     }
 
     // Builds the echoes of the reversed reverb. A forward reverb has echoes whose density grows with the square of
@@ -321,6 +415,8 @@ private:
             revPos = 0;
         for (auto& a : allpasses) // the diffusers blur the echoes into a swell (true allpasses: they do not change the level)
             sum = a.processUnity(sum, kAllpassGain);
+        if (current == ReverbType::Shimmer) // an octave-up copy rides on the swell
+            sum = 0.65f * sum + 0.45f * shifter.process(sum, 2.0f, 1.0f);
         return sum;
     }
 
@@ -333,6 +429,30 @@ private:
         for (auto& a : allpasses)
             sum = a.process(sum, kAllpassGain);
         return sum;
+    }
+
+    // The Hall network with an octave-up copy of its own output fed back into its input.
+    float processShimmer(float in)
+    {
+        const float up = shifter.process(shimmerLast, 2.0f, 1.0f) * kShimmerFeedback;
+        const float out = processRoom(in + up);
+        shimmerLast = std::tanh(out); // the loop can never run away
+        return out;
+    }
+
+    // A dense room that a gate cuts off: it opens while the sound is there and for a hold time afterwards.
+    float processGated(float in)
+    {
+        const float level = std::abs(in);
+        gateEnv = std::max(level, gateEnv * 0.999f);
+        if (gateEnv > kGateThreshold)
+            gateHoldLeft = gateHoldSamples;
+        else if (gateHoldLeft > 0)
+            --gateHoldLeft;
+        const float target = gateHoldLeft > 0 ? 1.0f : 0.0f;
+        const float seconds = target > gateGain ? 0.002f : 0.006f; // opens quickly, closes sharply
+        gateGain += (target - gateGain) * (1.0f - std::exp(-1.0f / (float) (seconds * fs)));
+        return processRoom(in) * gateGain;
     }
 
     float processSpring(float in)
@@ -353,8 +473,81 @@ private:
         return sum * 0.5f;
     }
 
+    // ---- the plate (after Dattorro 1997): delay lengths are the paper's, for a sample rate of 29761 Hz ------------
+
+    void preparePlate()
+    {
+        plateScale = fs / 29761.0;
+        auto size = [this](double samples) { return (size_t) std::ceil(samples * plateScale) + (size_t) std::ceil(8.0 * plateScale) + 8; };
+        static constexpr double kInput[4] { 142, 107, 379, 277 };
+        for (int i = 0; i < 4; ++i)
+            plateIn[(size_t) i].allocate(size(kInput[i]));
+        plateLeftApMod.allocate(size(672));
+        plateLeftDelay1.allocate(size(4453));
+        plateLeftAp2.allocate(size(1800));
+        plateLeftDelay2.allocate(size(3720));
+        plateRightApMod.allocate(size(908));
+        plateRightDelay1.allocate(size(4217));
+        plateRightAp2.allocate(size(2656));
+        plateRightDelay2.allocate(size(3163));
+    }
+
+    size_t scaled(double samples) const { return (size_t) std::lround(samples * plateScale); }
+
+    float processPlate(float in)
+    {
+        // input: a gentle low-pass, then four diffusing allpasses
+        plateBandwidth += 0.9995f * (in * kPlateInput - plateBandwidth);
+        float x = plateBandwidth;
+        x = plateIn[0].allpass(x, scaled(142), 0.75f);
+        x = plateIn[1].allpass(x, scaled(107), 0.75f);
+        x = plateIn[2].allpass(x, scaled(379), 0.625f);
+        x = plateIn[3].allpass(x, scaled(277), 0.625f);
+
+        // a slow wobble of the two modulated allpasses keeps the tail from ringing
+        platePhase += 1.0f / (float) fs;
+        if (platePhase >= 1.0f)
+            platePhase -= 1.0f;
+        const float wobble = (float) (8.0 * plateScale) * std::sin(6.2831853f * platePhase);
+        const float diffusion2 = std::clamp(plateDecay + 0.15f, 0.25f, 0.5f);
+
+        // the two tanks, each fed by the input and by the other tank's end
+        const float leftIn = x + plateDecay * plateRightEnd;
+        const float rightIn = x + plateDecay * plateLeftEnd;
+
+        float left = plateLeftApMod.allpassFractional(leftIn, (float) scaled(672) + wobble, -0.7f);
+        plateLeftDelay1.push(left);
+        left = plateLeftDelay1.tap(scaled(4453));
+        plateLeftDamp += kPlateDamp * (left - plateLeftDamp);
+        left = plateLeftAp2.allpass(plateLeftDamp * plateDecay, scaled(1800), diffusion2);
+        plateLeftDelay2.push(left);
+        plateLeftEnd = plateLeftDelay2.tap(scaled(3720));
+
+        float right = plateRightApMod.allpassFractional(rightIn, (float) scaled(908) - wobble, -0.7f);
+        plateRightDelay1.push(right);
+        right = plateRightDelay1.tap(scaled(4217));
+        plateRightDamp += kPlateDamp * (right - plateRightDamp);
+        right = plateRightAp2.allpass(plateRightDamp * plateDecay, scaled(2656), diffusion2);
+        plateRightDelay2.push(right);
+        plateRightEnd = plateRightDelay2.tap(scaled(3163));
+
+        // the output: taps of both tanks (this channel takes the left or the right set of the paper)
+        float y;
+        if (channel == 0)
+            y = plateRightDelay1.tap(scaled(266)) + plateRightDelay1.tap(scaled(2974)) - plateRightAp2.tap(scaled(1913))
+                + plateRightDelay2.tap(scaled(1996)) - plateLeftDelay1.tap(scaled(1990)) - plateLeftAp2.tap(scaled(187))
+                - plateLeftDelay2.tap(scaled(1066));
+        else
+            y = plateLeftDelay1.tap(scaled(353)) + plateLeftDelay1.tap(scaled(3627)) - plateLeftAp2.tap(scaled(1228))
+                + plateLeftDelay2.tap(scaled(2673)) - plateRightDelay1.tap(scaled(2111)) - plateRightAp2.tap(scaled(335))
+                - plateRightDelay2.tap(scaled(121));
+        return y * kPlateOutput;
+    }
+
     float onePole(float hz) const { return 1.0f - std::exp(-6.2831853f * std::min(hz, 0.45f * (float) fs) / (float) fs); }
     float fadeStep() const { return 1.0f / std::max(1.0f, 0.008f * (float) fs); }
+
+    static constexpr float kPlateInput = 0.5f, kPlateOutput = 0.6f, kPlateDamp = 0.8f;
 
     std::array<Comb, kNumCombs> combs;
     std::array<Allpass, kNumAllpasses> allpasses;
@@ -364,6 +557,18 @@ private:
     std::vector<float> revLine;
     std::vector<Tap> taps;
     size_t revPos = 0;
+
+    std::array<Line, 4> plateIn;
+    Line plateLeftApMod, plateLeftDelay1, plateLeftAp2, plateLeftDelay2, plateRightApMod, plateRightDelay1, plateRightAp2, plateRightDelay2;
+    double plateScale = 1.0;
+    float plateBandwidth = 0.0f, plateLeftDamp = 0.0f, plateRightDamp = 0.0f, plateLeftEnd = 0.0f, plateRightEnd = 0.0f, platePhase = 0.0f;
+    float plateDecay = 0.7f;
+
+    PitchShifter shifter;
+    float shimmerLast = 0.0f;
+    float gateEnv = 0.0f, gateGain = 0.0f;
+    int gateHoldLeft = 0, gateHoldSamples = 12000;
+
     double fs = 48000.0;
     int spread = 0, channel = 0;
     float baseFeedback = 0.8f, roomFeedback = 0.8f, springFeedback = 0.8f, roomDamp = 0.3f, roomInput = 0.04f, decayApplied = -1.0f;

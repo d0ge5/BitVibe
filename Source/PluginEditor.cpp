@@ -338,8 +338,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     reverbReverseButton.onClick = [this]
     {
         // the tick belongs to the type of reverb that is showing
-        static const char* ids[3] = { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring };
-        if (auto* param = proc.apvts.getParameter(ids[jlimit(0, 2, roundToInt(rawValue(ids::reverbType)))]))
+        static const char* tickIds[6] = { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring,
+                                          ids::reverbReversePlate, ids::reverbReverseShimmer, ids::reverbReverseGated };
+        if (auto* param = proc.apvts.getParameter(tickIds[jlimit(0, 5, roundToInt(rawValue(ids::reverbType)))]))
             param->setValueNotifyingHost(reverbReverseButton.getToggleState() ? 1.0f : 0.0f);
     };
     smallKnob(reverbMixSlider, reverbMixAtt, ids::reverbMix);
@@ -724,7 +725,7 @@ void BitVibeEditor::setTooltips()
     reverbDecaySlider.setTooltip("REVERB DECAY: how long the reverb rings. Left = short, middle = normal, right = long (up to four times as long). "
                                  "With REVERSE on it sets how long the swell takes.");
     reverbReverseButton.setTooltip("REVERSE: tick this to play the reverb backwards: the sound swells up after the note instead of dying away. "
-                                   "Room, Hall and Spring each remember their own tick.");
+                                   "Every type of reverb remembers its own tick.");
     reverbToneSlider.setTooltip("REVERB TONE: the colour of the reverb, from dark (left) to bright (right).");
     reverbMixSlider.setTooltip("REVERB MIX: how much reverb is added to the sequenced and stuttered sound. Fully left = no reverb. "
                                "Your clean signal never gets reverb.");
@@ -741,7 +742,8 @@ void BitVibeEditor::setTooltips()
     distReverbButton.setTooltip("REVERB TOO: tick this to distort the reverb as well. Unticked, the reverb stays clean.");
     reverbLowSlider.setTooltip("LOW CUT: a high-pass filter on the reverb only. Turn right to remove the low end from the reverb. Fully left = off.");
     reverbHighSlider.setTooltip("HIGH CUT: a low-pass filter on the reverb only. Turn left to remove the highs from the reverb. Fully right = off.");
-    reverbTypeBox.setTooltip("REVERB TYPE: Room is short and tight, Hall is big and slow, Spring is the splashy, dripping sound of a spring tank.");
+    reverbTypeBox.setTooltip("REVERB TYPE: Room is short and tight, Hall is big and slow, Spring is the splashy, dripping sound of a spring tank, "
+                          "Plate is dense and bright, Shimmer climbs an octave as it fades, Gated is a big room chopped off short.");
     mixSlider.setTooltip("MIX: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
     trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
@@ -1124,8 +1126,9 @@ void BitVibeEditor::timerCallback()
             buildBackground();
     }
     {
-        const int type = jlimit(0, 2, roundToInt(rawValue(ids::reverbType)));
-        const std::array<const char*, 3> tickIds { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring };
+        const int type = jlimit(0, 5, roundToInt(rawValue(ids::reverbType)));
+        const std::array<const char*, 6> tickIds { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring,
+                                                   ids::reverbReversePlate, ids::reverbReverseShimmer, ids::reverbReverseGated };
         const bool ticked = rawValue(tickIds[(size_t) type]) > 0.5f;
         if (reverbReverseButton.getToggleState() != ticked)
             reverbReverseButton.setToggleState(ticked, dontSendNotification);

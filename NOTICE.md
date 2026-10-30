@@ -18,6 +18,16 @@ and are used here only to say what this software is modelled on.
   VST is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.
 * **Audio Unit** support (macOS) uses Apple's Audio Unit framework through JUCE.
 
+## Algorithms the code is based on (no third-party code is included)
+
+* **Reverbs.** The Room and Hall reverbs use the classic Schroeder/Freeverb comb and allpass layout (Freeverb is
+  public domain; the code here is our own). The **Plate** reverb is written from the block diagram and delay lengths
+  published in Jon Dattorro, "Effect Design Part 1: Reverberator and Other Filters", *Journal of the Audio
+  Engineering Society* 45(9), 1997; none of the existing implementations of it was used. The **Spring**, **Shimmer**,
+  **Gated** and reversed reverbs are our own designs.
+* **Overdrive and fuzz.** Modelled from the published circuit values of the two classic pedals they are named after
+  in the README; no firmware, schematics' artwork or third-party code is included.
+
 ## Optional components that are not part of BitVibe
 
 * **ADTOF** drum-transcription model (M. Zehren, M. Alunno, P. Bientinesi —

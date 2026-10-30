@@ -1046,15 +1046,52 @@ void testReverb()
     for (int type = 0; type < kNumReverbTypes; ++type)
     {
         const auto name = reverbTypeName((ReverbType) type);
-        const double short1 = windowEnergy(impulseResponse((ReverbType) type, false, 0.0f, 3.0), 1.0, 3.0);
-        const double normal = windowEnergy(impulseResponse((ReverbType) type, false, 0.5f, 3.0), 1.0, 3.0);
-        const double longest = windowEnergy(impulseResponse((ReverbType) type, false, 1.0f, 3.0), 1.0, 3.0);
+        // (for the gated reverb DECAY sets how long the gate holds, so look earlier in its tail)
+        const double t0 = (ReverbType) type == ReverbType::Gated ? 0.3 : 1.0;
+        const double short1 = windowEnergy(impulseResponse((ReverbType) type, false, 0.0f, 3.0), t0, 3.0);
+        const double normal = windowEnergy(impulseResponse((ReverbType) type, false, 0.5f, 3.0), t0, 3.0);
+        const double longest = windowEnergy(impulseResponse((ReverbType) type, false, 1.0f, 3.0), t0, 3.0);
         CHECK(short1 < normal && normal < longest && longest > 50.0 * std::max(short1, 1.0e-20), "%s: more decay, longer tail (%g, %g, %g)", name, short1, normal, longest);
+    }
+
+    // Plate: a long, smooth, dense tail (it rings on well past a second and is still decaying).
+    {
+        const auto ir = impulseResponse(ReverbType::Plate, false, 0.5f, 4.0);
+        const double a = windowEnergy(ir, 0.1, 0.6), b = windowEnergy(ir, 1.0, 1.5), c = windowEnergy(ir, 2.5, 3.0);
+        CHECK(a > b && b > c && b > 1.0e-7, "plate: a smooth tail that is still audible after a second and keeps decaying (%g, %g, %g)", a, b, c);
+    }
+
+    // Shimmer: the tail climbs an octave. A 500 Hz burst leaves much more 1 kHz in the Shimmer tail than in the Hall's.
+    {
+        auto octaveShare = [](ReverbType type)
+        {
+            ReverbSettings rs;
+            rs.type = type;
+            rs.tone = 1.0f;
+            Reverb r;
+            r.prepare(kFs, 0);
+            for (int i = 0; i < 600; ++i)
+                r.process(0.0f, rs);
+            Signal out((size_t) (2.0 * kFs));
+            for (size_t i = 0; i < out.size(); ++i)
+                out[i] = r.process(i < (size_t) (0.3 * kFs) ? 0.3f * (float) std::sin(2.0 * 3.14159265358979 * 500.0 * (double) i / kFs) : 0.0f, rs);
+            return tonePower(out, 0.6, 1.8, 1000.0) / std::max(1.0e-18, tonePower(out, 0.6, 1.8, 500.0));
+        };
+        const double shimmer = octaveShare(ReverbType::Shimmer), hall = octaveShare(ReverbType::Hall);
+        CHECK(shimmer > 10.0 * hall, "shimmer: the tail climbs an octave (1k/500 Hz %.3f against %.4f for the hall)", shimmer, hall);
+    }
+
+    // Gated: the tail is chopped off after the hold (about 0.25 s at the normal DECAY, plus the time the gate takes to notice the sound has gone), and what is left is silence.
+    {
+        const auto ir = impulseResponse(ReverbType::Gated, false, 0.5f, 1.5);
+        const double inside = windowEnergy(ir, 0.05, 0.2), after = windowEnergy(ir, 0.55, 1.4);
+        CHECK(inside > 1.0e-6 && after < 1.0e-3 * inside, "gated: loud inside the hold, silent after it (%g then %g)", inside, after);
     }
 
     // REVERSE: the tail swells up and stops. Echoes are quiet at the start and loud at the end of the swell, and
     // nothing is left after it. Room (0.7 s), Hall (2.2 s) and Spring (1.2 s) at the normal decay.
-    for (auto [type, length] : { std::pair<ReverbType, double> { ReverbType::Room, 0.7 }, { ReverbType::Hall, 2.2 }, { ReverbType::Spring, 1.2 } })
+    for (auto [type, length] : { std::pair<ReverbType, double> { ReverbType::Room, 0.7 }, { ReverbType::Hall, 2.2 }, { ReverbType::Spring, 1.2 },
+                                 { ReverbType::Plate, 1.6 }, { ReverbType::Shimmer, 2.6 }, { ReverbType::Gated, 0.45 } })
     {
         const auto ir = impulseResponse(type, true, 0.5f, length + 1.5);
         const double early = windowEnergy(ir, 0.03 * length, 0.3 * length), late = windowEnergy(ir, 0.6 * length, length - 0.02);
@@ -1104,6 +1141,31 @@ void testReverb()
             last = y;
         }
         CHECK(worstStep < 0.1f && std::isfinite(last), "switching REVERSE stays smooth (largest step %.3f)", worstStep);
+    }
+
+    // Stress: changing the type, direction, decay, tone and cuts at random while loud noise plays never blows up.
+    {
+        Reverb r;
+        r.prepare(kFs, 1);
+        Rng rng(99);
+        ReverbSettings rs;
+        bool finite = true;
+        float peak = 0.0f;
+        for (int i = 0; i < (int) (8.0 * kFs); ++i)
+        {
+            if (i % 4000 == 0)
+            {
+                rs.type = (ReverbType) (std::abs((int) (rng.next() * 100.0f)) % kNumReverbTypes);
+                rs.reverse = rng.next() > 0.3f;
+                rs.decay = 0.5f + 0.5f * rng.next();
+                rs.tone = 0.5f + 0.5f * rng.next();
+                rs.lowCutHz = rng.next() > 0.5f ? 20.0f : 400.0f;
+            }
+            const float y = r.process(0.8f * rng.next(), rs);
+            finite = finite && std::isfinite(y);
+            peak = std::max(peak, std::abs(y));
+        }
+        CHECK(finite && peak < 20.0f, "random type, direction, decay and tone changes stay finite and bounded (peak %.2f)", peak);
     }
 
     // A sequence plays once from a pick; steps are dry, so only the reverb can change the sound.
