@@ -57,6 +57,13 @@ struct Params
     };
     SeqType seqType = SeqType::Pitch;
 
+    // A loop section: steps loopFrom..loopTo (0..5, either order) play loopPlays times in a row (0 = forever) before
+    // the sequence goes on to the steps after them. A restart still begins at step 1, so the steps before the
+    // section play once each time the sequence restarts.
+    bool loopOn = false;
+    int loopFrom = 3, loopTo = 5;
+    int loopPlays = 0;
+
     float tempoBpm = 120.0f;
     bool bypass = false;
     bool stutterHold = false;
@@ -235,7 +242,7 @@ public:
         }
         primed = false;
         seqRunning = false;
-        seqIdx = seqCycles = 0;
+        seqIdx = seqCycles = loopCount = 0;
         seqPhase = 0.0;
         srPhase = 1.0;
         gateEnv = 0.0f;
@@ -622,6 +629,21 @@ private:
                 active[(size_t) numActive++] = i;
         }
 
+        loopFirst = loopLast = -1;
+        loopPlays = std::max(0, p.loopPlays);
+        if (p.loopOn)
+        {
+            const int lo = std::clamp(std::min(p.loopFrom, p.loopTo), 0, kNumSteps - 1);
+            const int hi = std::clamp(std::max(p.loopFrom, p.loopTo), 0, kNumSteps - 1);
+            for (int i = 0; i < numActive; ++i)
+                if (active[(size_t) i] >= lo && active[(size_t) i] <= hi)
+                {
+                    if (loopFirst < 0)
+                        loopFirst = i;
+                    loopLast = i;
+                }
+        }
+
         if (seqRepeats == 0 || numActive == 0)
             seqRunning = false;
         else if (seqRepeats < 0 && !seqRunning)
@@ -772,6 +794,7 @@ private:
         seqRunning = true;
         seqIdx = 0;
         seqCycles = 0;
+        loopCount = 0;
         seqPhase = 0.0;
         stepStarted();
     }
@@ -789,12 +812,24 @@ private:
         samplePlayer.trigger(&clips[(size_t) (nextRandom() >> 4) % clips.size()]);
     }
 
-    // Moves to the next active step; counts passes and stops after the last one. False when stopped.
+    // Moves to the next active step; counts passes and stops after the last one. False when stopped. At the end of
+    // the loop section it goes back to the section's first step until the section has played often enough.
     bool stepForward()
     {
+        if (loopFirst >= 0 && seqIdx == loopLast)
+        {
+            ++loopCount;
+            if (loopPlays == 0 || loopCount < loopPlays)
+            {
+                seqIdx = loopFirst;
+                stepStarted();
+                return true;
+            }
+        }
         if (++seqIdx >= numActive)
         {
             seqIdx = 0;
+            loopCount = 0;
             ++seqCycles;
             if (seqRepeats > 0 && seqCycles >= seqRepeats)
             {
@@ -883,6 +918,7 @@ private:
     std::array<mapping::Step, kNumSteps> steps {};
     std::array<int, kNumSteps> active {};
     int numActive = 0, seqIdx = 0, seqCycles = 0, seqRepeats = 0;
+    int loopFirst = -1, loopLast = -1, loopPlays = 0, loopCount = 0; // the loop section, as indices into active
     bool seqRunning = false;
     double seqPhase = 0.0, stepLength = 1.0, beatSamples = 24000.0, beatPhase = 0.0;
     SeqType seqType = SeqType::Pitch;

@@ -31,6 +31,7 @@ public:
     void drawComboBox(juce::Graphics&, int width, int height, bool isButtonDown, int buttonX, int buttonY,
                       int buttonW, int buttonH, juce::ComboBox&) override;
     juce::Font getComboBoxFont(juce::ComboBox&) override;
+    void positionComboBoxText(juce::ComboBox&, juce::Label&) override;
     void drawLinearSlider(juce::Graphics&, int x, int y, int width, int height, float sliderPos, float minSliderPos,
                           float maxSliderPos, juce::Slider::SliderStyle, juce::Slider&) override;
 };
@@ -113,13 +114,14 @@ public:
         int kind = 2; // 0 = skip, 1 = mute, 2 = plays
     };
     std::function<void()> onClick;
-    void set(const std::array<Step, 6>& steps, int playing);
+    void set(const std::array<Step, 6>& steps, int playing, int loopFrom = -1, int loopTo = -1); // loop: -1 = none
     void paint(juce::Graphics&) override;
     void mouseUp(const juce::MouseEvent&) override;
 
 private:
     std::array<Step, 6> shown {};
     int current = -1;
+    int loopLo = -1, loopHi = -1;
 };
 
 // The quick-start guide: what to do first and where the sound goes. Opens by itself the first time, and with the
@@ -230,6 +232,10 @@ private:
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ComboBox headroomBox, stutterLenBox;
+    juce::ToggleButton loopButton { "LOOP" };
+    std::unique_ptr<APVTS::ButtonAttachment> loopAtt;
+    juce::ComboBox loopFromBox, loopToBox, loopRepeatsBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> loopFromAtt, loopToAtt, loopRepeatsAtt;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
     KnobSlider reverbDecaySlider, reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;

@@ -221,6 +221,13 @@ Font PedalLookAndFeel::getComboBoxFont(ComboBox&)
     return bold(11.0f);
 }
 
+// The text runs up to the arrow (drawn 10..18 px from the right edge), so narrow boxes still show a step number.
+void PedalLookAndFeel::positionComboBoxText(ComboBox& box, Label& label)
+{
+    label.setBounds(1, 1, jmax(0, box.getWidth() - 20), box.getHeight() - 2);
+    label.setFont(getComboBoxFont(box));
+}
+
 // ------------------------------------------------------------------------------------------
 // Small controls
 
@@ -260,15 +267,19 @@ void FootSwitch::mouseUp(const MouseEvent&)
         onRelease();
 }
 
-void StepStrip::set(const std::array<Step, 6>& steps, int playing)
+void StepStrip::set(const std::array<Step, 6>& steps, int playing, int loopFrom, int loopTo)
 {
-    bool changed = playing != current;
+    const int lo = loopFrom < 0 || loopTo < 0 ? -1 : jmin(loopFrom, loopTo);
+    const int hi = loopFrom < 0 || loopTo < 0 ? -1 : jmax(loopFrom, loopTo);
+    bool changed = playing != current || lo != loopLo || hi != loopHi;
     for (size_t i = 0; i < 6 && !changed; ++i)
         changed = std::abs(steps[i].knob - shown[i].knob) > 0.002f || steps[i].kind != shown[i].kind;
     if (changed)
     {
         shown = steps;
         current = playing;
+        loopLo = lo;
+        loopHi = hi;
         repaint();
     }
 }
@@ -307,6 +318,12 @@ void StepStrip::paint(Graphics& g)
     }
     g.setColour(Colour(0xff3c3c42));
     g.drawRoundedRectangle(b.reduced(0.5f), 3.0f, 1.0f);
+    if (loopLo >= 0) // the loop section: a frame around its steps
+    {
+        g.setColour(kAccent.withAlpha(0.75f));
+        g.drawRoundedRectangle(Rectangle<float>(b.getX() + slot * (float) loopLo, b.getY(), slot * (float) (loopHi - loopLo + 1), b.getHeight()).reduced(1.0f),
+                               3.0f, 1.5f);
+    }
 }
 
 void HelpOverlay::paint(Graphics& g)
@@ -563,6 +580,25 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     headroomAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::headroom, headroomBox);
     stutterLenAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stutterLen, stutterLenBox);
 
+    // the loop section: the items are listed in the parameters' order, so the attachments match them up
+    loopButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(loopButton);
+    loopAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::loopOn, loopButton);
+    for (int i = 0; i < bitvibe::kNumSteps; ++i)
+    {
+        loopFromBox.addItem(String(i + 1), i + 1);
+        loopToBox.addItem(String(i + 1), i + 1);
+    }
+    loopRepeatsBox.addItemList({ "forever", "2 times", "3 times", "4 times", "8 times", "16 times" }, 1);
+    for (auto* box : { &loopFromBox, &loopToBox, &loopRepeatsBox })
+    {
+        box->setLookAndFeel(&laf);
+        content.addAndMakeVisible(*box);
+    }
+    loopFromAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::loopFrom, loopFromBox);
+    loopToAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::loopTo, loopToBox);
+    loopRepeatsAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::loopRepeats, loopRepeatsBox);
+
     // footswitches
     bypassSwitch.setMouseCursor(MouseCursor::PointingHandCursor);
     tapSwitch.setMouseCursor(MouseCursor::PointingHandCursor);
@@ -661,7 +697,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -755,6 +791,10 @@ BitVibeEditor::~BitVibeEditor()
     tempoLabel.setLookAndFeel(nullptr);
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
+    loopButton.setLookAndFeel(nullptr);
+    loopFromBox.setLookAndFeel(nullptr);
+    loopToBox.setLookAndFeel(nullptr);
+    loopRepeatsBox.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
 }
 
@@ -1051,6 +1091,12 @@ void BitVibeEditor::setTooltips()
     fxTrigButton.setTooltip("FX ONLY ON TRIGGERS: when on, the sample-rate, bit and filter effects only act while the stutter or "
                             "sequencer is playing; the rest of the time your signal stays clean. A sequencer set to LOOP is always playing.");
     headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths.");
+    loopButton.setTooltip("LOOP: keep part of the sequence going. The steps chosen with FROM and TO repeat (forever, or the number of "
+                          "times chosen) before the sequence goes on; a restart still plays the steps before them first. Framed on the step strip.");
+    loopFromBox.setTooltip("LOOP FROM: the first step of the loop section (set it and TO to the same step to hold one step).");
+    loopToBox.setTooltip("LOOP TO: the last step of the loop section.");
+    loopRepeatsBox.setTooltip("LOOP REPEATS: how many times the loop section plays in a row each time the sequence reaches it; forever keeps it "
+                              "going until the sequence restarts.");
     stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
 
     // preset bar and expression morph strip
@@ -1210,7 +1256,11 @@ void BitVibeEditor::resized()
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
     triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
     stepStrip.setBounds(face({ 190, 355, 100, 24 }));
-    fxTrigButton.setBounds(face({ 24, 686, 200, 24 }));
+    fxTrigButton.setBounds(face({ 24, 686, 156, 24 }));
+    loopButton.setBounds(face({ 188, 686, 50, 24 }));
+    loopFromBox.setBounds(face({ 242, 686, 44, 24 }));   // "TO" is painted between the two step boxes
+    loopToBox.setBounds(face({ 308, 686, 44, 24 }));
+    loopRepeatsBox.setBounds(face({ 356, 686, 96, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     reverbTypeBox.setBounds(face({ kSideX + 344, kReverb.getY() + 3, 100, 20 }));
@@ -1401,6 +1451,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.setFont(bold(9.5f));
     g.drawText("HEADROOM", Rectangle<int>(172, 641, 120, 11), Justification::left);
     g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641, 144, 11), Justification::left);
+    g.drawText("TO", Rectangle<int>(286, 686, 22, 24), Justification::centred);
 
     // The lights on the right-hand panels: lit while a sequence or stutter plays, which is when they act.
     const bool live = proc.getEngine().isEffectSideActive();
@@ -1531,7 +1582,9 @@ void BitVibeEditor::timerCallback()
             const auto decoded = bitvibe::mapping::decodeStep(knob, type);
             steps[(size_t) i] = { knob, decoded.kind == bitvibe::mapping::Step::Kind::Skip ? 0 : (decoded.kind == bitvibe::mapping::Step::Kind::Mute ? 1 : 2) };
         }
-        stepStrip.set(steps, proc.getEngine().getCurrentStep());
+        const bool loop = rawValue(ids::loopOn) > 0.5f;
+        stepStrip.set(steps, proc.getEngine().getCurrentStep(), loop ? roundToInt(rawValue(ids::loopFrom)) : -1,
+                      loop ? roundToInt(rawValue(ids::loopTo)) : -1);
     }
     refreshPresetName();
     showSeqType();

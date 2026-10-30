@@ -29,7 +29,8 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random) and a hold to freeze it.
 - **6-step sequencer** for pitch (+/-12 semitones), filter cutoff or sample rate. Each step can be skipped or
-  muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, tapped or typed in).
+  muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, tapped or typed in). A **loop section**
+  can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and an option to apply the effects **only while
@@ -106,6 +107,11 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 - **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate.
 - **TAP** sets the tempo (or click the big BPM number and type one). Holding it, or the HOLD button, freezes the stutter.
 - **BYPASS** switches the effect off. **TRIGGER** sets how easily picked notes start the stutter and sequencer.
+- **LOOP** (under the global knobs) repeats part of the sequence. Choose its first and last step and how often it
+  plays (2 to 16 times, or forever); the looped steps are framed on the little step strip. Each time the sequence
+  restarts (a hard pick or the beat pattern), it plays from step 1 again, so the steps before the loop come back
+  once and then the loop takes over. For example, loop steps 4 to 6 forever on a filter sequence to keep the
+  sweep going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
 - **MIX** blends your clean input with the effect. **FX ONLY ON TRIGGERS** applies the crush and filter only
   while a stutter or sequence plays, so your playing stays clean in between.
 
@@ -187,7 +193,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 440 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 449 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

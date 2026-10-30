@@ -55,6 +55,16 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
 
+    // ---- the loop section of the sequence (stored in the preset slots) ----------------------
+    {
+        const StringArray stepNames { "Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6" };
+        layout.add(std::make_unique<AudioParameterBool>(id(ids::loopOn), "Sequence Loop", false));
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopFrom), "Loop From", stepNames, 3));
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopTo), "Loop To", stepNames, 5));
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopRepeats), "Loop Repeats",
+                                                          StringArray { "Forever", "2 Times", "3 Times", "4 Times", "8 Times", "16 Times" }, 0));
+    }
+
     // ---- tempo, switches ---------------------------------------------------------------
     NormalisableRange<float> tempoRange(kMinTempoBpm, kMaxTempoKnobBpm, 0.1f);
     tempoRange.setSkewForCentre(110.0f);
@@ -219,7 +229,7 @@ std::vector<String> presetParameterIds()
     std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult };
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         list.push_back(ids::step(i));
-    for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph })
+    for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats })
         list.emplace_back(id);
     return list;
 }
@@ -285,6 +295,10 @@ BitVibeProcessor::BitVibeProcessor()
     pSeqPlay = raw(ids::seqPlay);
     pSeqMult = raw(ids::seqMult);
     pSeqType = raw(ids::seqType);
+    pLoopOn = raw(ids::loopOn);
+    pLoopFrom = raw(ids::loopFrom);
+    pLoopTo = raw(ids::loopTo);
+    pLoopRepeats = raw(ids::loopRepeats);
     pTempo = raw(ids::tempo);
     pTempoSync = raw(ids::tempoSync);
     pBypass = raw(ids::bypass);
@@ -423,6 +437,14 @@ bitvibe::Params BitVibeProcessor::readParams()
     {
         refreshMorphCache();
         bitvibe::applyKnobs(p, bitvibe::morph::blend(cachedToeUp, cachedToeDown, pExpression->load()));
+    }
+
+    p.loopOn = pLoopOn->load() > 0.5f;
+    p.loopFrom = roundToInt(pLoopFrom->load());
+    p.loopTo = roundToInt(pLoopTo->load());
+    {
+        static constexpr int kPlays[] { 0, 2, 3, 4, 8, 16 }; // as listed in the Loop Repeats parameter
+        p.loopPlays = kPlays[jlimit(0, 5, roundToInt(pLoopRepeats->load()))];
     }
 
     p.tempoBpm = pTempo->load();

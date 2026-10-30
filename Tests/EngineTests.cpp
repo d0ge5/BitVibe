@@ -1862,6 +1862,77 @@ size_t firstIndexOf(const std::vector<int>& v, int value, size_t from = 0)
     return v.size();
 }
 
+// The loop section: the chosen steps repeat (a number of times or forever) before the sequence goes on, and a
+// restart still begins at step 1.
+void testSequenceLoop()
+{
+    std::puts("sequence loop");
+    Params p = neutral();
+    p.seqPlay = 1;            // once
+    p.seqMult = 7;            // x128
+    p.tempoBpm = 240.0f;      // a step is about 94 samples
+    p.pickTriggers = false;
+    const Signal quiet(6000, 0.0f);
+    auto order = [&](const Params& q, const std::vector<std::pair<size_t, TriggerAction>>& events, size_t upTo)
+    {
+        const auto trace = stepTrace(q, quiet, events);
+        std::vector<int> seen;
+        for (size_t i = 0; i < upTo && i < trace.size(); ++i)
+            if (seen.empty() || seen.back() != trace[i])
+                seen.push_back(trace[i]);
+        return seen;
+    };
+    const std::vector<std::pair<size_t, TriggerAction>> start { { 0, TriggerAction::RestartSequence } };
+
+    CHECK((order(p, start, 6000) == std::vector<int> { 0, 1, 2, 3, 4, 5, -1 }), "loop off: one pass of six steps");
+
+    Params twice = p;
+    twice.loopOn = true;
+    twice.loopFrom = 3;
+    twice.loopTo = 5;
+    twice.loopPlays = 2;
+    CHECK((order(twice, start, 6000) == std::vector<int> { 0, 1, 2, 3, 4, 5, 3, 4, 5, -1 }), "steps 4 to 6 twice, then the pass ends");
+
+    Params middle = twice;
+    middle.loopFrom = 3; // either order works
+    middle.loopTo = 1;
+    middle.loopPlays = 3;
+    CHECK((order(middle, start, 6000) == std::vector<int> { 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 4, 5, -1 }),
+          "steps 2 to 4 three times, then steps 5 and 6");
+
+    Params forever = twice;
+    forever.loopPlays = 0;
+    const auto loops = order(forever, start, 6000);
+    CHECK(loops.size() > 20 && loops.back() != -1 && std::find(loops.begin() + 3, loops.end(), 0) == loops.end()
+              && std::find(loops.begin() + 3, loops.end(), 2) == loops.end(),
+          "forever: steps 4 to 6 keep going and never go back to the start on their own (%d changes)", (int) loops.size());
+    const auto restarted = order(forever, { { 0, TriggerAction::RestartSequence }, { 3000, TriggerAction::RestartSequence } }, 6000);
+    const auto firstAgain = std::find(restarted.begin() + 1, restarted.end(), 0);
+    CHECK(firstAgain != restarted.end() && firstAgain + 3 < restarted.end() && firstAgain[1] == 1 && firstAgain[2] == 2 && firstAgain[3] == 3,
+          "forever: a restart plays steps 1 to 3 again, then the loop");
+
+    Params skipped = twice;
+    skipped.steps[4] = 0.0f; // step 5 skipped
+    CHECK((order(skipped, start, 6000) == std::vector<int> { 0, 1, 2, 3, 5, 3, 5, -1 }), "a skipped step inside the loop stays skipped");
+
+    Params allSkipped = twice;
+    allSkipped.steps[3] = allSkipped.steps[4] = allSkipped.steps[5] = 0.0f;
+    CHECK((order(allSkipped, start, 6000) == std::vector<int> { 0, 1, 2, -1 }), "a loop of skipped steps does nothing");
+
+    Params single = forever;
+    single.loopFrom = single.loopTo = 2;
+    const auto held = order(single, start, 6000);
+    CHECK((held == std::vector<int> { 0, 1, 2 }), "a one-step loop holds that step (%d changes)", (int) held.size());
+
+    // Steps moved by trigger events (steps on hits) follow the loop too.
+    Params hits = twice;
+    hits.stepsOnHits = true;
+    std::vector<std::pair<size_t, TriggerAction>> nexts;
+    for (size_t k = 0; k < 12; ++k)
+        nexts.push_back({ k * 100, TriggerAction::NextStep });
+    CHECK((order(hits, nexts, 6000) == std::vector<int> { 0, 1, 2, 3, 4, 5, 3, 4, 5, -1, 0, 1 }), "steps on hits follow the loop");
+}
+
 void testTriggerEvents()
 {
     std::puts("trigger events: restart, next step, stutter, pick triggers off, steps on hits");
@@ -2602,6 +2673,7 @@ int main(int argc, char** argv)
     testEffectsOnTriggers();
     testBeatRoute();
     testBeatPattern();
+    testSequenceLoop();
     testReverb();
     testSampleBlend();
     testDistortion();

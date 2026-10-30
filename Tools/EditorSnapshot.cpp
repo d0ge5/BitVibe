@@ -677,6 +677,35 @@ void testEqParams()
     check(maxDifference(run(*p, in), in) < 1.0e-5f, "the clean signal is untouched");
 }
 
+// The loop section is part of a preset: it is saved into a slot, comes back with it, changes the sound and travels
+// in a preset file.
+void testSequenceLoopParams()
+{
+    std::puts("sequence loop (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    p->setCurrentProgram(0);
+    setValue(*p, ids::seqPlay, 1.0f); // once
+    setValue(*p, ids::seqMult, 3.0f);
+    const auto plain = run(*p, in);
+    check(getValue(*p, ids::loopOn) < 0.5f, "the loop starts off");
+    setValue(*p, ids::loopOn, 1.0f);
+    setValue(*p, ids::loopFrom, 3.0f);
+    setValue(*p, ids::loopTo, 5.0f);
+    setValue(*p, ids::loopRepeats, 0.0f);
+    const auto looped = run(*p, in);
+    check(maxDifference(looped, plain) > 0.01f && isFinite(looped), "a forever loop keeps the sequence going (max diff " + String(maxDifference(looped, plain), 3) + ")");
+    p->saveCurrentPreset();
+    p->setCurrentProgram(1);
+    check(getValue(*p, ids::loopOn) < 0.5f, "another factory slot has no loop");
+    p->setCurrentProgram(0);
+    check(getValue(*p, ids::loopOn) > 0.5f && std::abs(getValue(*p, ids::loopFrom) - 3.0f) < 0.01f && std::abs(getValue(*p, ids::loopTo) - 5.0f) < 0.01f,
+          "the loop comes back with its slot");
+    check(maxDifference(run(*p, in), looped) < 1.0e-5f, "and sounds the same");
+    const auto text = p->exportPreset()->toString();
+    check(text.contains("loopOn") && text.contains("loopRepeats"), "a preset file holds the loop");
+}
+
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -793,7 +822,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 57 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 57 and 0)");
+    check(controls == 61 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 61 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -936,7 +965,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 99, "99 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 103, "103 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1439,6 +1468,23 @@ int main(int argc, char** argv)
     setValue(processor, "stutter", 12.0f);
     setValue(processor, "seqType", 1.0f);
     setValue(processor, "hold", 1.0f);
+    setValue(processor, ids::loopOn, 1.0f); // steps 4 to 6 looping forever
+    {
+        // the step strip frames the loop section
+        StepStrip strip;
+        strip.setSize(100, 24);
+        std::array<StepStrip::Step, 6> steps {};
+        strip.set(steps, 4);
+        const auto without = strip.createComponentSnapshot(strip.getLocalBounds(), true, 2.0f);
+        strip.set(steps, 4, 5, 3);
+        const auto with = strip.createComponentSnapshot(strip.getLocalBounds(), true, 2.0f);
+        const auto framed = with.getPixelAt(2 * 52, 3), plainPx = without.getPixelAt(2 * 52, 3), outside = with.getPixelAt(2 * 20, 3);
+        check(framed != plainPx && outside == without.getPixelAt(2 * 20, 3), "the step strip frames steps 4 to 6 (given either way round) and nothing else");
+        const auto stripFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_step_loop.png");
+        stripFile.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(stripFile.createOutputStream()))
+            PNGImageFormat().writeImageToStream(with, *out);
+    }
     {
         std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(processor.createEditor()));
         save(*ed, outDir.getChildFile("editor_played.png"));
@@ -1487,6 +1533,7 @@ int main(int argc, char** argv)
     testRightModes(outDir);
     testDistortionParams();
     testEqParams();
+    testSequenceLoopParams();
     testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
