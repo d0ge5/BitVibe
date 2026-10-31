@@ -61,65 +61,45 @@ float table(const float* t, float phase)
     return t[i] + (t[j] - t[i]) * (x - std::floor(x));
 }
 
-// The highest the head goes on the headbang curve (the bottom is where it starts, on the beat).
-float headTop()
+// How far forward the head nods on the curve rendered in Blender (its angles are the snout's pitch, up positive: the
+// head is pulled back, snout up, at kHeadAngle[0]).
+float headForward()
 {
-    static const float top = [] {
+    static const float forward = [] {
         float a = beatdog::kHeadAngle[0];
         for (int i = 0; i < beatdog::kTableSize; ++i)
             a = jmin(a, beatdog::kHeadAngle[i]);
         return a;
     }();
-    return top;
+    return forward;
 }
 
-// The headbang, from one picked beat (0) to the next (1): the head starts at the top and drops hard the moment the beat
-// comes, hits bottom kDrop of a beat later, the impact carries it a little further down, then it rises smoothly back to
-// the top, eased off the bottom and into the top, ready for the next beat. The ears follow on a spring, as in the
-// Blender script.
-constexpr float kDrop = 0.15f, kBounce = 0.14f; // in beats: kept whatever the gap between picked beats
+// The headbang, from one picked beat to the next: on the beat the head, pulled back, nods forward, then pulls back
+// smoothly (eased out of the nod and into the back) in time for the next. SMOOTH sets how much quicker the nod is:
+// all the way left it takes kNod of a beat, speeding up all the way into the hit, which carries the head a little
+// further forward; all the way right it takes half the time between the beats and eases like the pull back, so the
+// two are the same.
+constexpr float kNod = 0.15f, kBounce = 0.14f; // in beats, whatever the gap between picked beats
 
-float headbangAngle(float p)
+float nodTime(float gap, float smooth) { return kNod + (0.5f * gap - kNod) * smooth; }
+
+float headbangAngle(float since, float gap, float smooth)
 {
-    const float down = beatdog::kHeadAngle[0], up = headTop();
-    if (p < kDrop)
+    const float back = beatdog::kHeadAngle[0], forward = headForward();
+    if (gap <= 0.0f)
+        return back;
+    const float nod = nodTime(gap, smooth);
+    if (since < nod)
     {
-        const float u = p / kDrop;
-        return up + (down - up) * u * u * u; // accelerating all the way into the impact
+        const float u = since / nod;
+        const float eased = 0.5f - 0.5f * std::cos(MathConstants<float>::pi * u);
+        return back + (forward - back) * (u * u * u + (eased - u * u * u) * smooth);
     }
-    const float u = (p - kDrop) / (1.0f - kDrop);
-    float a = down + (up - down) * u * u * (3.0f - 2.0f * u); // eased off the bottom and into the top
-    if (p < kDrop + kBounce)
-        a += degreesToRadians(5.0f) * std::sin(MathConstants<float>::pi * (p - kDrop) / kBounce);
+    const float u = (since - nod) / (gap - nod);
+    float a = forward + (back - forward) * (0.5f - 0.5f * std::cos(MathConstants<float>::pi * u));
+    if (since - nod < kBounce)
+        a -= degreesToRadians(5.0f) * (1.0f - smooth) * std::sin(MathConstants<float>::pi * (since - nod) / kBounce);
     return a;
-}
-
-struct Curve
-{
-    std::array<float, beatdog::kTableSize> head {}, ears {};
-};
-
-const Curve& headbangCurve()
-{
-    static const Curve curve = [] {
-        Curve c;
-        constexpr int n = beatdog::kTableSize, steps = n * 5;
-        constexpr float k = 1400.0f, damping = 26.0f; // per beat, as in Tools/beatdog/build_beat_dog.py
-        for (int i = 0; i < n; ++i)
-            c.head[(size_t) i] = headbangAngle((float) i / (float) n);
-        float theta = c.head[0], vel = 0.0f;
-        for (int cycle = 0; cycle < 6; ++cycle) // run until the ears have settled into their loop
-            for (int s = 0; s < steps; ++s)
-            {
-                const float head = headbangAngle((float) s / (float) steps), dt = 1.0f / (float) steps;
-                vel += (k * (head - theta) - damping * vel) * dt;
-                theta += vel * dt;
-                if (cycle == 5 && s % 5 == 0)
-                    c.ears[(size_t) (s / 5)] = (theta - head) * 1.6f;
-            }
-        return c;
-    }();
-    return curve;
 }
 
 // How far the sway goes at full SWAY: the lean (radians) and the slide and the lift (as parts of the screen).
@@ -160,8 +140,8 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     addAndMakeVisible(fpsBox);
 
     setUpKnob(smoothKnob, laf, 0.0);
-    smoothKnob.setTooltip("SMOOTH (LIVE 3D): left, the headbang: a hard drop on each picked beat and a smooth rise. "
-                          "Right, an even, rounded bob. Double-click: back to the headbang.");
+    smoothKnob.setTooltip("SMOOTH: how much quicker the nod forward is than the smooth pull back. Left, the headbang: a "
+                          "sudden nod on each picked beat. Right, an even bob, forward and back alike. Double-click: the headbang.");
     smoothKnob.onValueChange = [this] { setSmoothness((float) smoothKnob.getValue()); };
     smoothKnob.onDragEnd = [this] { saveSettings(); };
     addAndMakeVisible(smoothKnob);
@@ -235,7 +215,7 @@ void BeatDog::setSmoothness(float amount)
     knobsChanged = true;
     if (smoothKnob.getValue() != amount)
         smoothKnob.setValue(amount, dontSendNotification);
-    repaint(smoothKnob.getBounds().expanded(30, 30));
+    repaint();
 }
 
 void BeatDog::setSway(float amount)
@@ -269,15 +249,12 @@ void BeatDog::updateControls()
     fpsBox.setSelectedId(fps, dontSendNotification);
     fpsBox.setEnabled(live);
     fpsBox.setAlpha(live ? 1.0f : 0.4f);
-    smoothKnob.setEnabled(live); // the pre-rendered frames have the headbang baked in
-    repaint(smoothKnob.getBounds().expanded(30, 30));
 }
 
 int BeatDog::beatsInBar() const { return jlimit(1, kMaxBeats, (barSteps + 3) / 4); }
 
-// The headbang runs from one picked beat to the next: the head drops on a picked beat, bounces and rises back to the top
-// by the next one. With picked beats further apart the rise takes the extra time, so the drop and the bounce keep their
-// snap; with none picked the head waits at the top, still.
+// The headbang runs from one picked beat to the next: the head nods forward on a picked beat and pulls back by the next
+// one. With none picked it waits, pulled back and still.
 BeatDog::Motion BeatDog::motionAt(float phase, int beatInBar, int steps)
 {
     const float barBeats = (float) jlimit(1, 32, steps) / 4.0f;
@@ -286,8 +263,8 @@ BeatDog::Motion BeatDog::motionAt(float phase, int beatInBar, int steps)
     Motion m;
     if (mask == 0)
     {
-        m.side = m.lift = 0.0f;
-        return m; // the top of the curve
+        m.gap = m.side = m.lift = 0.0f;
+        return m;
     }
     else
     {
@@ -310,14 +287,8 @@ BeatDog::Motion BeatDog::motionAt(float phase, int beatInBar, int steps)
             elapsed += barBeats;
         if (gap <= 0.0f)
             gap += barBeats;
-        constexpr float snap = kDrop + kBounce;
-        if (gap <= 1.0f)
-            m.bang = elapsed / gap;
-        else if (elapsed < snap)
-            m.bang = elapsed;
-        else
-            m.bang = snap + (elapsed - snap) / (gap - snap) * (1.0f - snap);
-        m.bang = jlimit(0.0f, 0.9999f, m.bang);
+        m.since = jlimit(0.0f, gap, elapsed);
+        m.gap = gap;
         m.between = jlimit(0.0f, 0.9999f, elapsed / gap);
     }
     if (m.between < lastBetween - 0.5f) // a picked beat went by: sway back the other way
@@ -328,17 +299,17 @@ BeatDog::Motion BeatDog::motionAt(float phase, int beatInBar, int steps)
     return m;
 }
 
-// The pre-rendered frame for a motion. The frames were rendered on a different curve (the head springing up off the beat
-// and falling back into the next, at the top 0.6 of the way through), so this picks the frame whose head is nearest the
-// angle wanted, from the frames going the same way: falling while the head drops, rising (with the bounce) after.
+// The pre-rendered frame for a motion. The frames were rendered on a curve of their own (a nod forward over the first
+// 0.6 of the beat, then a pull back), so this picks the frame whose head is nearest the angle wanted, from the frames
+// going the same way, so the ears flop the right way too.
 int BeatDog::frameFor(const Motion& m) const
 {
-    const float want = table(headbangCurve().head.data(), m.bang);
-    const bool falling = m.bang < kDrop;
-    const int topFrame = roundToInt(0.6f * (float) kFrames);
+    const float want = headAngle(m);
+    const bool nodding = m.gap > 0.0f && m.since < nodTime(m.gap, smoothness);
+    const int forwardFrame = roundToInt(0.6f * (float) kFrames);
     int best = 0;
     float bestDistance = 1.0e9f;
-    for (int f = falling ? topFrame : 0; f < (falling ? kFrames : topFrame + 1); ++f)
+    for (int f = nodding ? 0 : forwardFrame; f < (nodding ? forwardFrame + 1 : kFrames); ++f)
         if (const float d = std::abs(table(beatdog::kHeadAngle, (float) f / (float) kFrames) - want); d < bestDistance)
         {
             bestDistance = d;
@@ -349,12 +320,35 @@ int BeatDog::frameFor(const Motion& m) const
 
 float BeatDog::headAngle(const Motion& m) const
 {
-    const float bang = table(headbangCurve().head.data(), m.bang);
-    if (smoothness <= 0.0f)
-        return bang;
-    const float down = beatdog::kHeadAngle[0], up = headTop();
-    const float even = up + (down - up) * (0.5f - 0.5f * std::cos(MathConstants<float>::twoPi * m.between)); // top on the beat
-    return bang + (even - bang) * smoothness;
+    return headbangAngle(m.since, m.gap, smoothness);
+}
+
+// The ears' flop through one headbang, from one picked beat to the next (gap beats apart), behind the head on a damped
+// spring as in the Blender script. Worked out again only when the gap or SMOOTH changes.
+const float* BeatDog::earsFor(float gap)
+{
+    static_assert(kEarSteps == beatdog::kTableSize);
+    if (gap == earsGap && smoothness == earsSmooth)
+        return ears.data();
+    earsGap = gap;
+    earsSmooth = smoothness;
+    ears.fill(0.0f);
+    if (gap <= 0.0f)
+        return ears.data();
+    constexpr int steps = kEarSteps * 5;
+    constexpr float k = 1400.0f, damping = 26.0f; // per beat, as in Tools/beatdog/build_beat_dog.py
+    const float dt = gap / (float) steps;
+    float theta = headbangAngle(0.0f, gap, smoothness), vel = 0.0f;
+    for (int cycle = 0; cycle < 6; ++cycle) // run until the ears have settled into their loop
+        for (int s = 0; s < steps; ++s)
+        {
+            const float head = headbangAngle((float) s * dt, gap, smoothness);
+            vel += (k * (head - theta) - damping * vel) * dt;
+            theta += vel * dt;
+            if (cycle == 5 && s % 5 == 0)
+                ears[(size_t) (s / 5)] = (theta - head) * 1.6f;
+        }
+    return ears.data();
 }
 
 void BeatDog::setBeat(float phase, int beatInBar, float bpm, int steps)
@@ -416,8 +410,8 @@ void BeatDog::drawLiveFrame(const Motion& motion)
 
     // the pose
     const float head = headAngle(motion);
-    const float earFlop = table(headbangCurve().ears.data(), motion.bang) * (1.0f - 0.7f * smoothness); // an even bob flops the ears less
-    const float side = kEarSide * std::sin(MathConstants<float>::twoPi * motion.bang - 0.5f);
+    const float earFlop = table(earsFor(motion.gap), motion.between);
+    const float side = kEarSide * std::sin(MathConstants<float>::twoPi * motion.between - 0.5f);
     const V3 pitchAxis = fromArray(kPitchAxis), snout = fromArray(kSnout), neck = fromArray(kNeck);
     // the sway leans the head about its snout (which points at the camera) and slides it across and up the screen
     const V3 right { kView[0][0], kView[0][1], kView[0][2] }, up { kView[1][0], kView[1][1], kView[1][2] };
@@ -512,7 +506,7 @@ String BeatDog::getTooltip()
     const auto mouse = getMouseXYRelative();
     for (int b = 0; b < beatsInBar(); ++b)
         if (beatButton(b).expanded(2).contains(mouse))
-            return "Beat " + String(b + 1) + ": click to have the head drop on it, or not. Pick fewer beats for a slower, "
+            return "Beat " + String(b + 1) + ": click to have the head nod forward on it, or not. Pick fewer beats for a slower, "
                    "heavier headbang; the sway follows the beats picked. The playing beat lights up.";
     return "BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on). Pick the beats it hits with the numbered "
            "buttons; SWAY floats it from side to side between them.";

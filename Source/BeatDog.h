@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 
 class PedalLookAndFeel;
@@ -13,9 +14,10 @@ class PedalButton;
 //  - LIVE 3D: the same head drawn in real time from its mesh (BeatDogMesh.h, exported by the same Blender script), at
 //    60, 30 or 15 frames a second. Only the lines facing the camera are drawn, each with a soft glow, into an image at
 //    the frame rate chosen; the editor's own repaints just show that image.
-// The head drops hard on the beats picked with the numbered buttons (all of them to start with) and rises smoothly back
-// to the top before the next. SWAY floats the head from side to side, landing on one side at a picked beat and on the
-// other at the next; SMOOTH (LIVE 3D only) eases the headbang into an even bob. All of it is remembered.
+// The head nods forward on the beats picked with the numbered buttons (all of them to start with) and pulls back smoothly
+// before the next. SMOOTH sets how much quicker the nod is: all the way left a sudden headbang, all the way right an
+// even bob. SWAY floats the head from side to side, landing on one side at a picked beat and on the other at the next.
+// All of it is remembered.
 class BeatDog : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
@@ -46,19 +48,20 @@ public:
     // Which beats of the bar the head hits bottom on: bit n = beat n + 1. Remembered.
     void setBeatMask(int mask);
     int getBeatMask() const { return beatMask; }
-    void setSmoothness(float amount); // 0 = the headbang, 1 = an even bob (LIVE 3D)
+    void setSmoothness(float amount); // 0 = the headbang (the quickest nod), 1 = an even bob
     float getSmoothness() const { return smoothness; }
     void setSway(float amount);       // 0 = still, 1 = the widest sway
     float getSway() const { return sway; }
     void saveSettings();              // the knobs are saved when let go of, and when the editor closes
 
-    // The motion at a moment of the bar: how far through the headbang (0 = a picked beat, where the head starts to drop), how far from one picked beat to the next (0..1), and the float's side (-1..1) and lift (0..1).
+    // The motion at a moment of the bar: the beats since the last picked beat and to the next (gap: 0 = none picked), how
+    // far from one to the other (0..1), and the float's side (-1..1) and lift (0..1).
     struct Motion
     {
-        float bang = 0.0f, between = 0.0f, side = 1.0f, lift = 0.0f;
+        float since = 0.0f, gap = 1.0f, between = 0.0f, side = 1.0f, lift = 0.0f;
     };
     Motion motionAt(float phase, int beatInBar, int barSteps);
-    // The head's tilt for a motion, in radians: the headbang curve, eased toward an even bob by SMOOTH.
+    // The head's pitch for a motion, in radians (snout up positive): the nod forward on the beat and the pull back.
     float headAngle(const Motion&) const;
     int frameFor(const Motion&) const; // the pre-rendered frame that shows it
 
@@ -81,6 +84,7 @@ private:
     void buildScanlines();
     void updateControls();
     void drawLiveFrame(const Motion&);
+    const float* earsFor(float gap);
 
     PedalLookAndFeel& laf;
     juce::Image sheet;      // the 32 frames, decoded once
@@ -96,6 +100,9 @@ private:
     Motion shown, liveShown; // what each version shows now
     float lastBetween = 0.0f;
     int swings = 0;          // picked beats passed: which side the sway heads for
+    static constexpr int kEarSteps = 256;
+    std::array<float, kEarSteps> ears {}; // the ears' flop through one headbang, for this gap and SMOOTH
+    float earsGap = -1.0f, earsSmooth = -1.0f;
 
     std::unique_ptr<PedalButton> liveButton;
     juce::ComboBox fpsBox;
