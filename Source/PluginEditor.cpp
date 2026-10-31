@@ -769,9 +769,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     };
 
     altButton.onClick = [this] { setAltLayer(!altLayer); };
-    typePitchButton.onClick = [this] { typeParam.setValueAsCompleteGesture(0.0f); showSeqType(); };
-    typeFilterButton.onClick = [this] { typeParam.setValueAsCompleteGesture(1.0f); showSeqType(); };
-    typeRateButton.onClick = [this] { typeParam.setValueAsCompleteGesture(2.0f); showSeqType(); };
+    // switching the type remembers the step knobs of the type being left and brings back those of the new one
+    typePitchButton.onClick = [this] { proc.switchSequencerType(0); showSeqType(); };
+    typeFilterButton.onClick = [this] { proc.switchSequencerType(1); showSeqType(); };
+    typeRateButton.onClick = [this] { proc.switchSequencerType(2); showSeqType(); };
 
     content.addAndMakeVisible(bypassSwitch);
     content.addAndMakeVisible(tapSwitch);
@@ -1215,9 +1216,12 @@ void BitVibeEditor::setTooltips()
     bypassSwitch.setTooltip("BYPASS: switches the effect on or off. The red light shows it is on.");
     tapSwitch.setTooltip("TAP: tap to set the tempo. Press and hold to freeze the stutter.");
     altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer.");
-    typePitchButton.setTooltip("SEQ TYPE: PITCH. The six step knobs set a pitch shift for each step, from -12 to +12 semitones.");
-    typeFilterButton.setTooltip("SEQ TYPE: FILTER. The six step knobs set the filter cutoff of each step, as a percent of the FILTER knob.");
-    typeRateButton.setTooltip("SEQ TYPE: SAMPLE RATE. The six step knobs set the sample rate of each step, as a percent of the SAMPLE knob.");
+    typePitchButton.setTooltip("SEQ TYPE: PITCH. The six step knobs set a pitch shift for each step, from -12 to +12 semitones. "
+                              "Each type remembers its own step knobs: switch away and back and they are where you left them.");
+    typeFilterButton.setTooltip("SEQ TYPE: FILTER. The six step knobs set the filter cutoff of each step, as a percent of the FILTER knob. "
+                                "Each type remembers its own step knobs: switch away and back and they are where you left them.");
+    typeRateButton.setTooltip("SEQ TYPE: SAMPLE RATE. The six step knobs set the sample rate of each step, as a percent of the SAMPLE knob. "
+                              "Each type remembers its own step knobs: switch away and back and they are where you left them.");
 
     // global panel
     tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Turn the knob, click the big BPM number to type a tempo, tap, or turn on SYNC.");

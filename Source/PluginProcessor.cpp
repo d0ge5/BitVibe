@@ -54,6 +54,16 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
+    // the step knobs each sequencer type was left with (stored in the preset slots; hidden from the host's automation)
+    {
+        static const char* typeNames[3] { "Pitch", "Filter", "Sample Rate" };
+        for (int t = 0; t < 3; ++t)
+            for (int i = 0; i < kNumSteps; ++i)
+                layout.add(std::make_unique<AudioParameterFloat>(id(ids::stepMem(t, i).toRawUTF8()),
+                                                                 String(typeNames[t]) + " Step " + String(i + 1) + " Memory",
+                                                                 NormalisableRange<float>(-1.0f, 1.0f), -1.0f,
+                                                                 AudioParameterFloatAttributes().withAutomatable(false)));
+    }
     // each step can control something else than the sequencer type (stored in the preset slots)
     for (int i = 0; i < kNumSteps; ++i)
         layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
@@ -245,6 +255,9 @@ std::vector<String> presetParameterIds()
         list.push_back(ids::step(i));
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         list.push_back(ids::stepType(i));
+    for (int t = 0; t < 3; ++t)
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+            list.push_back(ids::stepMem(t, i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats })
         list.emplace_back(id);
     return list;
@@ -605,6 +618,34 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
             drumBeat.addAudio(monitor, monitor.getNumChannels(), numSamples, pBeatLevel->load());
     }
     drumBeat.endBlock(numSamples);
+}
+
+void BitVibeProcessor::switchSequencerType(int newType)
+{
+    newType = jlimit(0, 2, newType);
+    auto* typeParam = apvts.getParameter(ids::seqType);
+    const int oldType = jlimit(0, 2, roundToInt(pSeqType->load()));
+    if (newType != oldType)
+    {
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+        {
+            if (roundToInt(pStepTypes[(size_t) i]->load()) != 0)
+                continue; // this step has a type of its own: its knob stays where it is
+            if (auto* mem = apvts.getParameter(ids::stepMem(oldType, i)))
+                mem->setValueNotifyingHost(mem->convertTo0to1(pSteps[(size_t) i]->load()));
+            const float remembered = apvts.getRawParameterValue(ids::stepMem(newType, i))->load();
+            if (remembered >= 0.0f)
+                if (auto* step = apvts.getParameter(ids::step(i)))
+                {
+                    step->beginChangeGesture();
+                    step->setValueNotifyingHost(step->convertTo0to1(remembered));
+                    step->endChangeGesture();
+                }
+        }
+    }
+    typeParam->beginChangeGesture();
+    typeParam->setValueNotifyingHost(typeParam->convertTo0to1((float) newType));
+    typeParam->endChangeGesture();
 }
 
 void BitVibeProcessor::tapTempo()

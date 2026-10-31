@@ -864,6 +864,80 @@ void testLoopSectionSounds()
     check(!bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == bank.getSelected(), "SAME AS MAIN goes back to the main list");
 }
 
+// Each sequencer type remembers its own step knobs: switching with the SEQ TYPE buttons stores the knobs of the type being
+// left and brings back the ones the new type was left with; a type not used yet keeps the knobs as they are; steps with a
+// type of their own stay put; the memory is part of the preset.
+void testStepMemory()
+{
+    std::puts("step memory per sequencer type");
+    auto p = makeProcessor();
+    p->setCurrentProgram(0);
+    auto steps = [&]
+    {
+        std::array<float, 6> v {};
+        for (int i = 0; i < 6; ++i)
+            v[(size_t) i] = getValue(*p, ids::step(i).toRawUTF8());
+        return v;
+    };
+    auto setSteps = [&](const std::array<float, 6>& v)
+    {
+        for (int i = 0; i < 6; ++i)
+            setValue(*p, ids::step(i).toRawUTF8(), v[(size_t) i]);
+    };
+    auto same = [](const std::array<float, 6>& a, const std::array<float, 6>& b)
+    {
+        for (size_t i = 0; i < 6; ++i)
+            if (std::abs(a[i] - b[i]) > 0.002f)
+                return false;
+        return true;
+    };
+    const std::array<float, 6> A { 0.9f, 0.8f, 0.7f, 0.6f, 0.5f, 0.4f }, B { 0.1f, 0.2f, 0.3f, 0.35f, 0.45f, 0.55f }, C { 0.25f, 0.5f, 0.75f, 0.85f, 0.95f, 0.15f };
+
+    setValue(*p, ids::seqType, 0.0f);
+    setSteps(A);
+    p->switchSequencerType(1);
+    check(roundToInt(getValue(*p, ids::seqType)) == 1 && same(steps(), A), "a type used for the first time keeps the knobs as they are");
+    setSteps(B);
+    p->switchSequencerType(2);
+    check(roundToInt(getValue(*p, ids::seqType)) == 2 && same(steps(), B), "and so does the next one");
+    setSteps(C);
+    p->switchSequencerType(0);
+    check(same(steps(), A), "back on pitch: the knobs are where pitch left them");
+    p->switchSequencerType(1);
+    check(same(steps(), B), "filter: its own again");
+    p->switchSequencerType(2);
+    check(same(steps(), C), "sample rate: its own again");
+    p->switchSequencerType(2);
+    check(same(steps(), C), "pressing the type that is already in use changes nothing");
+
+    // a step with a type of its own keeps its knob through every switch
+    setValue(*p, ids::stepType(2).toRawUTF8(), 2.0f); // step 3: filter on its own
+    setValue(*p, ids::step(2).toRawUTF8(), 0.33f);
+    p->switchSequencerType(0);
+    check(std::abs(getValue(*p, ids::step(2).toRawUTF8()) - 0.33f) < 0.002f && std::abs(getValue(*p, ids::step(0).toRawUTF8()) - A[0]) < 0.002f,
+          "a step with its own type is left alone; the others swap");
+    p->switchSequencerType(1);
+    check(std::abs(getValue(*p, ids::step(2).toRawUTF8()) - 0.33f) < 0.002f, "and again");
+    setValue(*p, ids::stepType(2).toRawUTF8(), 0.0f);
+
+    // the memory is saved with the preset and travels in preset files
+    p->saveCurrentPreset();
+    p->setCurrentProgram(1);
+    check(getValue(*p, ids::stepMem(0, 0).toRawUTF8()) < 0.0f, "another preset has no memory yet");
+    p->setCurrentProgram(0);
+    const auto afterRecall = steps();
+    p->switchSequencerType(2);
+    check(same(steps(), C) && !same(afterRecall, C), "the memory comes back with its preset (sample rate still has its knobs)");
+    const auto text = p->exportPreset()->toString();
+    check(text.contains("stepMem0_1") && text.contains("stepMem2_6"), "a preset file holds the memory");
+    auto q = makeProcessor();
+    q->setCurrentProgram(4);
+    String message;
+    if (auto parsed = XmlDocument::parse(text))
+        check(q->importPreset(*parsed, message) && std::abs(getValue(*q, ids::stepMem(2, 5).toRawUTF8()) - getValue(*p, ids::stepMem(2, 5).toRawUTF8())) < 0.002f,
+              "and importing it brings the memory along");
+}
+
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -1124,7 +1198,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 115, "115 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 133, "133 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1724,6 +1798,7 @@ int main(int argc, char** argv)
     testDistortionParams();
     testEqParams();
     testSequenceLoopParams();
+    testStepMemory();
     testEqReferenceClip();
     testLoopSectionSounds();
     testPresetFiles();

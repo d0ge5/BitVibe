@@ -118,6 +118,10 @@ while you turn it. You can drag the bottom-right corner to resize the window.
   has **P**, **F** and **S** tags next to its name: with none lit it follows those buttons; click one to make that step
   change pitch, the filter or the sample rate on its own (click it again to follow the buttons). Steps are drawn in
   the colour of what they control: blue for pitch, green for filter, purple for sample rate. It is saved with the preset.
+  **Each type remembers its own step knobs**: set the six steps for pitch, press FILTER and set them for the filter, and
+  pressing PITCH again brings the pitch steps back exactly as you left them (a type you have not used yet starts from
+  the knobs as they are). Steps with a P / F / S choice of their own keep their knob through the switch. The
+  remembered knobs are saved with the preset and travel in exported preset files.
 - **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step, the playing step
   outlined, the loop section framed. Click a step to see its knob, **drag across steps** to make them the loop
   section, and **right-click** a step to set what it controls or to loop it alone.

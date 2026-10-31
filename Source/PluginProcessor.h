@@ -81,6 +81,9 @@ inline constexpr const char* beatOutput = "beatOutput";
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
 inline juce::String stepType(int index) { return "stepType" + juce::String(index + 1); }
+// Where each sequencer type (0 = pitch, 1 = filter, 2 = sample rate) keeps the step knobs while another type is in use:
+// stepMem0_1 .. stepMem2_6. -1 = that type has not been used yet in this preset.
+inline juce::String stepMem(int type, int index) { return "stepMem" + juce::String(type) + "_" + juce::String(index + 1); }
 } // namespace ids
 
 class BitVibeProcessor : public juce::AudioProcessor
@@ -144,6 +147,12 @@ public:
 
     // Tap-tempo from the editor (message thread): sets the tempo parameter from the tap interval.
     void tapTempo();
+
+    // Switches the sequencer type (0 = pitch, 1 = filter, 2 = sample rate) the way the SEQ TYPE buttons do: the step knobs
+    // of the type being left are remembered and the ones the new type was last left with come back. A type that has not been
+    // used yet in this preset keeps the knobs as they are, so nothing jumps. Steps with a type of their own are not
+    // touched (they do not follow the sequencer type). Message thread.
+    void switchSequencerType(int newType);
 
     juce::AudioProcessorValueTreeState apvts;
     bitvibe::Engine& getEngine() { return engine; }
