@@ -2185,6 +2185,153 @@ void testLoopSectionSamples()
     CHECK(std::abs(mean(play(noLoop), 0.05, 0.58) - 0.2) < 0.01, "with the loop off every step plays the main sounds");
 }
 
+// The delay: echoes at the delay time, an exact number of repeats (or forever), each DECAY times the one before, the
+// cuts on the echoes only; in the engine its time follows the tempo and it only hears the sequenced sound.
+void testDelay()
+{
+    std::puts("delay");
+    {
+        Delay d;
+        d.prepare(kFs);
+        DelaySettings s;
+        s.timeSamples = 100.0;
+        s.decay = 1.0f; // each echo 0.95 of the one before
+        s.repeats = 3;
+        std::vector<float> out(600);
+        for (size_t i = 0; i < out.size(); ++i)
+            out[i] = d.process(i == 0 ? 1.0f : 0.0f, s);
+        const float g = Delay::decayGain(1.0f);
+        CHECK(std::abs(out[100] - 1.0f) < 1.0e-4f && std::abs(out[200] - g) < 1.0e-4f && std::abs(out[300] - g * g) < 1.0e-4f && std::abs(out[400]) < 1.0e-6f,
+              "three repeats: echoes at 100, 200 and 300 samples (%.3f %.3f %.3f), none at 400", (double) out[100], (double) out[200], (double) out[300]);
+        float elsewhere = 0.0f;
+        for (size_t i = 0; i < out.size(); ++i)
+            if (i != 100 && i != 200 && i != 300)
+                elsewhere = std::max(elsewhere, std::abs(out[i]));
+        CHECK(elsewhere < 1.0e-6f, "and nothing in between (the dry sound is not in the output)");
+    }
+    {
+        Delay d;
+        d.prepare(kFs);
+        DelaySettings s;
+        s.timeSamples = 100.0;
+        s.decay = 0.5f;
+        s.repeats = kDelayForever;
+        std::vector<float> out(2100);
+        for (size_t i = 0; i < out.size(); ++i)
+            out[i] = d.process(i == 0 ? 1.0f : 0.0f, s);
+        const float g = Delay::decayGain(0.5f);
+        CHECK(std::abs(out[100] - 1.0f) < 1.0e-4f && std::abs(out[1000] - std::pow(g, 9.0f)) < 1.0e-5f && out[2000] > 0.0f,
+              "forever: the echoes keep coming, each %.3f of the one before", (double) g);
+    }
+    {
+        Delay d;
+        d.prepare(kFs);
+        DelaySettings s;
+        s.timeSamples = 100.0;
+        s.decay = 0.0f;
+        s.repeats = 8;
+        float later = 0.0f, first = 0.0f;
+        for (int i = 0; i < 1000; ++i)
+        {
+            const float v = d.process(i == 0 ? 1.0f : 0.0f, s);
+            if (i == 100)
+                first = v;
+            else if (i > 150)
+                later = std::max(later, std::abs(v));
+        }
+        CHECK(std::abs(first - 1.0f) < 1.0e-4f && later < 1.0e-6f, "decay at 0: one echo only");
+    }
+    {
+        // the cuts act on the echoes: a high cut takes the top off white noise's echoes
+        auto echoEnergy = [](float highCut, float lowCut)
+        {
+            Delay d;
+            d.prepare(kFs);
+            DelaySettings s;
+            s.timeSamples = 2400.0;
+            s.repeats = 1;
+            s.highCutHz = highCut;
+            s.lowCutHz = lowCut;
+            Rng rng(5);
+            double hf = 0.0, total = 0.0;
+            float prev = 0.0f;
+            for (int i = 0; i < 24000; ++i)
+            {
+                const float v = d.process(rng.next(), s);
+                if (i > 4800)
+                {
+                    hf += (double) ((v - prev) * (v - prev));
+                    total += (double) (v * v);
+                }
+                prev = v;
+            }
+            return std::make_pair(hf, total);
+        };
+        const auto open = echoEnergy(20000.0f, 20.0f), dark = echoEnergy(1000.0f, 20.0f);
+        CHECK(dark.first < 0.1 * open.first, "a 1 kHz high cut darkens the echoes");
+        // a low cut: a 100 Hz tone's echo nearly goes, a 6 kHz tone's stays
+        auto echoLevel = [](float hz, float lowCut)
+        {
+            Delay d;
+            d.prepare(kFs);
+            DelaySettings s;
+            s.timeSamples = 2400.0;
+            s.repeats = 1;
+            s.lowCutHz = lowCut;
+            double sum = 0.0;
+            for (int i = 0; i < 24000; ++i)
+            {
+                const float v = d.process(std::sin(6.2831853f * hz * (float) i / (float) kFs), s);
+                if (i > 9600)
+                    sum += (double) (v * v);
+            }
+            return std::sqrt(sum / 14400.0);
+        };
+        CHECK(echoLevel(100.0f, 1500.0f) < 0.05 * echoLevel(100.0f, 20.0f) && echoLevel(6000.0f, 1500.0f) > 0.7 * echoLevel(6000.0f, 20.0f),
+              "a 1.5 kHz low cut takes the lows out of the echoes (%.4f of %.4f) and keeps the highs (%.4f of %.4f)",
+              echoLevel(100.0f, 1500.0f), echoLevel(100.0f, 20.0f), echoLevel(6000.0f, 1500.0f), echoLevel(6000.0f, 20.0f));
+    }
+
+    // in the engine: the time is a note length of the tempo, and only the sequenced sound is echoed
+    auto burstThrough = [&](Params p)
+    {
+        Signal in((size_t) (2.0 * kFs), 0.0f);
+        for (size_t i = 0; i < 240; ++i)
+            in[(size_t) (0.1 * kFs) + i] = 0.5f * std::sin(6.2831853f * 1000.0f * (float) i / (float) kFs);
+        return render(p, in);
+    };
+    Params p = neutral();
+    p.seqPlay = 5; // continuous, so the sound is the sequenced sound
+    p.steps.fill(mapping::pitchStepKnob(0));
+    p.pickTriggers = false;
+    p.tempoBpm = 120.0f;
+    p.delayOn = true;
+    p.delayMix = 1.0f;
+    p.delayDecay = 0.5f;
+    p.delayRepeats = 2;
+    p.delayDivision = 5; // 1/8 = 0.25 s at 120 BPM
+    const auto echoed = burstThrough(p);
+    CHECK(rms(echoed, 0.345, 0.36) > 0.05 && rms(echoed, 0.595, 0.61) > 0.02 && rms(echoed, 0.75, 0.9) < 1.0e-4 && rms(echoed, 0.2, 0.34) < 1.0e-4,
+          "1/8 at 120 BPM: echoes 0.25 s and 0.5 s after the sound, then quiet");
+    Params slow = p;
+    slow.tempoBpm = 60.0f;
+    const auto slower = burstThrough(slow);
+    CHECK(rms(slower, 0.595, 0.61) > 0.05 && rms(slower, 0.345, 0.36) < 1.0e-4, "at 60 BPM the same 1/8 is 0.5 s");
+    Params dotted = p;
+    dotted.delayDivision = 9; // 1/4 D = 0.75 s
+    CHECK(rms(burstThrough(dotted), 0.845, 0.86) > 0.05, "a dotted quarter at 120 BPM is 0.75 s");
+    Params idle = p;
+    idle.seqPlay = 0;
+    const auto notSequenced = burstThrough(idle);
+    CHECK(rms(notSequenced, 0.2, 1.9) < 1.0e-5, "with no sequence playing, nothing is echoed");
+    Params off = p;
+    off.delayOn = false;
+    CHECK(rms(burstThrough(off), 0.2, 1.9) < 1.0e-5, "off: no echoes");
+    Params dry = p;
+    dry.delayMix = 0.0f;
+    CHECK(rms(burstThrough(dry), 0.2, 1.9) < 1.0e-5, "mix at 0: no echoes");
+}
+
 void testTriggerEvents()
 {
     std::puts("trigger events: restart, next step, stutter, pick triggers off, steps on hits");
@@ -2927,6 +3074,7 @@ int main(int argc, char** argv)
     testBeatPattern();
     testStepTypes();
     testSeqOnly();
+    testDelay();
     testSequenceLoop();
     testLoopSectionSamples();
     testEqReference();

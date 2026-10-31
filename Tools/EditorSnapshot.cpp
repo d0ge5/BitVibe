@@ -605,7 +605,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 872, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 940, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -666,7 +666,7 @@ void testRightModes(const File& outDir)
     save(*ed, outDir.getChildFile("editor_simple.png"));
     ed->setRightMode(true);
     const int advanced = countRight(*ed);
-    check(advanced == simple + 6, "ADVANCED shows the six extra distortion and reverb controls (" + String(simple) + " then " + String(advanced) + ")");
+    check(advanced == simple + 8, "ADVANCED shows the eight extra distortion, delay and reverb controls (" + String(simple) + " then " + String(advanced) + ")");
     save(*ed, outDir.getChildFile("editor_advanced.png"));
     std::unique_ptr<BitVibeEditor> again(static_cast<BitVibeEditor*>(p->createEditor()));
     check(again->isAdvancedRight(), "the choice is remembered");
@@ -938,6 +938,30 @@ void testStepMemory()
               "and importing it brings the memory along");
 }
 
+// The delay through the processor: off by default, echoes the sequence when on, travels in preset files.
+void testDelayParams()
+{
+    std::puts("delay (processor level)");
+    const auto in = makeInput(48000);
+    auto p = makeProcessor();
+    setValue(*p, ids::seqPlay, 5.0f);
+    const auto plain = run(*p, in);
+    check(getValue(*p, ids::delayOn) < 0.5f && roundToInt(getValue(*p, ids::delayTime)) == bitvibe::kDefaultDelayDivision,
+          "the delay starts off, at 1/8");
+    setValue(*p, ids::delayMix, 0.8f);
+    check(maxDifference(run(*p, in), plain) < 1.0e-6f, "it does nothing until it is switched on");
+    setValue(*p, ids::delayOn, 1.0f);
+    const auto echoed = run(*p, in);
+    check(maxDifference(echoed, plain) > 0.01f && isFinite(echoed), "on, it adds echoes (max diff " + String(maxDifference(echoed, plain), 3) + ")");
+    setValue(*p, ids::delayRepeats, (float) bitvibe::kDelayForever);
+    check(p->getParameters().size() > 0 && getValue(*p, ids::delayRepeats) >= (float) bitvibe::kDelayForever - 0.01f
+              && p->apvts.getParameter(ids::delayRepeats)->getText(1.0f, 32) == "Forever",
+          "fully right, REPEATS reads Forever");
+    check(isFinite(run(*p, in)), "forever stays finite");
+    const auto text = p->exportPreset()->toString();
+    check(text.contains("delayMix") && text.contains("delayRepeats"), "a preset file holds the delay");
+}
+
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -1055,7 +1079,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 69 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 69 and 0)");
+    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1198,7 +1222,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 133, "133 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 140, "140 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1798,6 +1822,7 @@ int main(int argc, char** argv)
     testDistortionParams();
     testEqParams();
     testSequenceLoopParams();
+    testDelayParams();
     testStepMemory();
     testEqReferenceClip();
     testLoopSectionSounds();

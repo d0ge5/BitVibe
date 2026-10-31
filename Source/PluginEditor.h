@@ -245,6 +245,7 @@ private:
     int patternTop() const;
     int samplesTop() const;
     juce::Rectangle<int> distArea() const;
+    juce::Rectangle<int> delayArea() const;
     juce::Rectangle<int> reverbArea() const;
     int eqTop() const;
     int columnBottom() const;
@@ -310,6 +311,14 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> loopAtt;
     juce::ComboBox loopFromBox, loopToBox, loopRepeatsBox;
     std::unique_ptr<APVTS::ComboBoxAttachment> loopFromAtt, loopToAtt, loopRepeatsAtt;
+
+    // the delay on the sequenced sound: time, mix, decay, repeats, low and high cut, and its power button
+    KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayLowSlider, delayHighSlider;
+    std::unique_ptr<APVTS::SliderAttachment> delayMixAtt, delayDecayAtt, delayRepeatsAtt, delayLowAtt, delayHighAtt;
+    juce::ComboBox delayTimeBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> delayTimeAtt;
+    juce::ToggleButton delayOnButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> delayOnAtt;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
     KnobSlider reverbDecaySlider, reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;

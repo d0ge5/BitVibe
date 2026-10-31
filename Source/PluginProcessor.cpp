@@ -224,6 +224,22 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
         layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbHighCut), "Reverb High Cut", highRange, 20000.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
+
+        // ---- the delay on the sequenced sound (rig settings): a note length of the tempo, echoes that ring on ----
+        layout.add(std::make_unique<AudioParameterBool>(id(ids::delayOn), "Delay On", false));
+        StringArray times;
+        for (const auto& d : bitvibe::kDelayDivisions)
+            times.add(d.name);
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::delayTime), "Delay Time", times, bitvibe::kDefaultDelayDivision));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayMix), "Delay Mix", NormalisableRange<float>(0.0f, 1.0f), 0.4f, percent));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayDecay), "Delay Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+        layout.add(std::make_unique<AudioParameterInt>(id(ids::delayRepeats), "Delay Repeats", 1, bitvibe::kDelayForever, 4,
+                                                       AudioParameterIntAttributes().withStringFromValueFunction(
+                                                           [](int v, int) { return v >= bitvibe::kDelayForever ? String("Forever") : String(v); })));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayLowCut), "Delay Low Cut", lowRange, 20.0f,
+                                                         AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayHighCut), "Delay High Cut", highRange, 20000.0f,
+                                                         AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
     }
 
     // ---- drum beat (DRUMS tab) -----------------------------------------------------------
@@ -342,6 +358,13 @@ BitVibeProcessor::BitVibeProcessor()
     pMix = raw(ids::mix);
     pFxTriggers = raw(ids::fxTriggers);
     pSeqOnly = raw(ids::seqOnly);
+    pDelayOn = raw(ids::delayOn);
+    pDelayTime = raw(ids::delayTime);
+    pDelayMix = raw(ids::delayMix);
+    pDelayDecay = raw(ids::delayDecay);
+    pDelayRepeats = raw(ids::delayRepeats);
+    pDelayLowCut = raw(ids::delayLowCut);
+    pDelayHighCut = raw(ids::delayHighCut);
     pReverbTone = raw(ids::reverbTone);
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
@@ -523,6 +546,13 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.mix = pMix->load();
     p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
     p.seqOnly = pSeqOnly->load() > 0.5f;
+    p.delayOn = pDelayOn->load() > 0.5f;
+    p.delayDivision = roundToInt(pDelayTime->load());
+    p.delayMix = pDelayMix->load();
+    p.delayDecay = pDelayDecay->load();
+    p.delayRepeats = roundToInt(pDelayRepeats->load());
+    p.delayLowCutHz = pDelayLowCut->load();
+    p.delayHighCutHz = pDelayHighCut->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
@@ -861,7 +891,7 @@ namespace
 // The parameters outside the preset slots that are part of a shared sound.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "sample", "eq" })
+    for (const char* prefix : { "reverb", "dist", "delay", "sample", "eq" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;

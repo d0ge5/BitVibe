@@ -25,12 +25,12 @@ constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480;
 constexpr bool kShowDrumsTab = false;
-constexpr int kHeight = kTabsH + 736 + kFaceDy;
+constexpr int kHeight = kTabsH + 804 + kFaceDy;
 // The pedal page has a second column to the right of the pedal: reverb, sample blend and beat pattern panels.
 constexpr int kSideX = kWidth + 12, kPedalWidth = kWidth + 468;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
-const Rectangle<int> kGlobal { 12, 544, 456, 180 };
+const Rectangle<int> kGlobal { 12, 544, 456, 248 };
 // Second-column panels, in face coordinates (so the first one starts level with the preset header).
 constexpr int kColY = 12 - kFaceDy;
 constexpr int kPanelGap = 8;
@@ -480,7 +480,7 @@ void HelpOverlay::paint(Graphics& g)
         "3.  SAMPLE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
         "signal and sends out only the sequenced sound); OUTPUT sets the level.",
         "4.  On the right, the BEAT PATTERN can start the sequence on chosen steps of a bar. Below it, the numbered panels work on "
-        "the sequenced sound only, in that order: random sounds, distortion or fuzz, reverb, EQ. Their ON lights glow while they act.",
+        "the sequenced sound only, in that order: random sounds, distortion or fuzz, delay, reverb, EQ. Their ON lights glow while they act.",
         "5.  Hover over anything for a short description. Double-click a knob to reset it. Drag the bottom-right corner to resize the window.",
     };
     g.setFont(plain(12.5f));
@@ -689,6 +689,19 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     distOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distOn, distOnButton);
     distReverbAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distReverb, distReverbButton);
     smallKnob(reverbHighSlider, reverbHighAtt, ids::reverbHighCut);
+    smallKnob(delayMixSlider, delayMixAtt, ids::delayMix);
+    smallKnob(delayDecaySlider, delayDecayAtt, ids::delayDecay);
+    smallKnob(delayRepeatsSlider, delayRepeatsAtt, ids::delayRepeats);
+    smallKnob(delayLowSlider, delayLowAtt, ids::delayLowCut);
+    smallKnob(delayHighSlider, delayHighAtt, ids::delayHighCut);
+    delayOnButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(delayOnButton);
+    delayOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::delayOn, delayOnButton);
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::delayTime)))
+        delayTimeBox.addItemList(choice->choices, 1);
+    delayTimeBox.setLookAndFeel(&laf);
+    content.addAndMakeVisible(delayTimeBox);
+    delayTimeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::delayTime, delayTimeBox);
     if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::reverbType)))
         reverbTypeBox.addItemList(choice->choices, 1);
     reverbTypeBox.setLookAndFeel(&laf);
@@ -851,7 +864,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
@@ -930,8 +943,11 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider })
+    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
+                      &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider })
         s->setLookAndFeel(nullptr);
+    delayTimeBox.setLookAndFeel(nullptr);
+    delayOnButton.setLookAndFeel(nullptr);
     distOnButton.setLookAndFeel(nullptr);
     distTypeBox.setLookAndFeel(nullptr);
     distReverbButton.setLookAndFeel(nullptr);
@@ -1090,7 +1106,7 @@ void BitVibeEditor::applyRightMode()
 {
     const bool show = advancedRight && !drumsShown;
     for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton, &reverbToneSlider, &reverbLevelSlider,
-                                                            &reverbLowSlider, &reverbHighSlider })
+                                                            &reverbLowSlider, &reverbHighSlider, &delayLowSlider, &delayHighSlider })
         c->setVisible(show);
     samplePanel->setAdvanced(advancedRight);
     eqPanel->setVisible(show); // the EQ is an ADVANCED control
@@ -1106,7 +1122,8 @@ void BitVibeEditor::applyRightMode()
 int BitVibeEditor::patternTop() const { return kColY; }
 int BitVibeEditor::samplesTop() const { return patternTop() + PatternPanel::kHeight + kPanelGap; }
 Rectangle<int> BitVibeEditor::distArea() const { return { kSideX, samplesTop() + samplePanel->currentHeight() + kPanelGap, 456, 100 }; }
-Rectangle<int> BitVibeEditor::reverbArea() const { return distArea().translated(0, 100 + kPanelGap); }
+Rectangle<int> BitVibeEditor::delayArea() const { return distArea().translated(0, 100 + kPanelGap); }
+Rectangle<int> BitVibeEditor::reverbArea() const { return delayArea().translated(0, 100 + kPanelGap); }
 int BitVibeEditor::eqTop() const { return reverbArea().getBottom() + kPanelGap; }
 int BitVibeEditor::columnBottom() const { return advancedRight ? eqTop() + EqPanel::kHeight : reverbArea().getBottom(); }
 
@@ -1228,6 +1245,18 @@ void BitVibeEditor::setTooltips()
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
     reverbDecaySlider.setTooltip("REVERB DECAY: how long the reverb rings. Left = short, middle = normal, right = long (up to four times as long). "
                                  "With REVERSE on it sets how long the swell takes.");
+    makePowerButton(delayOnButton);
+    delayOnButton.setTooltip("DELAY ON: echoes of the sequenced and stuttered sound, in time with the tempo. They ring on after the "
+                             "sequence stops; your clean signal is never echoed. The light glows while it acts.");
+    delayTimeBox.setTooltip("DELAY TIME: how far apart the echoes are, as a note length of the tempo (T = triplet, D = dotted). "
+                            "It follows the tempo, and the host's tempo with SYNC on.");
+    delayMixSlider.setTooltip("DELAY MIX: how loud the echoes are, from none (left) to as loud as the sound itself (right).");
+    delayDecaySlider.setTooltip("DELAY DECAY: how much quieter each echo is than the one before. Left = one echo and done, right = they "
+                                "hardly fade.");
+    delayRepeatsSlider.setTooltip("DELAY REPEATS: how many echoes follow each sound, 1 to 16, or FOREVER (fully right) for echoes that "
+                                  "keep coming, fading with DECAY.");
+    delayLowSlider.setTooltip("DELAY LOW CUT: a high-pass filter on the echoes only. Turn right for thinner echoes. Fully left = off.");
+    delayHighSlider.setTooltip("DELAY HIGH CUT: a low-pass filter on the echoes only. Turn left for darker echoes. Fully right = off.");
     makePowerButton(reverbOnButton);
     reverbOnButton.setTooltip("REVERB ON: switches the reverb on or off (it only ever hears the sequenced and stuttered sound). Off, there is no reverb and the tail stops; your settings stay. The light glows while it acts.");
     reverbReverseButton.setTooltip("REVERSE: tick this to play the reverb backwards: the sound swells up after the note instead of dying away. "
@@ -1489,15 +1518,18 @@ void BitVibeEditor::resized()
     stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
     triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
     stepStrip.setBounds(face({ 186, 352, 140, 28 }));
-    fxTrigButton.setBounds(face({ 24, 686, 156, 24 }));
+    fxTrigButton.setBounds(face({ 24, 688, 200, 24 }));
     seqOnlyButton.setBounds(face({ 186, 480, 108, 24 })); // the middle of the pedal, under the tempo
-    loopButton.setBounds(face({ 188, 686, 50, 24 }));
-    loopFromBox.setBounds(face({ 242, 686, 44, 24 }));   // "TO" is painted between the two step boxes
-    loopToBox.setBounds(face({ 308, 686, 44, 24 }));
-    loopRepeatsBox.setBounds(face({ 356, 686, 96, 24 }));
+    // the sequence's loop section, on a row of its own
+    loopButton.setBounds(face({ 24, 738, 60, 24 }));
+    loopFromBox.setBounds(face({ 92, 738, 56, 24 }));   // "TO" is painted between the two step boxes
+    loopToBox.setBounds(face({ 176, 738, 56, 24 }));
+    loopRepeatsBox.setBounds(face({ 240, 738, 110, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
-    const auto dist = distArea(), reverb = reverbArea();
+    const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
+    delayOnButton.setBounds(face({ kSideX + 8, delay.getY() + 3, 50, 19 }));
+    delayTimeBox.setBounds(face({ kSideX + 344, delay.getY() + 3, 100, 20 }));
     reverbOnButton.setBounds(face({ kSideX + 8, reverb.getY() + 3, 50, 19 }));
     reverbTypeBox.setBounds(face({ kSideX + 344, reverb.getY() + 3, 100, 20 }));
     reverbReverseButton.setBounds(face({ kSideX + 250, reverb.getY() + 3, 88, 20 }));
@@ -1524,6 +1556,8 @@ void BitVibeEditor::resized()
     spread({ { &reverbDecaySlider, false }, { &reverbToneSlider, true }, { &reverbMixSlider, false }, { &reverbLevelSlider, true },
              { &reverbLowSlider, true }, { &reverbHighSlider, true } },
            44, reverb.getY() + 46);
+    spread({ { &delayMixSlider, false }, { &delayDecaySlider, false }, { &delayRepeatsSlider, false }, { &delayLowSlider, true }, { &delayHighSlider, true } },
+           44, delay.getY() + 46);
     samplePanel->setBounds(face({ kSideX, samplesTop(), SamplePanel::kWidth, samplePanel->currentHeight() }));
     eqPanel->setBounds(face({ kSideX, eqTop(), EqPanel::kWidth, EqPanel::kHeight }));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, PatternPanel::kHeight }));
@@ -1694,12 +1728,13 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.setFont(bold(9.5f));
     g.drawText("HEADROOM", Rectangle<int>(172, 641, 120, 11), Justification::left);
     g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641, 144, 11), Justification::left);
-    g.drawText("TO", Rectangle<int>(286, 686, 22, 24), Justification::centred);
+    g.drawText("SEQUENCE LOOP", Rectangle<int>(26, 724, 200, 11), Justification::left);
+    g.drawText("TO", Rectangle<int>(148, 738, 28, 24), Justification::centred);
 
     // The effect panels follow each other down the column in the order the sequenced sound goes through them:
     // an arrow in each gap.
     {
-        std::vector<int> gaps { distArea().getY(), reverbArea().getY() };
+        std::vector<int> gaps { distArea().getY(), delayArea().getY(), reverbArea().getY() };
         if (advancedRight)
             gaps.push_back(eqTop());
         g.setColour(kAccent.withAlpha(0.7f));
@@ -1718,10 +1753,14 @@ void BitVibeEditor::paintContent(Graphics& g)
         const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
         const Rectangle<int> note(kSideX + 8, columnBottom() + 10, 440, 40);
         g.setFont(plain(10.5f));
-        if (sequenceOff && stutterOff)
+        if (advancedRight)
+        {
+            // ADVANCED fills the column: no room for the note
+        }
+        else if (sequenceOff && stutterOff)
         {
             g.setColour(kAccent);
-            g.drawFittedText("The sequencer and the stutter are both off, so distortion, reverb and the sample blend have nothing to act on. "
+            g.drawFittedText("The sequencer and the stutter are both off, so the effects on this side have nothing to act on. "
                              "Turn up the SEQUENCER or STUTTER knob on the pedal.", note, Justification::topLeft, 3);
         }
         else
@@ -1733,8 +1772,8 @@ void BitVibeEditor::paintContent(Graphics& g)
     }
 
     // Distortion and reverb panels (they move with the column, so they are drawn here rather than in the background)
-    const auto dist = distArea(), reverb = reverbArea();
-    for (const auto& area : { dist, reverb })
+    const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
+    for (const auto& area : { dist, delay, reverb })
     {
         g.setColour(Colour(0xff17171a));
         g.fillRoundedRectangle(area.toFloat(), 10.0f);
@@ -1765,8 +1804,38 @@ void BitVibeEditor::paintContent(Graphics& g)
         g.drawText(distEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, dist.getY() + 92 }), Justification::centred);
     }
 
+    // Delay panel labels
+    {
+        const float delayAlpha = rawValue(ids::delayOn) > 0.5f ? 1.0f : kOffAlpha;
+        drawPanelTitle(g, kSideX + kPanelTitleX, delay.getY() + 4, 3, "DELAY");
+        g.setColour(kInkDim.withMultipliedAlpha(delayAlpha));
+        g.setFont(bold(9.5f));
+        g.drawText("TIME", Rectangle<int>(kSideX + 300, delay.getY() + 4, 40, 18), Justification::centredRight);
+        const int repeats = roundToInt(rawValue(ids::delayRepeats));
+        const float delayLow = rawValue(ids::delayLowCut), delayHigh = rawValue(ids::delayHighCut);
+        const std::array<Entry, 5> delayEntries {{
+            { "MIX", String(roundToInt(rawValue(ids::delayMix) * 100.0f)) + "%" },
+            { "DECAY", String(roundToInt(rawValue(ids::delayDecay) * 100.0f)) + "%" },
+            { "REPEATS", repeats >= bitvibe::kDelayForever ? String("FOREVER") : String(repeats) },
+            { "LOW CUT", delayLow <= 20.5f ? String("OFF") : hzText(delayLow), true },
+            { "HIGH CUT", delayHigh >= 19950.0f ? String("OFF") : hzText(delayHigh), true },
+        }};
+        for (size_t i = 0; i < delayEntries.size(); ++i)
+        {
+            if (!advancedRight && delayEntries[i].advancedOnly)
+                continue;
+            const int cx = labelX(delayEntries, i);
+            g.setColour(kInk.withMultipliedAlpha(delayAlpha));
+            g.setFont(bold(11.0f));
+            g.drawText(delayEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, delay.getY() + 78 }), Justification::centred);
+            g.setColour(kInkDim.withMultipliedAlpha(delayAlpha));
+            g.setFont(plain(10.5f));
+            g.drawText(delayEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, delay.getY() + 91 }), Justification::centred);
+        }
+    }
+
     // Reverb panel labels
-    drawPanelTitle(g, kSideX + kPanelTitleX, reverb.getY() + 4, 3, "REVERB");
+    drawPanelTitle(g, kSideX + kPanelTitleX, reverb.getY() + 4, 4, "REVERB");
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
@@ -1836,6 +1905,11 @@ void BitVibeEditor::updateLiveState()
         const bool live = proc.getEngine().isEffectSideActive();
         setPowerActive(distOnButton, live);
         setPowerActive(reverbOnButton, live);
+        setPowerActive(delayOnButton, live);
+        const float delayAlpha = rawValue(ids::delayOn) > 0.5f ? 1.0f : kOffAlpha;
+        for (Component* c : std::initializer_list<Component*> { &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider,
+                                                                 &delayHighSlider, &delayTimeBox })
+            c->setAlpha(delayAlpha);
         const float distAlpha = rawValue(ids::distOn) > 0.5f ? 1.0f : kOffAlpha;
         for (Component* c : std::initializer_list<Component*> { &distDriveSlider, &distToneSlider, &distLevelSlider, &distTypeBox, &distReverbButton })
             c->setAlpha(distAlpha);

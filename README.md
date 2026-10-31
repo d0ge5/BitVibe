@@ -44,6 +44,8 @@ SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
 **The right-hand side** (works only on the sequenced and stuttered sound; your clean signal is left alone)
 
 - **Distortion / fuzz:** an overdrive and a fuzz, each with its own knobs.
+- **Delay:** echoes in time with the tempo (1/32 to a bar, with triplets and dotted notes), 1 to 16 repeats or
+  forever, with mix, decay, low cut and high cut.
 - **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, level, low and high cut, and a
   reverse option for each type.
 - **Sample blend:** a random sound from your own audio files joins each step, crushed along with the sequence.
@@ -143,8 +145,8 @@ It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean
 ### The right-hand side
 
 At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
-stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** reverb,
-**4** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
+stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** delay,
+**4** reverb, **5** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
 light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
 These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
 them).
@@ -162,6 +164,11 @@ them).
   MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
+- **Delay:** a stutter for the sequenced sound itself. **TIME** is a note length of the tempo (1/32 up to a whole
+  bar, with T for triplets and D for dotted notes), so the echoes always sit in time, also with SYNC on. **REPEATS** is
+  how many echoes follow each sound (1 to 16, or **FOREVER** fully right), **DECAY** how much quieter each one is than
+  the one before, **MIX** how loud they are, and **LOW CUT** / **HIGH CUT** (ADVANCED) filter the echoes only. It hears
+  the sound after the distortion; the reverb hears the echoes too, and they ring on after the sequence stops.
 - **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
   of fading it.
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for
@@ -229,7 +236,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 480 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 492 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

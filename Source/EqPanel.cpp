@@ -418,7 +418,7 @@ void EqPanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    drawPanelTitle(g, kPanelTitleX, 4, 4, "EQ");
+    drawPanelTitle(g, kPanelTitleX, 4, 5, "EQ");
     g.setColour(inkDim);
     g.setFont(plain(10.0f));
     g.drawText(clipStatus, 369, 4, 80, 14, Justification::left);
