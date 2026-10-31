@@ -60,6 +60,33 @@ float table(const float* t, float phase)
     const int i = (int) x % beatdog::kTableSize, j = (i + 1) % beatdog::kTableSize;
     return t[i] + (t[j] - t[i]) * (x - std::floor(x));
 }
+
+// The highest the head goes on the headbang curve (the bottom is where it starts, on the beat).
+float headTop()
+{
+    static const float top = [] {
+        float a = beatdog::kHeadAngle[0];
+        for (int i = 0; i < beatdog::kTableSize; ++i)
+            a = jmin(a, beatdog::kHeadAngle[i]);
+        return a;
+    }();
+    return top;
+}
+
+// How far the sway goes at full SWAY: the lean (radians) and the slide and the lift (as parts of the screen).
+constexpr float kSwayLean = 0.13f, kSwaySlide = 0.06f, kSwayLift = 0.03f;
+
+void setUpKnob(Slider& s, PedalLookAndFeel& laf, double defaultValue)
+{
+    s.setSliderStyle(Slider::RotaryVerticalDrag);
+    s.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
+    s.setRotaryParameters(MathConstants<float>::pi * 1.2f, MathConstants<float>::pi * 2.8f, true);
+    s.setMouseDragSensitivity(180);
+    s.setRange(0.0, 1.0);
+    s.setDoubleClickReturnValue(true, defaultValue);
+    s.getProperties().set("ticks", 7);
+    s.setLookAndFeel(&laf);
+}
 } // namespace
 
 BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
@@ -67,8 +94,6 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     setOpaque(true);
     // decoded once and shared: the image cache keeps it for every editor that is open
     sheet = ImageCache::getFromMemory(BinaryData::beat_dog_jpg, BinaryData::beat_dog_jpgSize);
-    setTooltip("BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on): the head hits bottom on every beat. "
-               "The lights count the beats of the bar.");
 
     liveButton = std::make_unique<PedalButton>("LIVE 3D"); // lit while the live version is on
     auto* button = liveButton.get();
@@ -85,7 +110,26 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     fpsBox.onChange = [this] { setFrameRate(fpsBox.getSelectedId()); };
     addAndMakeVisible(fpsBox);
 
+    setUpKnob(smoothKnob, laf, 0.0);
+    smoothKnob.setTooltip("SMOOTH (LIVE 3D): left, the headbang: a slow rise and a hard slam on each picked beat. "
+                          "Right, an even, rounded bob. Double-click: back to the headbang.");
+    smoothKnob.onValueChange = [this] { setSmoothness((float) smoothKnob.getValue()); };
+    smoothKnob.onDragEnd = [this] { saveSettings(); };
+    addAndMakeVisible(smoothKnob);
+    setUpKnob(swayKnob, laf, 0.5);
+    swayKnob.setTooltip("SWAY: floats the head from side to side in time, landing on one side at a picked beat and on the "
+                        "other at the next. Left: no sway. Double-click: the middle.");
+    swayKnob.onValueChange = [this] { setSway((float) swayKnob.getValue()); };
+    swayKnob.onDragEnd = [this] { saveSettings(); };
+    addAndMakeVisible(swayKnob);
+
     fps = jlimit(15, 60, uisettings::beatDogFps());
+    beatMask = uisettings::beatDogBeats() & ((1 << kMaxBeats) - 1);
+    smoothness = jlimit(0.0f, 1.0f, uisettings::beatDogSmooth());
+    sway = jlimit(0.0f, 1.0f, uisettings::beatDogSway());
+    smoothKnob.setValue(smoothness, dontSendNotification);
+    swayKnob.setValue(sway, dontSendNotification);
+    shown = liveShown = motionAt(0.0f, 0, barSteps);
     live = uisettings::beatDogLive();
     setLive(live);
 }
@@ -93,7 +137,10 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
 BeatDog::~BeatDog()
 {
     stopTimer();
+    saveSettings();
     fpsBox.setLookAndFeel(nullptr);
+    smoothKnob.setLookAndFeel(nullptr);
+    swayKnob.setLookAndFeel(nullptr);
 }
 
 void BeatDog::setLive(bool on)
@@ -120,6 +167,48 @@ void BeatDog::setFrameRate(int newFps)
         startTimerHz(fps);
 }
 
+void BeatDog::setBeatMask(int mask)
+{
+    mask &= (1 << kMaxBeats) - 1;
+    if (mask == beatMask)
+        return;
+    beatMask = mask;
+    uisettings::setBeatDogBeats(mask);
+    repaint();
+}
+
+void BeatDog::setSmoothness(float amount)
+{
+    amount = jlimit(0.0f, 1.0f, amount);
+    if (amount == smoothness)
+        return;
+    smoothness = amount;
+    knobsChanged = true;
+    if (smoothKnob.getValue() != amount)
+        smoothKnob.setValue(amount, dontSendNotification);
+    repaint(smoothKnob.getBounds().expanded(30, 30));
+}
+
+void BeatDog::setSway(float amount)
+{
+    amount = jlimit(0.0f, 1.0f, amount);
+    if (amount == sway)
+        return;
+    sway = amount;
+    knobsChanged = true;
+    if (swayKnob.getValue() != amount)
+        swayKnob.setValue(amount, dontSendNotification);
+    repaint();
+}
+
+void BeatDog::saveSettings()
+{
+    if (!knobsChanged)
+        return;
+    knobsChanged = false;
+    uisettings::setBeatDogKnobs(smoothness, sway);
+}
+
 void BeatDog::updateControls()
 {
     auto* button = liveButton.get();
@@ -131,25 +220,99 @@ void BeatDog::updateControls()
     fpsBox.setSelectedId(fps, dontSendNotification);
     fpsBox.setEnabled(live);
     fpsBox.setAlpha(live ? 1.0f : 0.4f);
+    smoothKnob.setEnabled(live); // the pre-rendered frames have the headbang baked in
+    repaint(smoothKnob.getBounds().expanded(30, 30));
 }
 
-void BeatDog::setBeat(float phase, int beatInBar, float bpm)
+int BeatDog::beatsInBar() const { return jlimit(1, kMaxBeats, (barSteps + 3) / 4); }
+
+// The headbang runs from one picked beat to the next: the head slams down on a picked beat, bounces, rises, and slams
+// again in the last 0.4 of a beat before the next one. With picked beats further apart the rise takes the extra time,
+// so the slam and the bounce keep their snap; with none picked the head waits at the top.
+BeatDog::Motion BeatDog::motionAt(float phase, int beatInBar, int steps)
 {
-    const int f = jlimit(0, kFrames - 1, (int) std::floor(jlimit(0.0f, 0.9999f, phase) * (float) kFrames));
-    const int b = jlimit(0, 3, beatInBar);
-    const int t = roundToInt(bpm * 10.0f);
-    if (f != frame)
+    const float barBeats = (float) jlimit(1, 32, steps) / 4.0f;
+    const int n = jlimit(1, kMaxBeats, (int) std::ceil(barBeats - 0.001f));
+    const int mask = beatMask & ((1 << n) - 1);
+    Motion m;
+    if (mask == 0)
     {
-        frame = f;
-        if (!live) // the live version draws at its own rate
-            repaint(screenArea());
+        m.bang = 0.6f; // the top of the curve
+        m.between = 0.5f;
     }
-    if (b != beat || t != tempoTenths)
+    else
+    {
+        const float pos = jlimit(0.0f, barBeats - 1.0e-4f, (float) jlimit(0, n - 1, beatInBar) + jlimit(0.0f, 0.9999f, phase));
+        int last = 0, next = 0;
+        for (int k = 0; k < n; ++k)
+            if (const int b = ((int) pos - k + n) % n; ((mask >> b) & 1) != 0)
+            {
+                last = b;
+                break;
+            }
+        for (int k = 1; k <= n; ++k)
+            if (const int b = (last + k) % n; ((mask >> b) & 1) != 0)
+            {
+                next = b;
+                break;
+            }
+        float elapsed = pos - (float) last, gap = (float) (next - last);
+        if (elapsed < 0.0f)
+            elapsed += barBeats;
+        if (gap <= 0.0f)
+            gap += barBeats;
+        constexpr float slam = 0.4f, bounce = 0.14f, top = 0.6f;
+        if (gap <= 1.0f)
+            m.bang = elapsed / gap;
+        else if (elapsed > gap - slam)
+            m.bang = top + (elapsed - (gap - slam));
+        else if (elapsed < bounce)
+            m.bang = elapsed;
+        else
+            m.bang = bounce + (elapsed - bounce) / (gap - slam - bounce) * (top - bounce);
+        m.bang = jlimit(0.0f, 0.9999f, m.bang);
+        m.between = jlimit(0.0f, 0.9999f, elapsed / gap);
+    }
+    if (m.between < lastBetween - 0.5f) // a picked beat went by: sway back the other way
+        swings = (swings + 1) & 1;
+    lastBetween = m.between;
+    m.side = std::cos(MathConstants<float>::pi * ((float) swings + m.between));
+    m.lift = 0.5f - 0.5f * std::cos(MathConstants<float>::twoPi * m.between);
+    return m;
+}
+
+float BeatDog::headAngle(const Motion& m) const
+{
+    const float bang = table(beatdog::kHeadAngle, m.bang);
+    if (smoothness <= 0.0f)
+        return bang;
+    const float down = beatdog::kHeadAngle[0], up = headTop();
+    const float even = up + (down - up) * (0.5f + 0.5f * std::cos(MathConstants<float>::twoPi * m.between));
+    return bang + (even - bang) * smoothness;
+}
+
+void BeatDog::setBeat(float phase, int beatInBar, float bpm, int steps)
+{
+    const int b = jlimit(0, kMaxBeats - 1, beatInBar);
+    const int t = roundToInt(bpm * 10.0f);
+    const int s = jlimit(1, 32, steps);
+    if (!live) // the live version draws at its own rate
+    {
+        shown = motionAt(phase, beatInBar, s);
+        const int f = jlimit(0, kFrames - 1, (int) std::floor(shown.bang * (float) kFrames));
+        if (f != frame || sway > 0.0f)
+        {
+            frame = f;
+            repaint(screenArea().expanded(4));
+        }
+    }
+    if (b != beat || t != tempoTenths || s != barSteps)
     {
         beat = b;
         tempoTenths = t;
-        repaint(Rectangle<int>(0, 0, screenArea().getX(), getHeight()));             // the readout
-        repaint(Rectangle<int>(screenArea().getRight(), 0, getWidth(), getHeight())); // and the lights
+        barSteps = s;
+        repaint(Rectangle<int>(0, 0, screenArea().getX(), 70));                       // the tempo
+        repaint(Rectangle<int>(screenArea().getRight(), 0, getWidth(), beatButton(0).getBottom() + 2)); // and the beats
     }
 }
 
@@ -157,19 +320,23 @@ void BeatDog::timerCallback()
 {
     if (!isShowing() || !beatSource)
         return;
-    const auto [phase, beatInBar] = beatSource();
-    ignoreUnused(beatInBar);
-    renderLiveFrame(phase);
+    const auto position = beatSource();
+    renderLiveFrame(position.phase, position.beatInBar, position.barSteps);
     repaint(screenArea());
 }
 
-// One frame of the live dog: pose the head for this moment of the beat (the head's nod and dip, each ear's flop and
-// wobble, blended by the skin weights), project it with the Blender camera, and draw the edges of the faces that look
-// at the camera, three times over for the glow.
-void BeatDog::renderLiveFrame(float phase)
+void BeatDog::renderLiveFrame(float phase, int beatInBar, int steps)
+{
+    liveShown = motionAt(phase, beatInBar, steps);
+    drawLiveFrame(liveShown);
+}
+
+// One frame of the live dog: pose the head for this moment (the head's nod and dip, each ear's flop and wobble, blended
+// by the skin weights, then the sway), project it with the Blender camera, and draw the edges of the faces that look at
+// the camera, three times over for the glow.
+void BeatDog::drawLiveFrame(const Motion& motion)
 {
     using namespace beatdog;
-    livePhase = phase;
     const auto screen = screenArea();
     if (screen.isEmpty())
         return;
@@ -182,11 +349,18 @@ void BeatDog::renderLiveFrame(float phase)
         liveImage = Image(Image::RGB, size, size, false, SoftwareImageType());
 
     // the pose
-    const float head = table(kHeadAngle, phase), earFlop = table(kEarAngle, phase);
-    const float side = kEarSide * std::sin(MathConstants<float>::twoPi * phase - 0.5f);
+    const float head = headAngle(motion);
+    const float earFlop = table(kEarAngle, motion.bang) * (1.0f - 0.7f * smoothness); // an even bob flops the ears less
+    const float side = kEarSide * std::sin(MathConstants<float>::twoPi * motion.bang - 0.5f);
     const V3 pitchAxis = fromArray(kPitchAxis), snout = fromArray(kSnout), neck = fromArray(kNeck);
-    const Rot headRot = Rot::about(pitchAxis, head);
-    const V3 dip { 0.0f, 0.0f, -kDip * jmax(0.0f, head) / kDown };
+    // the sway leans the head about its snout (which points at the camera) and slides it across and up the screen
+    const V3 right { kView[0][0], kView[0][1], kView[0][2] }, up { kView[1][0], kView[1][1], kView[1][2] };
+    const float depth0 = -(kView[2][0] * neck.x + kView[2][1] * neck.y + kView[2][2] * neck.z + kView[2][3]);
+    const float screenToWorld = depth0 / kFocal; // the width of the screen, in world units at the neck
+    const Rot headRot = Rot::about(snout, -kSwayLean * sway * motion.side) * Rot::about(pitchAxis, head);
+    const V3 shift = V3 { 0.0f, 0.0f, -kDip * jmax(0.0f, head) / kDown }
+                     + right * (kSwaySlide * sway * motion.side * screenToWorld)
+                     + up * (kSwayLift * sway * motion.lift * screenToWorld);
     const std::array<Rot, 2> earRot { Rot::about(pitchAxis, earFlop) * Rot::about(snout, side),
                                       Rot::about(pitchAxis, earFlop) * Rot::about(snout, -side) };
     const std::array<V3, 2> earBase { fromArray(kEarBase[0]), fromArray(kEarBase[1]) };
@@ -202,7 +376,7 @@ void BeatDog::renderLiveFrame(float phase)
         for (int e = 0; e < 2; ++e)
             if (kWeights[i][1 + e] > 0.0f)
                 v = v + (earBase[e] + earRot[(size_t) e](rest - earBase[e])) * kWeights[i][1 + e];
-        const V3 w = neck + headRot(v - neck) + dip;
+        const V3 w = neck + headRot(v - neck) + shift;
         const V3 c { kView[0][0] * w.x + kView[0][1] * w.y + kView[0][2] * w.z + kView[0][3],
                      kView[1][0] * w.x + kView[1][1] * w.y + kView[1][2] * w.z + kView[1][3],
                      kView[2][0] * w.x + kView[2][1] * w.y + kView[2][2] * w.z + kView[2][3] };
@@ -246,14 +420,36 @@ Rectangle<int> BeatDog::screenArea() const
     return { (getWidth() - side) / 2, 22, side, side };
 }
 
+Rectangle<int> BeatDog::beatButton(int b) const { return { screenArea().getRight() + 12 + b * 24, 40, 20, 20 }; }
+
 void BeatDog::resized()
 {
     buildScanlines();
     const auto screen = screenArea();
     liveButton->setBounds(screen.getRight() + 12, 104, 92, 22);
     fpsBox.setBounds(screen.getRight() + 12, 130, 92, 22);
+    smoothKnob.setBounds(30, 90, 32, 32);
+    swayKnob.setBounds(94, 90, 32, 32);
     if (live)
-        renderLiveFrame(livePhase);
+        drawLiveFrame(liveShown);
+}
+
+void BeatDog::mouseDown(const MouseEvent& e)
+{
+    for (int b = 0; b < beatsInBar(); ++b)
+        if (beatButton(b).expanded(2).contains(e.getPosition()))
+            setBeatMask(beatMask ^ (1 << b));
+}
+
+String BeatDog::getTooltip()
+{
+    const auto mouse = getMouseXYRelative();
+    for (int b = 0; b < beatsInBar(); ++b)
+        if (beatButton(b).expanded(2).contains(mouse))
+            return "Beat " + String(b + 1) + ": click to have the head hit bottom on it, or not. Pick fewer beats for a slower, "
+                   "heavier headbang; the sway follows the beats picked. The playing beat lights up.";
+    return "BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on). Pick the beats it hits with the numbered "
+           "buttons; SWAY floats it from side to side between them.";
 }
 
 void BeatDog::buildScanlines()
@@ -284,19 +480,23 @@ void BeatDog::paint(Graphics& g)
     g.setFont(bold(10.0f));
     g.drawText("BEAT DOG", 14, 4, 100, 12, Justification::left);
 
-    // the screen: the live frame, or the pre-rendered frame for this moment of the beat
+    // the screen: the live frame, or the pre-rendered frame for this moment, swayed as a picture
     const auto screen = screenArea();
     g.setColour(Colours::black);
     g.fillRoundedRectangle(screen.toFloat().expanded(3.0f), 6.0f);
+    g.setImageResamplingQuality(Graphics::mediumResamplingQuality);
     if (live && liveImage.isValid())
     {
-        g.setImageResamplingQuality(Graphics::mediumResamplingQuality);
         g.drawImage(liveImage, screen.toFloat());
     }
     else if (sheet.isValid())
     {
+        Graphics::ScopedSaveState state(g);
+        g.reduceClipRegion(screen);
+        const float w = (float) screen.getWidth();
+        g.addTransform(AffineTransform::rotation(kSwayLean * sway * shown.side, (float) screen.getCentreX(), (float) screen.getBottom())
+                           .translated(kSwaySlide * sway * shown.side * w, -kSwayLift * sway * shown.lift * w));
         const int sx = (frame % kColumns) * kTile, sy = (frame / kColumns) * kTile;
-        g.setImageResamplingQuality(Graphics::mediumResamplingQuality);
         g.drawImage(sheet, screen.getX(), screen.getY(), screen.getWidth(), screen.getHeight(), sx, sy, kTile, kTile);
     }
     if (scanlines.isValid())
@@ -304,27 +504,43 @@ void BeatDog::paint(Graphics& g)
     g.setColour(Colour(0xff1f3a26));
     g.drawRoundedRectangle(screen.toFloat().expanded(3.0f), 6.0f, 1.5f);
 
-    // the tempo and the beat, in the screen's green
-    const Rectangle<int> readout(24, 30, screen.getX() - 40, getHeight() - 44);
+    // the tempo, in the screen's green
+    const auto mono = [](float size) { return Font(FontOptions(Font::getDefaultMonospacedFontName(), size, Font::bold)); };
     g.setColour(kGreen);
-    g.setFont(Font(FontOptions(Font::getDefaultMonospacedFontName(), 30.0f, Font::bold)));
-    g.drawText(String(tempoTenths / 10.0, 1), readout.withHeight(36), Justification::centredLeft);
+    g.setFont(mono(30.0f));
+    g.drawText(String(tempoTenths / 10.0, 1), 24, 26, screen.getX() - 34, 36, Justification::centredLeft);
     g.setColour(kGreen.withAlpha(0.6f));
-    g.setFont(Font(FontOptions(Font::getDefaultMonospacedFontName(), 12.0f, Font::bold)));
-    g.drawText("BPM", readout.withY(readout.getY() + 36).withHeight(16), Justification::centredLeft);
-    g.drawText("BEAT " + String(beat + 1) + " / 4", readout.withY(readout.getY() + 70).withHeight(16), Justification::centredLeft);
+    g.setFont(mono(12.0f));
+    g.drawText("BPM", 24, 60, 60, 14, Justification::centredLeft);
 
-    // the beats of the bar
-    for (int i = 0; i < 4; ++i)
+    // the knobs' names and settings
+    for (const auto* knob : { &smoothKnob, &swayKnob })
     {
-        const Point<float> c((float) getWidth() - 24.0f, 34.0f + (float) i * 18.0f);
-        const bool lit = i == beat;
-        if (lit)
-        {
-            g.setColour(kGreen.withAlpha(0.25f));
-            g.fillEllipse(c.x - 8.0f, c.y - 8.0f, 16.0f, 16.0f);
-        }
-        g.setColour(lit ? kGreen : Colour(0xff1d2b20));
-        g.fillEllipse(c.x - 4.0f, c.y - 4.0f, 8.0f, 8.0f);
+        const bool on = knob->isEnabled();
+        const auto column = Rectangle<int>(64, 11).withCentre({ knob->getBounds().getCentreX(), knob->getBottom() + 8 });
+        g.setColour(on ? ink : inkDim.withAlpha(0.5f));
+        g.setFont(bold(10.0f));
+        g.drawText(knob == &smoothKnob ? "SMOOTH" : "SWAY", column, Justification::centred);
+        g.setColour(on ? inkDim : inkDim.withAlpha(0.4f));
+        g.setFont(bold(9.5f));
+        const String value = knob->getValue() <= 0.0 ? (knob == &smoothKnob ? "HEADBANG" : "OFF") : String(roundToInt(knob->getValue() * 100.0)) + "%";
+        g.drawText(on ? value : "LIVE 3D", column.translated(0, 11), Justification::centred);
+    }
+
+    // the beats the head hits: lit green when picked, filled while playing
+    g.setColour(inkDim);
+    g.setFont(bold(9.0f));
+    g.drawText("HEADBANG ON", beatButton(0).getX(), 24, 140, 12, Justification::left);
+    for (int b = 0; b < beatsInBar(); ++b)
+    {
+        const auto r = beatButton(b).toFloat();
+        const bool picked = ((beatMask >> b) & 1) != 0, playing = b == beat;
+        g.setColour(playing ? (picked ? kGreen : Colour(0xff2a3a2e)) : Colour(0xff0b0f0c));
+        g.fillRoundedRectangle(r, 4.0f);
+        g.setColour(picked ? kGreen.withAlpha(playing ? 1.0f : 0.8f) : Colour(0xff2d3830));
+        g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.2f);
+        g.setColour(playing && picked ? Colours::black : (picked ? kGreen : Colour(0xff4a5a4e)));
+        g.setFont(mono(12.0f));
+        g.drawText(String(b + 1), r, Justification::centred);
     }
 }

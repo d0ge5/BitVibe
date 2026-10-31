@@ -536,6 +536,7 @@ public:
             const double beatSteps = (double) (patternIdx % 4) + patternPhase / std::max(1.0, beatSamples * 0.25);
             beatInBarPhaseOut.store((float) std::clamp(beatSteps / 4.0, 0.0, 0.99999), std::memory_order_relaxed);
             beatInBarOut.store(patternIdx / 4, std::memory_order_relaxed);
+            barStepsOut.store(blk.patternBarSteps, std::memory_order_relaxed);
         }
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
         if (inputPeak > inputPeakOut.load(std::memory_order_relaxed))
@@ -558,6 +559,7 @@ public:
     // How far through the current quarter-note beat the bar clock is (0 = on the beat), and which beat of the bar it is.
     float getBeatInBarPhase() const { return beatInBarPhaseOut.load(std::memory_order_relaxed); }
     int getBeatInBar() const { return beatInBarOut.load(std::memory_order_relaxed); }
+    int getBarSteps() const { return barStepsOut.load(std::memory_order_relaxed); } // sixteenths in the bar
 
     // The EQ's reference sound: capture, the clip playing through the EQ, the spectrum feed (see EqReference.h).
     EqReference& getEqReference() { return eqReference; }
@@ -1030,6 +1032,7 @@ private:
     std::atomic<int> patternStepOut { 0 };
     std::atomic<float> beatInBarPhaseOut { 0.0f };
     std::atomic<int> beatInBarOut { 0 };
+    std::atomic<int> barStepsOut { 16 };
     std::atomic<int> patternRestartRequests { 0 };
     int seenPatternRestarts = 0;
     const SampleSet* lastSampleSet = nullptr;

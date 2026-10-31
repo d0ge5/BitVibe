@@ -1184,6 +1184,87 @@ void testBeatDog()
     dog.setLive(false);
     check(!dog.isTimerRunning() && !uisettings::beatDogLive(), "LIVE 3D off: the timer stops, back to the pre-rendered frames");
     dog.setFrameRate(60);
+
+    // the picked beats: the head hits bottom on those only, rising in between and keeping the slam's snap
+    const auto near = [](float a, float b) { return std::abs(a - b) < 0.01f; };
+    dog.setBeatMask(0x1);
+    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.0f) && near(dog.motionAt(0.0f, 2, 16).between, 0.5f)
+              && dog.motionAt(0.0f, 2, 16).bang < 0.6f && near(dog.motionAt(0.8f, 3, 16).bang, 0.8f),
+          "beat 1 only: one headbang a bar, a long rise and the slam in the last 0.4 of a beat");
+    dog.setBeat(0.0f, 2);
+    check(dog.getFrame() > 5 && dog.getFrame() < 19, "the pre-rendered frames follow it (frame " + String(dog.getFrame()) + " halfway through the bar)");
+    dog.setBeatMask(0x5);
+    check(near(dog.motionAt(0.0f, 2, 16).bang, 0.0f) && near(dog.motionAt(0.0f, 1, 16).between, 0.5f), "beats 1 and 3: two a bar");
+    dog.setBeatMask(0x9);
+    check(near(dog.motionAt(0.0f, 0, 12).bang, 0.0f) && near(dog.motionAt(0.5f, 1, 12).between, 0.5f),
+          "a beat the bar does not have (beat 4 of 3/4) is left out");
+    dog.setBeatMask(0);
+    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.6f) && near(dog.motionAt(0.3f, 2, 16).bang, 0.6f), "no beats picked: the head waits at the top");
+    check(uisettings::beatDogBeats() == 0, "the picked beats are remembered");
+    dog.setBeatMask(0x3f);
+
+    // the sway lands on one side at a picked beat and on the other at the next
+    const float firstSide = dog.motionAt(0.0f, 0, 16).side;
+    const float midway = dog.motionAt(0.5f, 0, 16).side;
+    dog.motionAt(0.9f, 0, 16);
+    const float nextSide = dog.motionAt(0.0f, 1, 16).side;
+    check(std::abs(firstSide) > 0.99f && std::abs(midway) < 0.01f && near(nextSide, -firstSide) && dog.motionAt(0.5f, 1, 16).lift > 0.99f,
+          "the sway swings from one side to the other between picked beats, floating up in the middle");
+
+    // SMOOTH eases the headbang into an even bob
+    BeatDog::Motion halfway;
+    halfway.bang = 0.5f;
+    halfway.between = 0.5f;
+    dog.setSmoothness(1.0f);
+    const float even = dog.headAngle(halfway);
+    halfway.bang = 0.25f;
+    halfway.between = 0.25f;
+    const float evenQuarter = dog.headAngle(halfway);
+    dog.setSmoothness(0.0f);
+    const float bangQuarter = dog.headAngle(halfway); // the headbang is near the top by then
+    dog.setSmoothness(1.0f);
+    halfway.bang = 0.0f;
+    halfway.between = 0.0f;
+    check(std::abs(bangQuarter - evenQuarter) > 0.05f && evenQuarter > even && evenQuarter < dog.headAngle(halfway),
+          "SMOOTH turns the headbang into an even bob (the head at the top halfway, halfway down a quarter of the way)");
+
+    // both move the live picture
+    const auto liveAt = [&](float smooth, float swayAmount, float phase) {
+        dog.setSmoothness(smooth);
+        dog.setSway(swayAmount);
+        dog.renderLiveFrame(phase, 0, 16);
+        return dog.getLiveImage().createCopy();
+    };
+    const auto differ = [](const Image& a, const Image& b) {
+        int n = 0;
+        for (int y = 0; y < a.getHeight(); ++y)
+            for (int x = 0; x < a.getWidth(); ++x)
+                n += a.getPixelAt(x, y) != b.getPixelAt(x, y) ? 1 : 0;
+        return n;
+    };
+    const int bySmooth = differ(liveAt(0.0f, 0.0f, 0.3f), liveAt(1.0f, 0.0f, 0.3f));
+    const int bySway = differ(liveAt(0.0f, 0.0f, 0.1f), liveAt(0.0f, 1.0f, 0.1f));
+    check(bySmooth > 500 && bySway > 500, "SMOOTH and SWAY move the live head (" + String(bySmooth) + " and " + String(bySway) + " pixels)");
+    dog.setSmoothness(0.3f);
+    dog.setSway(0.8f);
+    dog.saveSettings();
+    {
+        BeatDog another(lookAndFeel);
+        check(near(another.getSmoothness(), 0.3f) && near(another.getSway(), 0.8f), "the knobs are remembered");
+    }
+    dog.setLive(true);
+    dog.setBeatMask(0x5);
+    dog.setBeat(0.0f, 0, 128.0f);
+    dog.renderLiveFrame(0.6f, 1, 16);
+    const auto controlsFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_beat_dog_controls.png");
+    controlsFile.deleteFile();
+    if (auto out = std::unique_ptr<FileOutputStream>(controlsFile.createOutputStream()))
+        PNGImageFormat().writeImageToStream(snapshot(dog, 2.0f), *out);
+    dog.setLive(false);
+    dog.setBeatMask(0x3f);
+    dog.setSmoothness(0.0f);
+    dog.setSway(0.5f);
+    dog.saveSettings();
 }
 
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own

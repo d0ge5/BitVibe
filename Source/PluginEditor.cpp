@@ -655,7 +655,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     stepStrip.onStepMenu = [this](int step) { showStepMenu(step); };
     content.addAndMakeVisible(stepStrip);
     beatDog = std::make_unique<BeatDog>(laf);
-    beatDog->beatSource = [this] { return std::make_pair(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar()); };
+    beatDog->beatSource = [this] {
+        const auto& engine = proc.getEngine();
+        return BeatDog::Position { engine.getBeatInBarPhase(), engine.getBeatInBar(), engine.getBarSteps() };
+    };
     content.addAndMakeVisible(*beatDog);
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
@@ -1880,7 +1883,7 @@ void BitVibeEditor::paintContent(Graphics& g)
 // editor opens or the Alt layer changes, so nothing shows a stale state first.
 void BitVibeEditor::updateLiveState()
 {
-    beatDog->setBeat(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar(), proc.getEffectiveBpm()); // repaints only on a change
+    beatDog->setBeat(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar(), proc.getEffectiveBpm(), proc.getEngine().getBarSteps()); // repaints only on a change
     {
         std::array<StepStrip::Step, 6> steps {};
         for (int i = 0; i < 6; ++i)

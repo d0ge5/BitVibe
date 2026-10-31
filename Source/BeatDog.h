@@ -13,20 +13,28 @@ class PedalButton;
 //  - LIVE 3D: the same head drawn in real time from its mesh (BeatDogMesh.h, exported by the same Blender script), at
 //    60, 30 or 15 frames a second. Only the lines facing the camera are drawn, each with a soft glow, into an image at
 //    the frame rate chosen; the editor's own repaints just show that image.
-// The head hits bottom on every beat. Four lights count the beats of the bar.
-class BeatDog : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+// The head hits bottom on the beats picked with the numbered buttons (all of them to start with), rising in between
+// and slamming down again. SWAY floats the head from side to side, landing on one side at a picked beat and on the
+// other at the next; SMOOTH (LIVE 3D only) eases the slam into an even bob. All of it is remembered.
+class BeatDog : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
     static constexpr int kFrames = 32, kColumns = 8, kTile = 224;
+    static constexpr int kMaxBeats = 6; // the longest bar (12/8) has six quarter-note beats
 
     explicit BeatDog(PedalLookAndFeel&);
     ~BeatDog() override;
 
-    // Where the beat is: phase 0..1 through the current beat (0 = on the beat), which beat of the bar it is, and the
-    // tempo it runs at (shown on the left). Repaints only what changed.
-    void setBeat(float phase, int beatInBar, float bpm = 120.0f);
-    // What the live version asks for at its own frame rate: the phase and the beat of the bar, straight from the engine.
-    std::function<std::pair<float, int>()> beatSource;
+    // Where the beat is: phase 0..1 through the current quarter-note beat (0 = on the beat), which beat of the bar it
+    // is, the tempo (shown on the left) and the length of the bar in sixteenths. Repaints only what changed.
+    void setBeat(float phase, int beatInBar, float bpm = 120.0f, int barSteps = 16);
+    // What the live version asks for at its own frame rate, straight from the engine.
+    struct Position
+    {
+        float phase = 0.0f;
+        int beatInBar = 0, barSteps = 16;
+    };
+    std::function<Position()> beatSource;
 
     void setLive(bool live);  // remembered for next time
     bool isLive() const { return live; }
@@ -35,31 +43,61 @@ public:
     using juce::Timer::isTimerRunning;   // for tests: the live version's clock
     using juce::Timer::getTimerInterval;
 
+    // Which beats of the bar the head hits bottom on: bit n = beat n + 1. Remembered.
+    void setBeatMask(int mask);
+    int getBeatMask() const { return beatMask; }
+    void setSmoothness(float amount); // 0 = the headbang, 1 = an even bob (LIVE 3D)
+    float getSmoothness() const { return smoothness; }
+    void setSway(float amount);       // 0 = still, 1 = the widest sway
+    float getSway() const { return sway; }
+    void saveSettings();              // the knobs are saved when let go of, and when the editor closes
+
+    // The motion at a moment of the bar: how far through the headbang (0 = the head down, as on the curve rendered in
+    // Blender), how far from one picked beat to the next (0..1), and the float's side (-1..1) and lift (0..1).
+    struct Motion
+    {
+        float bang = 0.0f, between = 0.0f, side = 1.0f, lift = 0.0f;
+    };
+    Motion motionAt(float phase, int beatInBar, int barSteps);
+    // The head's tilt for a motion, in radians: the headbang curve, eased toward an even bob by SMOOTH.
+    float headAngle(const Motion&) const;
+
     int getFrame() const { return frame; }
     bool hasSheet() const { return sheet.isValid(); }
-    // Draws one live frame at this phase into the cached image (what the timer does); for tests.
-    void renderLiveFrame(float phase);
+    // Draws one live frame at this moment into the cached image (what the timer does); for tests.
+    void renderLiveFrame(float phase, int beatInBar = 0, int barSteps = 16);
     const juce::Image& getLiveImage() const { return liveImage; }
 
+    juce::String getTooltip() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent&) override;
 
 private:
     void timerCallback() override;
     juce::Rectangle<int> screenArea() const;
+    juce::Rectangle<int> beatButton(int beat) const;
+    int beatsInBar() const;
     void buildScanlines();
     void updateControls();
+    void drawLiveFrame(const Motion&);
 
     PedalLookAndFeel& laf;
     juce::Image sheet;      // the 32 frames, decoded once
     juce::Image scanlines;  // a faint CRT look over the screen, drawn once per size
     juce::Image liveImage;  // the last live frame
-    int frame = 0, beat = 0;
+    int frame = 0, beat = 0, barSteps = 16;
     int tempoTenths = 1200; // the tempo shown, in tenths of a BPM
     bool live = false;
     int fps = 60;
-    float livePhase = 0.0f;
+    int beatMask = (1 << kMaxBeats) - 1;
+    float smoothness = 0.0f, sway = 0.5f;
+    bool knobsChanged = false;
+    Motion shown, liveShown; // what each version shows now
+    float lastBetween = 0.0f;
+    int swings = 0;          // picked beats passed: which side the sway heads for
 
     std::unique_ptr<PedalButton> liveButton;
     juce::ComboBox fpsBox;
+    juce::Slider smoothKnob, swayKnob;
 };

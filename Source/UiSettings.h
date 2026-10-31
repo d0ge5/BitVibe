@@ -76,6 +76,27 @@ inline void setBeatDogFps(int fps)
     write(*xml);
 }
 
+// BEAT DOG's picked beats (bit n = beat n + 1), and its SMOOTH and SWAY knobs (0..1).
+inline int beatDogBeats() { return read()->getIntAttribute("beatDogBeats", 0x3f); }
+
+inline void setBeatDogBeats(int mask)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogBeats", mask);
+    write(*xml);
+}
+
+inline float beatDogSmooth() { return (float) read()->getDoubleAttribute("beatDogSmooth", 0.0); }
+inline float beatDogSway() { return (float) read()->getDoubleAttribute("beatDogSway", 0.5); }
+
+inline void setBeatDogKnobs(float smooth, float sway)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogSmooth", (double) smooth);
+    xml->setAttribute("beatDogSway", (double) sway);
+    write(*xml);
+}
+
 inline bool helpSeen() { return read()->getBoolAttribute("helpSeen", false); }
 
 inline void markHelpSeen()
