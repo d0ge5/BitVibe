@@ -1048,6 +1048,27 @@ void testSampler(const File& outDir)
     block.clear();
     p->processBlock(block, midi);
     check(block.getMagnitude(0, 512) < 1.0e-4f && p->getSamplerPreviewSeconds() < 0.0f, "STOP: silence again");
+    {
+        // LOOP: a 5 ms sound keeps going round; the sampler EQ's spectrum feed follows it
+        std::vector<float> beforeEq(240, 0.25f);
+        p->setSamplerPreview(std::vector<float>(240, 0.5f), std::vector<float>(240, 0.5f), 48000.0, beforeEq);
+        p->setSamplerPreviewLoop(true);
+        p->playSamplerPreview();
+        for (int i = 0; i < 4; ++i)
+        {
+            block.clear();
+            p->processBlock(block, midi);
+        }
+        std::vector<float> b(1024), a(1024);
+        const bool feeding = p->readSamplerScope(b.data(), a.data(), 1024);
+        check(block.getMagnitude(0, 512) > 0.4f && p->getSamplerPreviewSeconds() >= 0.0f, "LOOP: a 5 ms sound is still playing after 2048 samples");
+        check(feeding && std::abs(b[1000] - 0.25f) < 0.01f && std::abs(a[1000] - 0.5f) < 0.01f, "the spectrum feed has the sound before and after the EQ");
+        p->setSamplerPreviewLoop(false);
+        p->stopSamplerPreview();
+        block.clear();
+        p->processBlock(block, midi);
+        check(!p->readSamplerScope(b.data(), a.data(), 1024) && b[1000] == 0.0f, "stopped: the feed is silent");
+    }
 
     // SAVE: into Sounds/Sampled, in a bank, keeping its level
     auto& bank = p->getSampleBank();
@@ -1355,7 +1376,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 189, "189 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 190, "190 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

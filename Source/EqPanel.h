@@ -32,6 +32,10 @@ public:
     // Updates the spectrum and repaints (called by the editor's timer while the panel is shown).
     void refresh();
 
+    // Where the spectrum comes from: fills the latest n samples before and after the EQ. The main EQ reads the
+    // engine's reference feed; the sampler's copy is given the sampler preview's.
+    std::function<void(float* beforeEq, float* afterEq, int n)> scopeSource;
+
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
 

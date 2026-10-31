@@ -222,6 +222,9 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMax), "Sample Max Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
+    // how long a random sound may play, in beats of the tempo (a rig setting like the mix)
+    layout.add(std::make_unique<AudioParameterChoice>(id(ids::sampleMaxBeats), "Sample Max Length",
+                                                      StringArray { "Whole Sound", "1/4 Beat", "1/2 Beat", "1 Beat", "2 Beats", "4 Beats", "8 Beats" }, 0));
     // the loop section's own volumes (used when Loop Own Levels is on)
     layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleLoopOwn), "Sample Loop Own Levels", false));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMix), "Sample Loop Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
@@ -421,6 +424,7 @@ BitVibeProcessor::BitVibeProcessor()
     pSampleBase = raw(ids::sampleBase);
     pSampleMax = raw(ids::sampleMax);
     pSampleLoopOwn = raw(ids::sampleLoopOwn);
+    pSampleMaxBeats = raw(ids::sampleMaxBeats);
     pSampleLoopMix = raw(ids::sampleLoopMix);
     pSampleLoopChance = raw(ids::sampleLoopChance);
     pSampleLoopBase = raw(ids::sampleLoopBase);
@@ -611,6 +615,10 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.sampleMaxDb = pSampleMax->load();
     p.sampleSet = sampleBank.beginBlock(SampleBank::kMain);
     p.loopSampleSet = sampleBank.beginBlock(SampleBank::kLoop);
+    {
+        static constexpr float kBeats[] { 0.0f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f }; // as listed in Sample Max Length
+        p.sampleMaxBeats = kBeats[jlimit(0, 6, roundToInt(pSampleMaxBeats->load()))];
+    }
     if (pSampleLoopOwn->load() > 0.5f)
     {
         p.loopSampleMix = pSampleLoopMix->load();
@@ -955,11 +963,14 @@ bitvibe::SampleFx BitVibeProcessor::getSamplerFx() const
     return fx;
 }
 
-void BitVibeProcessor::setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate)
+void BitVibeProcessor::setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate, std::vector<float> beforeEq)
 {
     auto holder = std::make_unique<PreviewHolder>();
     holder->left = std::move(left);
     holder->right = std::move(right);
+    holder->beforeEq = std::move(beforeEq);
+    if (holder->beforeEq.size() != holder->left.size())
+        holder->beforeEq.assign(holder->left.size(), 0.0f);
     holder->rate = rate;
     samplerPreview.publish(std::move(holder));
 }
@@ -987,25 +998,38 @@ void BitVibeProcessor::mixSamplerPreview(AudioBuffer<float>& out, int numChannel
         previewPosition = 0.0; // PLAY starts from the beginning
     }
     playingPreview = holder;
+    auto feedScope = [this](float before, float after)
+    {
+        previewScopeBefore[(size_t) previewScopePos].store(before, std::memory_order_relaxed);
+        previewScopeAfter[(size_t) previewScopePos].store(after, std::memory_order_relaxed);
+        previewScopePos = (previewScopePos + 1) & (kScopeSize - 1);
+    };
     if (!previewPlaying || holder == nullptr || holder->left.empty())
     {
         previewPlaying = false;
         previewSecondsOut.store(-1.0f, std::memory_order_relaxed);
         return;
     }
+    const bool loop = previewLoop.load(std::memory_order_relaxed);
     const auto size = holder->left.size();
     const double step = holder->rate / jmax(1.0, deviceRate);
     for (int n = 0; n < numSamples; ++n)
     {
-        const auto i = (size_t) previewPosition;
+        auto i = (size_t) previewPosition;
         if (i + 1 >= size)
         {
-            previewPlaying = false;
-            break;
+            if (!loop || size < 2)
+            {
+                previewPlaying = false;
+                break;
+            }
+            previewPosition = 0.0; // LOOP: from the top again
+            i = 0;
         }
         const float frac = (float) (previewPosition - (double) i);
         const float l = holder->left[i] + (holder->left[i + 1] - holder->left[i]) * frac;
         const float r = holder->right[i] + (holder->right[i + 1] - holder->right[i]) * frac;
+        feedScope(holder->beforeEq[i] + (holder->beforeEq[i + 1] - holder->beforeEq[i]) * frac, 0.5f * (l + r));
         if (numChannels >= 2)
         {
             out.addSample(0, n, l);
@@ -1018,6 +1042,21 @@ void BitVibeProcessor::mixSamplerPreview(AudioBuffer<float>& out, int numChannel
         previewPosition += step;
     }
     previewSecondsOut.store(previewPlaying ? (float) (previewPosition / holder->rate) : -1.0f, std::memory_order_relaxed);
+    previewScopeWritten.store(previewScopePos, std::memory_order_release);
+}
+
+bool BitVibeProcessor::readSamplerScope(float* beforeEq, float* afterEq, int n) const
+{
+    n = jlimit(0, kScopeSize, n);
+    const bool playing = previewSecondsOut.load(std::memory_order_relaxed) >= 0.0f;
+    const int end = previewScopeWritten.load(std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto idx = (size_t) ((end - n + i + kScopeSize) & (kScopeSize - 1));
+        beforeEq[i] = playing ? previewScopeBefore[idx].load(std::memory_order_relaxed) : 0.0f;
+        afterEq[i] = playing ? previewScopeAfter[idx].load(std::memory_order_relaxed) : 0.0f;
+    }
+    return playing;
 }
 
 File BitVibeProcessor::sampledFolder()

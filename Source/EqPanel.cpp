@@ -113,6 +113,9 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel, const Strin
         levelBefore[(size_t) i] = levelAfter[(size_t) i] = -120.0f;
     updateClipButtons();
 
+    if (referenceTools)
+        scopeSource = [this](float* before, float* after, int n) { proc.getEngine().getEqReference().readScope(before, after, n); };
+
     selectBand(selected);
     setSize(kWidth, kHeight); // last: resized() needs the band buttons
 }
@@ -317,11 +320,10 @@ void EqPanel::refresh()
         for (auto& b : bandButtons)
             b->setAlpha(alpha);
     }
-    if (referenceTools) // the sampler's copy has no reference clip and no live spectrum
-    {
+    if (referenceTools) // the sampler's copy has no reference clip
         updateClipButtons();
+    if (scopeSource)
         updateSpectrum();
-    }
     repaint();
 }
 
@@ -384,7 +386,7 @@ void EqPanel::updateSpectrum()
     scopeBefore.resize((size_t) kFftSize);
     scopeAfter.resize((size_t) kFftSize);
     frame.resize((size_t) kFftSize);
-    proc.getEngine().getEqReference().readScope(scopeBefore.data(), scopeAfter.data(), kFftSize);
+    scopeSource(scopeBefore.data(), scopeAfter.data(), kFftSize);
     const double rate = proc.getEngine().getSampleRate();
     const double binHz = rate / (double) kFftSize;
     const float toDb = 20.0f * std::log10(4.0f / (float) kFftSize); // a full-scale sine reads 0 dBFS

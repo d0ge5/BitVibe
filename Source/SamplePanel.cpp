@@ -7,7 +7,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
 {
     setSize(kWidth, kHeight);
 
-    for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider })
+    for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider, &lengthSlider })
     {
         s->setSliderStyle(Slider::RotaryVerticalDrag);
         s->setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
@@ -19,6 +19,10 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         addAndMakeVisible(*s);
     }
     attachKnobs();
+    lengthAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::sampleMaxBeats, lengthSlider);
+    lengthSlider.setDoubleClickReturnValue(true, 0.0);
+    lengthSlider.setTooltip("MAX BEATS: the longest a random sound plays, in beats of the tempo; then it fades out. Turn it down to tame long "
+                            "sounds. Fully left = the whole sound.");
 
     // Letting go of the base or max knob plays one of the picked sounds at that volume (the same sound until the
     // next time a knob is picked up), so the player hears what they set.
@@ -113,6 +117,7 @@ SamplePanel::~SamplePanel()
     ownLevelsButton.setLookAndFeel(nullptr);
     mixSlider.setLookAndFeel(nullptr);
     chanceSlider.setLookAndFeel(nullptr);
+    lengthSlider.setLookAndFeel(nullptr);
     onButton.setLookAndFeel(nullptr);
     bankBox.setLookAndFeel(nullptr);
 }
@@ -181,7 +186,7 @@ void SamplePanel::showSection(int newSection)
 void SamplePanel::parentHierarchyChanged()
 {
     if (auto* parent = getParentComponent())
-        for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider })
+        for (auto* s : { &mixSlider, &chanceSlider, &baseSlider, &maxSlider, &lengthSlider })
             s->setPopupDisplayEnabled(true, false, parent);
 }
 
@@ -209,8 +214,9 @@ void SamplePanel::resized()
     deleteButton.setBounds(188, 24, 62, 24);
     chooseButton.setBounds(12, 52, 238, 24);
     folderButton.setBounds(12, 80, 238, 24);
-    mixSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 322, 44 }));
-    chanceSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 402, 44 }));
+    mixSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 284, 44 }));
+    chanceSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 352, 44 }));
+    lengthSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 420, 44 }));
     baseSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 62, 148 }));
     maxSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 154, 148 }));
     previewButton.setBounds(228, 132, 100, 24);
@@ -466,18 +472,20 @@ void SamplePanel::paint(Graphics& g)
 
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
-    const Entry entries[] = { { "SAMPLE MIX", String(roundToInt(rawValue(mixId()) * 100.0f)) + "%", 322, 76 },
-                              { "CHANCE", String(roundToInt(rawValue(chanceId()) * 100.0f)) + "%", 402, 76 },
+    static const char* lengths[] { "WHOLE", "1/4 BEAT", "1/2 BEAT", "1 BEAT", "2 BEATS", "4 BEATS", "8 BEATS" };
+    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(mixId()) * 100.0f)) + "%", 284, 76 },
+                              { "CHANCE", String(roundToInt(rawValue(chanceId()) * 100.0f)) + "%", 352, 76 },
+                              { "MAX BEATS", lengths[jlimit(0, 6, roundToInt(rawValue(ids::sampleMaxBeats)))], 420, 76 },
                               { "BASE", volumeText(rawValue(baseId())), 62, 180 },
                               { "MAX", volumeText(rawValue(maxId())), 154, 180 } };
     for (const auto& e : entries)
     {
         g.setColour(ink.withMultipliedAlpha(alpha));
         g.setFont(bold(11.0f));
-        g.drawText(e.name, Rectangle<int>(80, 14).withCentre({ e.cx, e.y }), Justification::centred);
+        g.drawText(e.name, Rectangle<int>(68, 14).withCentre({ e.cx, e.y }), Justification::centred);
         g.setColour(inkDim.withMultipliedAlpha(alpha));
         g.setFont(plain(10.5f));
-        g.drawText(e.value, Rectangle<int>(80, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
+        g.drawText(e.value, Rectangle<int>(68, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
     }
 
     if (!advanced)

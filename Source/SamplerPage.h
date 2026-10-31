@@ -28,7 +28,9 @@ public:
     void setSelection(juce::int64 start, juce::int64 end); // in samples of the recording
     juce::Range<juce::int64> getSelection() const { return { selStart, selEnd }; }
     // The picked part through the effects, as it would be saved.
-    void renderSelection(std::vector<float>& left, std::vector<float>& right) const;
+    void renderSelection(std::vector<float>& left, std::vector<float>& right, std::vector<float>* beforeEq = nullptr) const;
+    void setLooping(bool loop); // LOOP: PLAY goes round and round the picked part
+    bool isLooping() const { return loopButton.lit; }
     bool save(const juce::String& name, const juce::String& bank, juce::String& message);
 
 private:
@@ -55,7 +57,7 @@ private:
     float meterLevel = 0.0f;
 
     std::unique_ptr<Waveform> waveform;
-    PedalButton playButton { "PLAY" }, stopButton { "STOP" }, allButton { "PICK ALL" }, zoomButton { "ZOOM IN" };
+    PedalButton playButton { "PLAY" }, stopButton { "STOP" }, loopButton { "LOOP" }, allButton { "PICK ALL" }, zoomButton { "ZOOM IN" };
 
     juce::ComboBox distBox;
     std::unique_ptr<APVTS::ComboBoxAttachment> distAtt;
@@ -76,6 +78,7 @@ private:
     juce::String previewSignature;
     int signatureCountdown = 0;
     double playStartMs = 0.0;
+    bool restartPending = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplerPage)
 };

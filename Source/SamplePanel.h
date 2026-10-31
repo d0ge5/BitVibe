@@ -59,7 +59,8 @@ private:
     juce::ComboBox bankBox;
     PedalButton saveButton { "SAVE" }, deleteButton { "DELETE" };
     PedalButton chooseButton { "CHOOSE SOUNDS..." }, folderButton { "OPEN SOUNDS FOLDER" };
-    KnobSlider mixSlider, chanceSlider, baseSlider, maxSlider;
+    KnobSlider mixSlider, chanceSlider, baseSlider, maxSlider, lengthSlider;
+    std::unique_ptr<APVTS::SliderAttachment> lengthAtt;
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
     PedalButton mainButton { "MAIN" }, loopButton { "LOOP" };

@@ -160,8 +160,9 @@ them).
   SOUNDS shows each one as a submenu with its own *Pick all* and *Pick none*, so a sorted library stays easy to pick
   from. File names must differ across folders (a name found twice is used once). Free sound packs released under CC0,
   such as [Kenney's audio packs](https://kenney.nl/assets/category:Audio), work well. **MIX** moves between the **BASE**
-  and **MAX** volumes, **CHANCE** is how often a step gets a sound, and **PREVIEW** plays one so you can set the
-  volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
+  and **MAX** volumes, **CHANCE** is how often a step gets a sound, **MAX BEATS** is the longest a sound may play
+  (a quarter beat up to 8 beats of the tempo, or the whole sound) before it fades out, which tames long sounds, and
+  **PREVIEW** plays one so you can set the volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
   picks and banks are remembered between sessions. While **LOOP** is on (see the pedal above), **MAIN** and **LOOP**
   buttons appear: LOOP sets up the loop section's steps. Its bank list starts on **Same as MAIN**; pick a bank or
   choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own SAMPLE
@@ -196,10 +197,11 @@ of what another program on your computer is playing. **BACK TO THE PEDAL** close
    This uses Windows' per-program recording, so it needs Windows 10 version 2004 or Windows 11; on macOS the page
    opens but cannot record yet.
 2. **Pick the part:** drag across the waveform; drag the white edges to adjust; **ZOOM IN** to set them exactly.
-   **PLAY** plays the picked part as it will be saved, and changes to the effects are heard while it plays.
+   **PLAY** plays the picked part as it will be saved, and changes to the effects are heard while it plays. **LOOP**
+   keeps playing it over and over (also while you move its edges), so you can tweak the settings as you listen.
 3. **Shape it:** **DISTORTION** (off, the overdrive or the fuzz from the right-hand column, with DRIVE, TONE and
    DIST LEVEL), **SAMPLE RATE** and **BITS** (the pedal's own crush), an **EQ** (the same panel as the main EQ, with
-   settings of its own) and **VOLUME**. The sound is levelled like every other sound, and VOLUME then says how loud it
+   settings of its own, showing the spectrum of what PLAY or LOOP is playing before and after it) and **VOLUME**. The sound is levelled like every other sound, and VOLUME then says how loud it
    sits next to them (0 dB = as loud as the others, -6 dB = half as loud); BitVibe keeps that level when it plays it.
 4. **Save:** give it a name, choose a bank to add it to if you like, and **SAVE SOUND**. It is saved as a WAV in the
    sounds folder's **Sampled** subfolder and shows up in CHOOSE SOUNDS straight away. The sample blend uses up to 20
@@ -263,7 +265,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 500 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 505 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

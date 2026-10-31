@@ -2335,6 +2335,43 @@ void testDelay()
 
 // The sampler's chain: with nothing on, the clip only comes out levelled to the sound peak; VOLUME sets that level; the
 // distortion, the sample-rate reducer, the bit crusher and the EQ each change it the way the pedal's own do.
+// MAX BEATS: a random sound plays at most that many beats of the tempo, then fades out.
+void testSampleMaxBeats()
+{
+    std::puts("sample max beats");
+    SampleSet set;
+    SampleClip c;
+    c.data.assign((size_t) (2.0 * kFs), 0.5f); // two seconds
+    c.rate = kFs;
+    set.clips.push_back(std::move(c));
+    Params p = neutral();
+    p.seqPlay = 5;
+    p.seqMult = 0;          // one step per beat
+    p.tempoBpm = 120.0f;    // a beat is 0.5 s
+    p.steps.fill(mapping::pitchStepKnob(0));
+    p.pickTriggers = false;
+    p.sampleSet = &set;
+    p.sampleMix = 1.0f;
+    p.sampleBaseDb = -60.0f;
+    p.sampleMaxDb = 0.0f;
+    const Signal quiet((size_t) (1.5 * kFs), 0.0f);
+    auto mean = [](const Signal& s, double t0, double t1)
+    {
+        double sum = 0.0;
+        for (size_t i = (size_t) (t0 * kFs); i < (size_t) (t1 * kFs); ++i)
+            sum += s[i];
+        return sum / ((t1 - t0) * kFs);
+    };
+    const auto whole = render(p, quiet);
+    CHECK(mean(whole, 0.3, 0.45) > 0.4, "the whole sound: it plays through the step (%.3f)", mean(whole, 0.3, 0.45));
+    Params quarter = p;
+    quarter.sampleMaxBeats = 0.25f; // 0.125 s
+    const auto cut = render(quarter, quiet);
+    CHECK(mean(cut, 0.03, 0.1) > 0.4 && std::abs(mean(cut, 0.16, 0.45)) < 1.0e-3,
+          "a quarter beat: it plays 0.125 s, then fades out (%.3f, then %.4f)", mean(cut, 0.03, 0.1), mean(cut, 0.16, 0.45));
+    CHECK(mean(cut, 0.53, 0.6) > 0.4, "the next step's sound plays again");
+}
+
 void testSampleRender()
 {
     std::puts("sampler render");
@@ -2408,6 +2445,15 @@ void testSampleRender()
     const double ratioEq = toneLevel(eqL, 440.0) / toneLevel(eqL, 3000.0), ratioFlat = toneLevel(flatL, 440.0) / toneLevel(flatL, 3000.0);
     CHECK(ratioEq < 0.3 * ratioFlat, "a -15 dB bell at 440 Hz takes that tone down against the other (%.2f vs %.2f)", ratioEq, ratioFlat);
 
+    // the sound before the EQ, for the sampler EQ's spectrum: with the EQ off it is the output itself (mono)
+    std::vector<float> before;
+    renderSample(M, M, kFs, plain, flatL, flatR, &before);
+    float apart = 0.0f;
+    for (size_t i = 0; i < before.size(); ++i)
+        apart = std::max(apart, std::abs(before[i] - flatL[i]));
+    CHECK(before.size() == flatL.size() && apart < 1.0e-5f, "the sound before the EQ is the output when the EQ is off");
+    renderSample(M, M, kFs, eq, eqL, eqR, &before);
+    CHECK(toneLevel(before, 440.0) > 3.0 * toneLevel(eqL, 440.0), "with the bell, the sound before the EQ still has the 440 Hz tone");
     std::vector<float> empty, eL, eR;
     renderSample(empty, empty, kFs, plain, eL, eR);
     CHECK(eL.empty() && eR.empty(), "an empty clip stays empty");
@@ -3156,6 +3202,7 @@ int main(int argc, char** argv)
     testStepTypes();
     testSeqOnly();
     testDelay();
+    testSampleMaxBeats();
     testSampleRender();
     testSequenceLoop();
     testLoopSectionSamples();

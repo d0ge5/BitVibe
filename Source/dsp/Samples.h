@@ -53,8 +53,9 @@ public:
     }
 
     // Starts a clip from its beginning. The clip must outlive its playback (the caller keeps the set alive). loopSection
-    // puts a sequence sound in the loop section's output.
-    void trigger(const SampleClip* clip, float level = 1.0f, bool preview = false, bool loopSection = false)
+    // puts a sequence sound in the loop section's output. maxLength (output samples, 0 = all of it) fades the sound out
+    // that long after it starts.
+    void trigger(const SampleClip* clip, float level = 1.0f, bool preview = false, bool loopSection = false, int maxLength = 0)
     {
         if (clip == nullptr || clip->data.empty())
             return;
@@ -72,6 +73,7 @@ public:
                 v.level = level;
                 v.preview = preview;
                 v.loopSection = loopSection;
+                v.remaining = maxLength > 0 ? maxLength : -1;
                 v.releasing = false;
                 return;
             }
@@ -112,6 +114,8 @@ public:
             else
                 out.sequence += value;
 
+            if (!v.releasing && v.remaining > 0 && --v.remaining == 0)
+                v.releasing = true; // as long as it may play: it fades out from here
             if (v.releasing)
             {
                 v.gain -= fadeOutStep;
@@ -153,6 +157,7 @@ private:
         double position = 0.0, step = 1.0;
         float gain = 0.0f, level = 1.0f;
         bool releasing = false, preview = false, loopSection = false;
+        int remaining = -1; // output samples left before it fades out (-1 = no limit)
     };
 
     std::array<Voice, kVoices> voices;

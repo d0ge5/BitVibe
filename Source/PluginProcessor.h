@@ -83,6 +83,7 @@ inline constexpr const char* sampleChance = "sampleChance";
 inline constexpr const char* sampleBase = "sampleBase";
 inline constexpr const char* sampleMax = "sampleMax";
 // The sequence's loop section: its own sample volumes (when sampleLoopOwn is on; otherwise the ones above).
+inline constexpr const char* sampleMaxBeats = "sampleMaxBeats";
 inline constexpr const char* sampleLoopOwn = "sampleLoopOwn";
 inline constexpr const char* sampleLoopMix = "sampleLoopMix";
 inline constexpr const char* sampleLoopChance = "sampleLoopChance";
@@ -154,8 +155,14 @@ public:
     AppAudioCapture& getAppCapture() { return appCapture; }
     // The sampler's effect settings as they stand.
     bitvibe::SampleFx getSamplerFx() const;
-    // The sound the sampler's PLAY button plays (already processed), at its own rate. Message thread.
-    void setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate);
+    // The sound the sampler's PLAY button plays (already processed), at its own rate, and the same sound before its EQ
+    // (mono) for the sampler EQ's spectrum. Message thread.
+    void setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate, std::vector<float> beforeEq = {});
+    // LOOP: the preview starts again from the top when it reaches the end.
+    void setSamplerPreviewLoop(bool loop) { previewLoop.store(loop, std::memory_order_relaxed); }
+    // The latest n samples (n <= kScopeSize) of the preview before and after the sampler's EQ, as it plays; false (and
+    // silence) while it does not.
+    bool readSamplerScope(float* beforeEq, float* afterEq, int n) const;
     void playSamplerPreview();
     void stopSamplerPreview();
     // How far into the preview the playback is, in seconds (-1 while it is not playing).
@@ -256,7 +263,7 @@ private:
     // the sampler's preview player (the audio thread mixes it into the main output)
     struct PreviewHolder
     {
-        std::vector<float> left, right;
+        std::vector<float> left, right, beforeEq;
         double rate = 48000.0;
         PreviewHolder* nextRetired = nullptr;
     };
@@ -269,6 +276,13 @@ private:
     double previewPosition = 0.0, deviceRate = 48000.0;
     bool previewPlaying = false;
     std::atomic<float> previewSecondsOut { -1.0f };
+    std::atomic<bool> previewLoop { false };
+    // the preview before and after its EQ, for the sampler EQ's spectrum (written on the audio thread)
+    static constexpr int kScopeSize = bitvibe::EqReference::kScopeSize;
+    std::vector<std::atomic<float>> previewScopeBefore = std::vector<std::atomic<float>>(kScopeSize);
+    std::vector<std::atomic<float>> previewScopeAfter = std::vector<std::atomic<float>>(kScopeSize);
+    std::atomic<int> previewScopeWritten { 0 };
+    int previewScopePos = 0;
     void mixSamplerPreview(juce::AudioBuffer<float>& out, int numChannels, int numSamples);
     std::atomic<int> previewCounter { 0 };
     std::atomic<float> previewDb { -60.0f };
@@ -340,6 +354,7 @@ private:
     std::atomic<float>* pSampleBase = nullptr;
     std::atomic<float>* pSampleMax = nullptr;
     std::atomic<float>* pSampleLoopOwn = nullptr;
+    std::atomic<float>* pSampleMaxBeats = nullptr;
     std::atomic<float>* pSampleLoopMix = nullptr;
     std::atomic<float>* pSampleLoopChance = nullptr;
     std::atomic<float>* pSampleLoopBase = nullptr;

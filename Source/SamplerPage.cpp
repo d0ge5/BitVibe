@@ -185,6 +185,14 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                          "A click or a double-click picks everything again.");
     addAndMakeVisible(*waveform);
     playButton.onClick = [this] { play(); };
+    loopButton.onClick = [this]
+    {
+        setLooping(!loopButton.lit);
+        if (loopButton.lit && !previewing)
+            play();
+    };
+    loopButton.setTooltip("LOOP: play the picked part over and over, so you can turn the knobs and the EQ while you listen. "
+                          "Press again (or STOP) to stop looping.");
     stopButton.onClick = [this] { stopPlaying(); };
     allButton.onClick = [this] { setSelection(0, (int64) recL.size()); };
     zoomButton.onClick = [this]
@@ -200,7 +208,7 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     stopButton.setTooltip("STOP: stop playing.");
     allButton.setTooltip("PICK ALL: the whole recording.");
     zoomButton.setTooltip("ZOOM IN: show the picked part bigger, to set its edges exactly. SHOW ALL goes back.");
-    for (auto* b : { &playButton, &stopButton, &allButton, &zoomButton })
+    for (auto* b : { &playButton, &stopButton, &loopButton, &allButton, &zoomButton })
         addAndMakeVisible(*b);
 
     // 3 SHAPE: the pedal's effects, and an EQ of its own
@@ -232,6 +240,7 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         addAndMakeVisible(*slider);
     }
     eq = std::make_unique<EqPanel>(proc, laf, ids::smpEqPrefix, false);
+    eq->scopeSource = [this](float* before, float* after, int n) { proc.readSamplerScope(before, after, n); }; // what PLAY plays
     addAndMakeVisible(*eq);
 
     // 4 SAVE
@@ -297,8 +306,9 @@ void SamplerPage::resized()
     const int row = kPickBox.getY() + 214;
     playButton.setBounds(kPickBox.getX() + 12, row, 80, 26);
     stopButton.setBounds(kPickBox.getX() + 96, row, 80, 26);
-    allButton.setBounds(kPickBox.getX() + 180, row, 96, 26);
-    zoomButton.setBounds(kPickBox.getX() + 280, row, 110, 26);
+    loopButton.setBounds(kPickBox.getX() + 180, row, 80, 26);
+    allButton.setBounds(kPickBox.getX() + 268, row, 96, 26);
+    zoomButton.setBounds(kPickBox.getX() + 368, row, 110, 26);
 
     distBox.setBounds(kShapeBox.getX() + 12, kShapeBox.getY() + 30, 132, 24);
     const int knobY1 = kShapeBox.getY() + 60, knobY2 = kShapeBox.getY() + 136;
@@ -367,7 +377,7 @@ void SamplerPage::paint(Graphics& g)
         if (len > kMaxSoundSeconds)
             text << ".  The sample blend uses the first 20 s of a sound.";
         g.setColour(len > kMaxSoundSeconds ? accent : inkDim);
-        g.drawText(text, kPickBox.getX() + 400, kPickBox.getY() + 214, kPickBox.getWidth() - 412, 26, Justification::centredRight);
+        g.drawText(text, kPickBox.getX() + 488, kPickBox.getY() + 214, kPickBox.getWidth() - 500, 26, Justification::centredRight);
     }
 
     // 3 SHAPE
@@ -418,7 +428,7 @@ void SamplerPage::paint(Graphics& g)
     g.setColour(inkDim);
     g.setFont(plain(11.5f));
     g.drawFittedText("1  Start the program you want to sample and let it play, press REFRESH, pick it and press RECORD. Press it again to stop.\n"
-                     "2  Drag across the waveform to pick the part you want. PLAY lets you hear it as it will be saved.\n"
+                     "2  Drag across the waveform to pick the part you want. PLAY lets you hear it as it will be saved; LOOP keeps it going.\n"
                      "3  Shape it: distortion, sample rate and bits, the EQ and the volume. PLAY again to hear the change.\n"
                      "4  Name it, choose a bank if you like, and SAVE SOUND. It is in CHOOSE SOUNDS, in the Sampled folder, straight away.\n"
                      "Only record what you have the right to use.",
@@ -536,16 +546,28 @@ void SamplerPage::setSelection(int64 start, int64 end)
     selStart = jlimit<int64>(0, n, jmin(start, end));
     selEnd = jlimit<int64>(0, n, jmax(start, end));
     if (previewing)
-        stopPlaying();
+    {
+        if (loopButton.lit)
+            restartPending = true; // LOOP goes on with the new part once the mouse is let go
+        else
+            stopPlaying();
+    }
     waveform->repaint();
     repaint(kPickBox);
 }
 
-void SamplerPage::renderSelection(std::vector<float>& left, std::vector<float>& right) const
+void SamplerPage::setLooping(bool loop)
+{
+    loopButton.lit = loop;
+    loopButton.repaint();
+    proc.setSamplerPreviewLoop(loop);
+}
+
+void SamplerPage::renderSelection(std::vector<float>& left, std::vector<float>& right, std::vector<float>* beforeEq) const
 {
     const auto a = (size_t) jlimit<int64>(0, (int64) recL.size(), selStart), z = (size_t) jlimit<int64>((int64) a, (int64) recL.size(), selEnd);
     const std::vector<float> l(recL.begin() + (long) a, recL.begin() + (long) z), r(recR.begin() + (long) a, recR.begin() + (long) z);
-    bitvibe::renderSample(l, r, rate, proc.getSamplerFx(), left, right);
+    bitvibe::renderSample(l, r, rate, proc.getSamplerFx(), left, right, beforeEq);
 }
 
 bool SamplerPage::save(const String& name, const String& bank, String& message)
@@ -587,9 +609,10 @@ void SamplerPage::play()
 {
     if (recL.empty() || selEnd - selStart < 16)
         return;
-    std::vector<float> l, r;
-    renderSelection(l, r);
-    proc.setSamplerPreview(std::move(l), std::move(r), rate);
+    std::vector<float> l, r, before;
+    renderSelection(l, r, &before);
+    proc.setSamplerPreview(std::move(l), std::move(r), rate, std::move(before));
+    proc.setSamplerPreviewLoop(loopButton.lit);
     proc.playSamplerPreview();
     previewing = true;
     playStartMs = Time::getMillisecondCounterHiRes();
@@ -600,6 +623,8 @@ void SamplerPage::stopPlaying()
 {
     proc.stopSamplerPreview();
     previewing = false;
+    if (loopButton.lit)
+        setLooping(false);
 }
 
 void SamplerPage::timerCallback()
@@ -609,6 +634,12 @@ void SamplerPage::timerCallback()
     meterLevel = jmax(peak, meterLevel * 0.85f);
     if (recordButton.lit && !capture.isRecording()) // it stopped by itself: a minute is up, or it failed
         finishRecording();
+
+    if (restartPending && !ModifierKeys::currentModifiers.isAnyMouseButtonDown())
+    {
+        restartPending = false;
+        play();
+    }
 
     // while PLAY sounds, the effects are heard as they change (a new render a moment after the last change)
     if (previewing)
@@ -624,9 +655,9 @@ void SamplerPage::timerCallback()
         }
         else if (signatureCountdown > 0 && --signatureCountdown == 0)
         {
-            std::vector<float> l, r;
-            renderSelection(l, r);
-            proc.setSamplerPreview(std::move(l), std::move(r), rate);
+            std::vector<float> l, r, before;
+            renderSelection(l, r, &before);
+            proc.setSamplerPreview(std::move(l), std::move(r), rate, std::move(before));
         }
     }
     eq->refresh();

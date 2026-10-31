@@ -145,6 +145,8 @@ struct Params
     float loopSampleMix = 0.0f;
     float loopSampleBaseDb = -60.0f, loopSampleMaxDb = -9.0f;
     float loopSampleChance = 1.0f;
+    // The longest a random sound plays, in beats of the tempo (0 = all of it); then it fades out. Tames long sounds.
+    float sampleMaxBeats = 0.0f;
 
     // Beat pattern: an action fired at the lit steps of a bar of sixteenth notes, from the plug-in's own tempo.
     // patternSteps has a bit per step (bit 0 = the first step of the bar) and patternBarSteps is the length of the
@@ -599,6 +601,7 @@ private:
         float sampleGain = 0.0f, sampleChance = 1.0f;
         const SampleSet* sampleSet = nullptr;
         float loopSampleGain = 0.0f, loopSampleChance = 1.0f;
+        int sampleMaxSamples = 0; // the length limit in samples (0 = none)
         const SampleSet* loopSampleSet = nullptr;
         int stutterLength = 0;
     };
@@ -711,6 +714,7 @@ private:
         const float bpm = std::clamp(p.tempoBpm, kMinTempoBpm, kMaxTempoBpm);
         beatSamples = fs * 60.0 / (double) bpm;
         stepLength = std::max(1.0, beatSamples / (double) mapping::seqMultiplier(p.seqMult));
+        blk.sampleMaxSamples = p.sampleMaxBeats > 0.0f ? std::max(1, (int) (beatSamples * (double) p.sampleMaxBeats)) : 0;
         blk.delay.timeSamples = beatSamples * kDelayDivisions[(size_t) std::clamp(p.delayDivision, 0, (int) kDelayDivisions.size() - 1)].beats;
 
         // Mute gets a short ramp; keep it proportionally shorter when the sequencer is in the audio band.
@@ -913,7 +917,7 @@ private:
             return;
         if (chance < 1.0f && (float) (nextRandom() >> 8) * (1.0f / 16777216.0f) >= chance)
             return;
-        samplePlayer.trigger(&set->clips[(size_t) (nextRandom() >> 4) % set->clips.size()], 1.0f, false, inLoop);
+        samplePlayer.trigger(&set->clips[(size_t) (nextRandom() >> 4) % set->clips.size()], 1.0f, false, inLoop, blk.sampleMaxSamples);
     }
 
     // Moves to the next active step; counts passes and stops after the last one. False when stopped. At the end of

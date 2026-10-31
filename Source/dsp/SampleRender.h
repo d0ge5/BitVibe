@@ -34,13 +34,16 @@ struct SampleFx
     float volumeDb = 0.0f;       // -24 .. 0 dB: how loud the sound sits next to the others
 };
 
-// Renders a stereo clip (left and right the same length) through the chain into outL / outR.
+// Renders a stereo clip (left and right the same length) through the chain into outL / outR. beforeEq, if given, gets
+// the sound as it reaches the EQ (mono, at the same final gain), for a spectrum of what the EQ is working on.
 inline void renderSample(const std::vector<float>& inL, const std::vector<float>& inR, double rate, const SampleFx& fx,
-                         std::vector<float>& outL, std::vector<float>& outR)
+                         std::vector<float>& outL, std::vector<float>& outR, std::vector<float>* beforeEq = nullptr)
 {
     const size_t n = std::min(inL.size(), inR.size());
     outL.assign(inL.begin(), inL.begin() + (long) n);
     outR.assign(inR.begin(), inR.begin() + (long) n);
+    if (beforeEq != nullptr)
+        beforeEq->assign(n, 0.0f);
     if (n == 0)
         return;
 
@@ -88,6 +91,9 @@ inline void renderSample(const std::vector<float>& inL, const std::vector<float>
         if (bitsOn)
             for (auto& v : x)
                 v = (std::floor(std::clamp(v, -1.0f, 1.0f - 1.0e-6f) * levels) + 0.5f) / levels;
+        if (beforeEq != nullptr)
+            for (size_t i = 0; i < n; ++i)
+                (*beforeEq)[i] += 0.5f * x[i];
         if (fx.eqOn)
         {
             Equalizer eq;
@@ -106,6 +112,9 @@ inline void renderSample(const std::vector<float>& inL, const std::vector<float>
     const float gain = peak > 1.0e-6f ? kSoundPeak / peak * std::pow(10.0f, std::clamp(fx.volumeDb, -60.0f, 0.0f) / 20.0f) : 0.0f;
     for (auto* ch : channels)
         for (auto& v : *ch)
+            v = std::isfinite(v) ? v * gain : 0.0f;
+    if (beforeEq != nullptr)
+        for (auto& v : *beforeEq)
             v = std::isfinite(v) ? v * gain : 0.0f;
 }
 } // namespace bitvibe
