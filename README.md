@@ -12,17 +12,17 @@ with a distortion, reverb, random-sample and EQ section that works only on the s
 plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from scratch in C++ with
 [JUCE](https://juce.com) and inspired by a hardware pedal (see [Credits](#credits-and-licence)).
 
-> **Status: early version (0.2.0), work in progress.** The sound engine is covered by automated tests
+> **Status: early version (0.3.0), work in progress.** The sound engine is covered by automated tests
 > and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
 > macOS build has not been run on a real Mac yet. Bug reports are welcome.
 >
 > BitVibe is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
 > the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
-**New in 0.2.0:** a column of effects on the sequenced sound (distortion / fuzz, six reverbs, a random sample
-blend, an 8-band EQ with a reference clip), a beat pattern, a loop section for the sequencer, a mode per step,
-SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
-[release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.2.0).
+**New in 0.3.0:** a tempo-synced **delay** on the sequenced sound, a **sampler** that records another program on
+your PC and turns a part of it into a sound, **SEQ ONLY** to hear only the sequenced sound, step knobs remembered per
+sequencer type, **MAX BEATS** for the sample blend, and **BEAT DOG**, a headbanging wireframe husky that keeps time
+under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.3.0).
 
 [Features](#features) · [Install](#install) · [Using it](#using-it) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
 
@@ -60,7 +60,8 @@ SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
 
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
 distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control
-and a quick-start help page. No reported latency, and light on CPU.
+and a quick-start help page, and **BEAT DOG**, a wireframe husky that headbangs in time. No reported latency, and
+light on CPU.
 
 ## Install
 
@@ -143,8 +144,8 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 
 It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean signal.
 
-**BEAT DOG** (the pane under the pedal) is a green wireframe husky that headbangs in time: its head slams down on
-every beat, rises slowly and drops again, ears flopping, with the tempo and the beat of the bar beside it. It follows
+**BEAT DOG** (the pane under the pedal) is a green wireframe husky that headbangs in time: its head nods forward on
+the beat and pulls back again, ears flopping, with the tempo and the beat of the bar beside it. It follows
 the TEMPO knob, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
 animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
 `Assets/beat_dog.jpg`), so it costs one small image draw per frame. Switch on **LIVE 3D** to draw the head in real
