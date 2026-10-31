@@ -9,6 +9,7 @@
 #include "PluginEditor.h"
 #include "EqPanel.h"
 #include "SamplePanel.h"
+#include "SamplerPage.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
 
@@ -962,6 +963,138 @@ void testDelayParams()
     check(text.contains("delayMix") && text.contains("delayRepeats"), "a preset file holds the delay");
 }
 
+// Sounds in subfolders of the sounds folder are found, and the chooser groups them by their folder.
+void testSoundSubfolders()
+{
+    std::puts("sound subfolders");
+    const auto files = SampleBank::libraryFiles();
+    int inSubfolders = 0, wrongGroup = 0;
+    for (const auto& f : files)
+    {
+        const auto group = SampleBank::groupOf(f);
+        if (group.isNotEmpty())
+        {
+            ++inSubfolders;
+            wrongGroup += f.getParentDirectory().getFileName() == group.fromLastOccurrenceOf("/", false, false) ? 0 : 1;
+        }
+    }
+    StringArray names;
+    for (const auto& f : files)
+        names.add(f.getFileName());
+    names.removeDuplicates(false);
+    check(names.size() == files.size(), "every sound is listed once (" + String(files.size()) + " sounds)");
+    check(inSubfolders >= 1 && wrongGroup == 0, String(inSubfolders) + " sound(s) in subfolders are found and grouped by their folder");
+    bool foundTestTone = false;
+    for (const auto& f : files)
+        foundTestTone = foundTestTone || (f.getFileName() == "zz_test_tone.wav" && SampleBank::groupOf(f) == "Test Folder");
+    check(foundTestTone, "the test sound in \"Test Folder\" is found, in that group");
+}
+
+// The sampler: a recording, a picked part, the effects, PLAY (the preview player) and SAVE (a WAV in Sounds/Sampled,
+// marked to keep its level, added to a bank); and the program recorder starting and stopping (Windows).
+void testSampler(const File& outDir)
+{
+    std::puts("sampler");
+    auto p = makeProcessor();
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ed->showSampler(true);
+    auto* page = ed->getSamplerPage();
+    check(page != nullptr && page->isVisible(), "the SAMPLER opens over the window");
+
+    // two seconds: a quiet second, then a second of tone
+    std::vector<float> l(96000, 0.0f), r(96000, 0.0f);
+    for (size_t i = 48000; i < 96000; ++i)
+        l[i] = r[i] = 0.25f * std::sin(6.2831853f * 220.0f * (float) i / 48000.0f);
+    page->setRecording(l, r);
+    check(page->getSelection() == Range<int64>(0, 96000), "a new recording is picked whole");
+    page->setSelection(60000, 84000);
+    std::vector<float> outL, outR;
+    page->renderSelection(outL, outR);
+    float peak = 0.0f;
+    for (float v : outL)
+        peak = jmax(peak, std::abs(v));
+    check(outL.size() == 24000 && std::abs(peak - bitvibe::kSoundPeak) < 0.01f, "the picked half second comes out levelled (" + String(peak, 3) + ")");
+    setValue(*p, ids::smpVolume, -6.0f);
+    setValue(*p, ids::smpBits, 0.0f);
+    setValue(*p, ids::smpDistType, 2.0f);
+    std::vector<float> fxL, fxR;
+    page->renderSelection(fxL, fxR);
+    float fxPeak = 0.0f, diff = 0.0f;
+    for (size_t i = 0; i < fxL.size(); ++i)
+    {
+        fxPeak = jmax(fxPeak, std::abs(fxL[i]));
+        diff = jmax(diff, std::abs(fxL[i] - outL[i] * 0.5f));
+    }
+    check(std::abs(fxPeak - bitvibe::kSoundPeak * 0.501f) < 0.01f && diff > 0.05f, "fuzz, 1 bit and -6 dB change it (peak " + String(fxPeak, 3) + ")");
+    setValue(*p, "smpEqOn", 1.0f);
+    setValue(*p, "smpEq4Gain", -15.0f);
+    check(p->getSamplerFx().eqOn && std::abs(p->getSamplerFx().eqBands[3].gainDb + 15.0f) < 0.01f && getValue(*p, ids::eqOn) < 0.5f,
+          "the sampler's EQ has settings of its own (the main EQ stays off)");
+    save(*ed, outDir.getChildFile("editor_sampler.png"));
+
+    // PLAY: the preview player adds the sound to the output, STOP ends it
+    p->prepareToPlay(48000.0, 512);
+    p->setSamplerPreview(std::vector<float>(48000, 0.5f), std::vector<float>(48000, -0.5f), 48000.0);
+    p->playSamplerPreview();
+    MidiBuffer midi;
+    AudioBuffer<float> block(2, 512);
+    block.clear();
+    setValue(*p, ids::seqPlay, 0.0f);
+    p->processBlock(block, midi);
+    check(std::abs(block.getSample(0, 300) - 0.5f) < 0.05f && std::abs(block.getSample(1, 300) + 0.5f) < 0.05f && p->getSamplerPreviewSeconds() > 0.0f,
+          "PLAY: the preview is heard, left and right as they are (" + String(block.getSample(0, 300), 3) + ", " + String(block.getSample(1, 300), 3)
+              + ", at " + String(p->getSamplerPreviewSeconds(), 3) + " s)");
+    p->stopSamplerPreview();
+    block.clear();
+    p->processBlock(block, midi);
+    check(block.getMagnitude(0, 512) < 1.0e-4f && p->getSamplerPreviewSeconds() < 0.0f, "STOP: silence again");
+
+    // SAVE: into Sounds/Sampled, in a bank, keeping its level
+    auto& bank = p->getSampleBank();
+    bank.setSelected({ "zz_test_tone.wav" }, true);
+    bank.saveBank("Sampler test bank");
+    String message;
+    const bool savedOk = page->save("My Test Sound", "Sampler test bank", message);
+    check(savedOk, "SAVE SOUND: " + message);
+    const auto saved = BitVibeProcessor::sampledFolder().getChildFile("My Test Sound.wav");
+    check(saved.existsAsFile() && bank.getBankFiles("Sampler test bank").contains("My Test Sound.wav")
+              && bank.getSelected().contains("My Test Sound.wav"),
+          "it is in Sounds/Sampled, in the bank, and in the list in use (that bank is showing)");
+    AudioFormatManager formats;
+    formats.registerBasicFormats();
+    if (auto reader = std::unique_ptr<AudioFormatReader>(formats.createReaderFor(saved)))
+        check(reader->numChannels == 2 && reader->lengthInSamples == 24000
+                  && reader->metadataValues.getValue(WavAudioFormat::bwavDescription, {}) == SampleBank::kKeepLevelMark,
+              "the file: stereo, the picked length, marked so the sample blend keeps its level");
+    else
+        check(false, "the saved sound could not be read back");
+    check(page->save("My Test Sound", {}, message) && BitVibeProcessor::sampledFolder().getChildFile("My Test Sound 2.wav").existsAsFile(),
+          "saving under a name that is taken adds a number: " + message);
+    page->setRecording({}, {});
+    check(!page->save("Nothing", {}, message) && message.isNotEmpty(), "with nothing recorded there is nothing to save");
+
+    // the recorder (Windows): the list, and starting and stopping a recording of everything but this program
+    const auto sources = AppAudioCapture::listSources();
+    if (AppAudioCapture::isAvailable())
+    {
+        check(sources.size() >= 1 && sources[0].exclude, "the program list starts with \"" + (sources.isEmpty() ? String() : sources[0].name) + "\"");
+        String error;
+        auto& capture = p->getAppCapture();
+        const bool started = capture.start(sources[0], error);
+        check(started && capture.isRecording(), "a recording starts" + (error.isEmpty() ? String() : ": " + error));
+        Thread::sleep(400);
+        capture.stop();
+        std::vector<float> rl, rr;
+        capture.takeRecording(rl, rr);
+        check(!capture.isRecording() && rl.size() == rr.size(), "and stops (" + String((int) rl.size()) + " samples while nothing may have been playing)");
+    }
+    else
+    {
+        std::puts("  (recording programs is not available on this system: recorder not checked)");
+    }
+    ed->showSampler(false);
+}
+
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -1222,7 +1355,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 140, "140 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 189, "189 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -1691,6 +1824,20 @@ int main(int argc, char** argv)
     const File testSettings = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_settings");
     testSettings.deleteRecursively();
     SampleBank::setSettingsFolderOverride(testSettings);
+    // and away from the player's sounds folder (the sampler writes into it): a test folder with one sound in a subfolder
+    const File testSounds = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_sounds");
+    testSounds.deleteRecursively();
+    testSounds.getChildFile("Test Folder").createDirectory();
+    SampleBank::setSoundsFolderOverride(testSounds);
+    {
+        // a short tone as a WAV, in the subfolder
+        AudioBuffer<float> tone(1, 4800);
+        for (int i = 0; i < 4800; ++i)
+            tone.setSample(0, i, 0.5f * std::sin(MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f));
+        std::unique_ptr<OutputStream> out = std::make_unique<FileOutputStream>(testSounds.getChildFile("Test Folder").getChildFile("zz_test_tone.wav"));
+        if (auto writer = WavAudioFormat().createWriterFor(out, AudioFormatWriterOptions().withSampleRate(48000.0).withNumChannels(1).withBitsPerSample(16)))
+            writer->writeFromAudioSampleBuffer(tone, 0, 4800);
+    }
     uisettings::markHelpSeen(); // the quick-start help would otherwise cover the screenshots
     uisettings::setAdvancedRight(true); // and the screenshots show every control
     const File outDir(argv[1]);
@@ -1826,6 +1973,8 @@ int main(int argc, char** argv)
     testStepMemory();
     testEqReferenceClip();
     testLoopSectionSounds();
+    testSoundSubfolders();
+    testSampler(outDir);
     testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

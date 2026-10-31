@@ -14,7 +14,9 @@ class EqPanel : public juce::Component
 public:
     static constexpr int kWidth = 456, kHeight = 196;
 
-    EqPanel(BitVibeProcessor&, PedalLookAndFeel&);
+    // prefix: the parameters it sets ("eq": eqOn, eqOutput, eq1Freq ...; the sampler's copy uses "smpEq"). Without the
+    // reference tools there is no reference clip and no live spectrum (the sampler's copy).
+    EqPanel(BitVibeProcessor&, PedalLookAndFeel&, const juce::String& prefix = "eq", bool withReferenceTools = true);
     ~EqPanel() override;
 
     void paint(juce::Graphics&) override;
@@ -44,6 +46,7 @@ private:
     int bandAt(juce::Point<float>) const;
     void setParam(const juce::String& id, float value);
     float rawValue(const juce::String& id) const;
+    juce::String bandId(int band, const char* what) const;
     void updateSpectrum();
     void updateClipButtons();
     void saveClip();
@@ -51,6 +54,8 @@ private:
 
     BitVibeProcessor& proc;
     PedalLookAndFeel& laf;
+    const juce::String idPrefix, onId, outputId;
+    const bool referenceTools;
 
     juce::ToggleButton onButton { "ON" }, bandOnButton { "BAND ON" };
     std::unique_ptr<APVTS::ButtonAttachment> onAtt, bandOnAtt;

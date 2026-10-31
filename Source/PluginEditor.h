@@ -190,6 +190,7 @@ public:
 class PatternPanel;
 class EqPanel;
 class SamplePanel;
+class SamplerPage;
 
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -205,6 +206,9 @@ public:
 
     // Swaps the six front-panel knobs for the six sequencer-step knobs (the pedal's Alt layer).
     void setAltLayer(bool on);
+    // The SAMPLER page over the whole window (the sample blend panel's SAMPLER button opens it).
+    void showSampler(bool show);
+    SamplerPage* getSamplerPage() { return samplerPage.get(); }
 
     // Shows the DRUMS tab (true) or the pedal (false).
     void showDrums(bool on);
@@ -337,6 +341,7 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;
+    std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open
     std::unique_ptr<EqPanel> eqPanel;
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;

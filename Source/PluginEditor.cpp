@@ -3,6 +3,7 @@
 #include "DrumPage.h"
 #include "PatternPanel.h"
 #include "SamplePanel.h"
+#include "SamplerPage.h"
 #include "EqPanel.h"
 #include "UiSettings.h"
 
@@ -708,6 +709,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     content.addAndMakeVisible(reverbTypeBox);
     reverbTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::reverbType, reverbTypeBox);
     samplePanel = std::make_unique<SamplePanel>(proc, laf);
+    samplePanel->onOpenSampler = [this] { showSampler(true); };
+    samplerPage = std::make_unique<SamplerPage>(proc, laf);
+    samplerPage->onClose = [this] { showSampler(false); };
+    content.addChildComponent(*samplerPage);
     content.addAndMakeVisible(*samplePanel);
     eqPanel = std::make_unique<EqPanel>(proc, laf);
     content.addAndMakeVisible(*eqPanel);
@@ -1000,6 +1005,14 @@ void BitVibeEditor::showSeqType()
             button->lit = type == index;
             button->repaint();
         }
+}
+
+void BitVibeEditor::showSampler(bool show)
+{
+    samplerPage->setBounds(0, 0, kPedalWidth, kHeight);
+    samplerPage->setVisible(show);
+    if (show)
+        samplerPage->toFront(false);
 }
 
 void BitVibeEditor::setAltLayer(bool on)

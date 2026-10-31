@@ -13,11 +13,12 @@ constexpr int kRowY = 132, kKnobY = 158;
 constexpr std::array<float, 7> kClipLengths { 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f }; // seconds, in the length box
 } // namespace
 
-EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), laf(lookAndFeel)
+EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel, const String& prefix, bool withReferenceTools)
+    : proc(p), laf(lookAndFeel), idPrefix(prefix), onId(prefix + "On"), outputId(prefix + "Output"), referenceTools(withReferenceTools)
 {
     onButton.setLookAndFeel(&laf);
     makePowerButton(onButton);
-    onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::eqOn, onButton);
+    onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, onId, onButton);
     onButton.setTooltip("EQ ON: switches the EQ on or off. It is the last thing the sequenced sound goes through; your clean signal never does. "
                         "The light glows while the sequence or stutter plays.");
     addAndMakeVisible(onButton);
@@ -54,8 +55,8 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
     gainSlider.setTooltip("GAIN: how much the selected band lifts (right) or lowers (left) its frequencies, up to 15 dB. Or drag its point up and down.");
     qSlider.setTooltip("Q: how narrow the selected band is (right = narrower). Or turn the mouse wheel over its point in the graph.");
     outputSlider.setTooltip("OUTPUT: the level after the EQ, -15 to +15 dB, to make up for what the bands took away or added.");
-    outputAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::eqOutput, outputSlider);
-    if (auto* param = proc.apvts.getParameter(ids::eqOutput))
+    outputAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, outputId, outputSlider);
+    if (auto* param = proc.apvts.getParameter(outputId))
         outputSlider.setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
 
     captureButton.setTooltip("CAPTURE: keep the last few seconds (up to 8) of the sound reaching the EQ as a reference clip. "
@@ -89,7 +90,8 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
                 chosen = i;
         }
         lengthBox.setSelectedId(chosen + 1, dontSendNotification);
-        proc.getEngine().getEqReference().setClipSeconds(kClipLengths[(size_t) chosen]);
+        if (referenceTools)
+            proc.getEngine().getEqReference().setClipSeconds(kClipLengths[(size_t) chosen]);
         lengthBox.onChange = [this]
         {
             const float s = kClipLengths[(size_t) jlimit(0, (int) kClipLengths.size() - 1, lengthBox.getSelectedId() - 1)];
@@ -104,7 +106,9 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
         addAndMakeVisible(lengthBox);
     }
     for (auto* b : { &captureButton, &playButton, &saveClipButton })
-        addAndMakeVisible(*b);
+        addChildComponent(*b);
+    for (Component* c : std::initializer_list<Component*> { &captureButton, &playButton, &saveClipButton, &lengthBox })
+        c->setVisible(referenceTools);
     for (int i = 0; i < kColumns; ++i)
         levelBefore[(size_t) i] = levelAfter[(size_t) i] = -120.0f;
     updateClipButtons();
@@ -115,14 +119,15 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : proc(p), 
 
 EqPanel::~EqPanel()
 {
-    proc.getEngine().getEqReference().setAudition(false); // the clip never plays without its button in sight
+    if (referenceTools)
+        proc.getEngine().getEqReference().setAudition(false); // the clip never plays without its button in sight
     for (Component* c : std::initializer_list<Component*> { &onButton, &bandOnButton, &typeBox, &lengthBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
         c->setLookAndFeel(nullptr);
 }
 
 void EqPanel::visibilityChanged()
 {
-    if (!isVisible())
+    if (!isVisible() && referenceTools)
         proc.getEngine().getEqReference().setAudition(false);
 }
 
@@ -142,14 +147,14 @@ void EqPanel::selectBand(int band)
     qAtt.reset();
     typeAtt.reset();
     bandOnAtt.reset();
-    freqAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::eqBand(selected, "Freq"), freqSlider);
-    gainAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::eqBand(selected, "Gain"), gainSlider);
-    qAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::eqBand(selected, "Q"), qSlider);
-    typeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::eqBand(selected, "Type"), typeBox);
-    bandOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::eqBand(selected, "On"), bandOnButton);
+    freqAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Freq"), freqSlider);
+    gainAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Gain"), gainSlider);
+    qAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Q"), qSlider);
+    typeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, bandId(selected, "Type"), typeBox);
+    bandOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, bandId(selected, "On"), bandOnButton);
     const std::array<std::pair<Slider*, const char*>, 3> knobs { { { &freqSlider, "Freq" }, { &gainSlider, "Gain" }, { &qSlider, "Q" } } };
     for (const auto& [slider, what] : knobs)
-        if (auto* param = proc.apvts.getParameter(ids::eqBand(selected, what)))
+        if (auto* param = proc.apvts.getParameter(bandId(selected, what)))
             slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
     for (int b = 0; b < kNumEqBands; ++b)
     {
@@ -175,6 +180,8 @@ void EqPanel::resized()
         knobs[i]->setBounds(12 + (int) i * 112, kKnobY, 34, 34);
 }
 
+String EqPanel::bandId(int band, const char* what) const { return idPrefix + String(band + 1) + what; }
+
 float EqPanel::rawValue(const String& id) const
 {
     return proc.apvts.getRawParameterValue(id)->load();
@@ -186,11 +193,11 @@ std::array<EqBand, kNumEqBands> EqPanel::currentBands() const
     for (int b = 0; b < kNumEqBands; ++b)
     {
         auto& band = bands[(size_t) b];
-        band.on = rawValue(ids::eqBand(b, "On")) > 0.5f;
-        band.type = (EqType) jlimit(0, kNumEqTypes - 1, roundToInt(rawValue(ids::eqBand(b, "Type"))));
-        band.freq = rawValue(ids::eqBand(b, "Freq"));
-        band.gainDb = rawValue(ids::eqBand(b, "Gain"));
-        band.q = rawValue(ids::eqBand(b, "Q"));
+        band.on = rawValue(bandId(b, "On")) > 0.5f;
+        band.type = (EqType) jlimit(0, kNumEqTypes - 1, roundToInt(rawValue(bandId(b, "Type"))));
+        band.freq = rawValue(bandId(b, "Freq"));
+        band.gainDb = rawValue(bandId(b, "Gain"));
+        band.q = rawValue(bandId(b, "Q"));
     }
     return bands;
 }
@@ -258,7 +265,7 @@ void EqPanel::mouseDown(const MouseEvent& e)
         selectBand(b);
     dragging = b;
     for (const char* what : { "Freq", "Gain" })
-        if (auto* param = proc.apvts.getParameter(ids::eqBand(b, what)))
+        if (auto* param = proc.apvts.getParameter(bandId(b, what)))
             param->beginChangeGesture();
 }
 
@@ -266,10 +273,10 @@ void EqPanel::mouseDrag(const MouseEvent& e)
 {
     if (dragging < 0)
         return;
-    setParam(ids::eqBand(dragging, "Freq"), hzForX(e.position.x));
-    const auto type = (EqType) jlimit(0, kNumEqTypes - 1, roundToInt(rawValue(ids::eqBand(dragging, "Type"))));
+    setParam(bandId(dragging, "Freq"), hzForX(e.position.x));
+    const auto type = (EqType) jlimit(0, kNumEqTypes - 1, roundToInt(rawValue(bandId(dragging, "Type"))));
     if (eqTypeHasGain(type))
-        setParam(ids::eqBand(dragging, "Gain"), dbForY(e.position.y));
+        setParam(bandId(dragging, "Gain"), dbForY(e.position.y));
     repaint();
 }
 
@@ -277,7 +284,7 @@ void EqPanel::mouseUp(const MouseEvent&)
 {
     if (dragging >= 0)
         for (const char* what : { "Freq", "Gain" })
-            if (auto* param = proc.apvts.getParameter(ids::eqBand(dragging, what)))
+            if (auto* param = proc.apvts.getParameter(bandId(dragging, what)))
                 param->endChangeGesture();
     dragging = -1;
 }
@@ -286,8 +293,8 @@ void EqPanel::mouseDoubleClick(const MouseEvent& e)
 {
     const int b = bandAt(e.position);
     if (b >= 0)
-        if (auto* param = proc.apvts.getParameter(ids::eqBand(b, "On")))
-            param->setValueNotifyingHost(rawValue(ids::eqBand(b, "On")) > 0.5f ? 0.0f : 1.0f);
+        if (auto* param = proc.apvts.getParameter(bandId(b, "On")))
+            param->setValueNotifyingHost(rawValue(bandId(b, "On")) > 0.5f ? 0.0f : 1.0f);
 }
 
 void EqPanel::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel)
@@ -295,23 +302,26 @@ void EqPanel::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel
     const int b = bandAt(e.position);
     if (b < 0)
         return;
-    const float q = rawValue(ids::eqBand(b, "Q")) * std::pow(1.15f, wheel.deltaY > 0.0f ? 1.0f : -1.0f);
-    setParam(ids::eqBand(b, "Q"), jlimit(kEqMinQ, kEqMaxQ, q));
+    const float q = rawValue(bandId(b, "Q")) * std::pow(1.15f, wheel.deltaY > 0.0f ? 1.0f : -1.0f);
+    setParam(bandId(b, "Q"), jlimit(kEqMinQ, kEqMaxQ, q));
 }
 
 void EqPanel::refresh()
 {
-    setPowerActive(onButton, proc.getEngine().isEffectSideActive());
+    setPowerActive(onButton, referenceTools && proc.getEngine().isEffectSideActive());
     {
         // switched off: the band settings dim (the reference clip still works, to hear the sound without the EQ)
-        const float alpha = rawValue(ids::eqOn) > 0.5f ? 1.0f : kOffAlpha;
+        const float alpha = rawValue(onId) > 0.5f ? 1.0f : kOffAlpha;
         for (Component* c : std::initializer_list<Component*> { &bandOnButton, &typeBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
             c->setAlpha(alpha);
         for (auto& b : bandButtons)
             b->setAlpha(alpha);
     }
-    updateClipButtons();
-    updateSpectrum();
+    if (referenceTools) // the sampler's copy has no reference clip and no live spectrum
+    {
+        updateClipButtons();
+        updateSpectrum();
+    }
     repaint();
 }
 
@@ -418,14 +428,21 @@ void EqPanel::paint(Graphics& g)
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
-    drawPanelTitle(g, kPanelTitleX, 4, 5, "EQ");
+    if (referenceTools)
+        drawPanelTitle(g, kPanelTitleX, 4, 5, "EQ");
+    else
+    {
+        g.setColour(inkDim);
+        g.setFont(bold(10.0f));
+        g.drawText("EQ", kPanelTitleX, 5, 100, 12, Justification::left);
+    }
     g.setColour(inkDim);
     g.setFont(plain(10.0f));
     g.drawText(clipStatus, 369, 4, 80, 14, Justification::left);
 
-    const bool on = rawValue(ids::eqOn) > 0.5f;
+    const bool on = rawValue(onId) > 0.5f;
     const auto bands = currentBands();
-    const float outputDb = rawValue(ids::eqOutput);
+    const float outputDb = rawValue(outputId);
 
     // the graph: dB lines every 6 dB, frequency lines at 1-2-5 steps
     const auto area = graphArea();

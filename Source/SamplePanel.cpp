@@ -56,6 +56,10 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                           "have a sound bank of their own, and with OWN LEVELS their own volumes and chance.");
     addChildComponent(mainButton);
     addChildComponent(loopButton);
+    samplerButton.onClick = [this] { if (onOpenSampler) onOpenSampler(); };
+    samplerButton.setTooltip("SAMPLER: record the sound of another program on this computer, pick a part, shape it with distortion, "
+                             "bit crush and EQ, and save it as a new sound (optionally into a bank).");
+    addAndMakeVisible(samplerButton);
     ownLevelsButton.setLookAndFeel(&laf);
     ownLevelsAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleLoopOwn, ownLevelsButton);
     ownLevelsButton.onClick = [this]
@@ -193,6 +197,7 @@ void SamplePanel::setAdvanced(bool on)
 void SamplePanel::resized()
 {
     onButton.setBounds(8, 3, 50, 19);
+    samplerButton.setBounds(196, 2, 82, 20);
     mainButton.setBounds(318, 2, 60, 20);
     loopButton.setBounds(382, 2, 60, 20);
     // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
@@ -364,18 +369,44 @@ void SamplePanel::showChooser()
     numAvailable = files.size();
     const auto picked = bank.getSelected(section); // in the LOOP section, the main list until it has its own
 
+    // Sounds at the top of the sounds folder are listed straight away; those in subfolders get a submenu per folder,
+    // each with its own pick all / none (item ids: 100 + sound, 10000 + 2 * folder for all, + 1 for none).
+    StringArray groups;
+    for (const auto& f : files)
+        groups.addIfNotAlreadyThere(SampleBank::groupOf(f));
+    groups.sortNatural();
     PopupMenu menu;
     menu.addItem(1, "Pick all");
     menu.addItem(2, "Pick none");
     menu.addSeparator();
-    for (int i = 0; i < files.size(); ++i)
-        menu.addItem(100 + i, files[i].getFileNameWithoutExtension(), true, picked.contains(files[i].getFileName()));
+    for (int g = 0; g < groups.size(); ++g)
+    {
+        const bool top = groups[g].isEmpty();
+        PopupMenu folder;
+        if (!top)
+        {
+            folder.addItem(10000 + 2 * g, "Pick all in " + groups[g]);
+            folder.addItem(10001 + 2 * g, "Pick none in " + groups[g]);
+            folder.addSeparator();
+        }
+        int pickedHere = 0, here = 0;
+        for (int i = 0; i < files.size(); ++i)
+            if (SampleBank::groupOf(files[i]) == groups[g])
+            {
+                const bool on = picked.contains(files[i].getFileName());
+                (top ? menu : folder).addItem(100 + i, files[i].getFileNameWithoutExtension(), true, on);
+                pickedHere += on ? 1 : 0;
+                ++here;
+            }
+        if (!top)
+            menu.addSubMenu(groups[g] + " (" + String(pickedHere) + " of " + String(here) + ")", folder, true, nullptr, pickedHere > 0);
+    }
     if (files.isEmpty())
         menu.addItem(3, "No sounds found. Put audio files in the sounds folder.", false, false);
 
     Component::SafePointer<SamplePanel> safe(this);
     menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&chooseButton).withMinimumWidth(240),
-                       [safe, files, picked](int result)
+                       [safe, files, picked, groups](int result)
                        {
                            if (safe == nullptr)
                                return;
@@ -392,6 +423,21 @@ void SamplePanel::showChooser()
                            else if (result == 2)
                            {
                                self.bank.selectNone(self.section);
+                           }
+                           else if (result >= 10000 && result < 10000 + 2 * groups.size())
+                           {
+                               // a whole folder at once
+                               const auto& group = groups[(result - 10000) / 2];
+                               const bool all = (result - 10000) % 2 == 0;
+                               auto list = picked;
+                               for (const auto& f : files)
+                                   if (SampleBank::groupOf(f) == group)
+                                   {
+                                       list.removeString(f.getFileName());
+                                       if (all)
+                                           list.add(f.getFileName());
+                                   }
+                               self.bank.setSelected(list, true, self.section);
                            }
                            else if (result >= 100 && result < 100 + files.size())
                            {
@@ -415,7 +461,7 @@ void SamplePanel::paint(Graphics& g)
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
-    drawPanelTitle(g, kPanelTitleX, 4, 1, loopShown ? "SAMPLE BLEND" : "SAMPLE BLEND (A RANDOM SOUND ON EACH STEP)");
+    drawPanelTitle(g, kPanelTitleX, 4, 1, "SAMPLE BLEND");
     const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
 
     struct Entry { const char* name; String value; int cx, y; };

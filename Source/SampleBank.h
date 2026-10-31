@@ -31,12 +31,17 @@ public:
     // Documents/BitVibe/Sounds, and (local builds only) the source tree's GoodSounds folder.
     static juce::Array<juce::File> libraryFolders();
     static juce::File userFolder();
-    // Every usable audio file in those folders, sorted by name (a name found twice is listed once).
+    // Every usable audio file in those folders and their subfolders, sorted by name (a name found twice is listed once:
+    // lists and banks refer to sounds by file name).
     static juce::Array<juce::File> libraryFiles();
+    // The subfolder a sound sits in, relative to its sounds folder ("Hits/Metal"), or "" for one at the top.
+    static juce::String groupOf(const juce::File& sound);
 
     // Where the remembered settings are kept. Tests point this somewhere else so they never touch the real file
     // (the environment variable BITVIBE_SETTINGS_DIR does the same for a hosted plug-in).
     static void setSettingsFolderOverride(const juce::File& folder);
+    // The same for the player's sounds folder (the sampler saves into it).
+    static void setSoundsFolderOverride(const juce::File& folder);
     static juce::File settingsFolder();
     static juce::File settingsFile();
 
@@ -60,6 +65,13 @@ public:
     bool saveBank(const juce::String& name, int section = kMain); // that list under this name (replaces one of that name)
     bool loadBank(const juce::String& name, int section = kMain); // makes that bank the list
     void deleteBank(const juce::String& name);
+    // Adds a sound (by file name) to a saved bank, and to the list in use when that bank is the one showing. False
+    // when there is no bank of that name.
+    bool addToBank(const juce::String& bankName, const juce::String& fileName);
+
+    // The sampler marks the WAV files it saves with this description: the sample blend then keeps their level (the
+    // sampler has already set it) instead of levelling them like any other sound.
+    static constexpr const char* kKeepLevelMark = "BitVibe sampler: keep level";
 
     // ---- the knobs ------------------------------------------------------------------------------
     struct Levels

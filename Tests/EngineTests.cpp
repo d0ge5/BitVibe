@@ -8,6 +8,7 @@
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
+#include "SampleRender.h"
 
 #include <cmath>
 #include <cstdint>
@@ -2332,6 +2333,86 @@ void testDelay()
     CHECK(rms(burstThrough(dry), 0.2, 1.9) < 1.0e-5, "mix at 0: no echoes");
 }
 
+// The sampler's chain: with nothing on, the clip only comes out levelled to the sound peak; VOLUME sets that level; the
+// distortion, the sample-rate reducer, the bit crusher and the EQ each change it the way the pedal's own do.
+void testSampleRender()
+{
+    std::puts("sampler render");
+    Signal tone = sine(440.0, 0.5, 0.3f);
+    std::vector<float> L(tone.begin(), tone.end()), R = L, outL, outR;
+    auto peakOf = [](const std::vector<float>& v) { float p = 0.0f; for (float x : v) p = std::max(p, std::abs(x)); return p; };
+    SampleFx plain;
+    renderSample(L, R, kFs, plain, outL, outR);
+    float shape = 0.0f;
+    for (size_t i = 0; i < L.size(); ++i)
+        shape = std::max(shape, std::abs(outL[i] - L[i] * (kSoundPeak / 0.3f)));
+    CHECK(outL.size() == L.size() && std::abs(peakOf(outL) - kSoundPeak) < 1.0e-3f && shape < 1.0e-3f,
+          "nothing on: the same clip, levelled to the sound peak (%.3f)", (double) peakOf(outL));
+    SampleFx quieter = plain;
+    quieter.volumeDb = -6.0f;
+    renderSample(L, R, kFs, quieter, outL, outR);
+    CHECK(std::abs(peakOf(outL) - kSoundPeak * 0.501f) < 2.0e-3f, "VOLUME -6 dB: half as loud as other sounds (%.3f)", (double) peakOf(outL));
+
+    SampleFx crushed = plain;
+    crushed.bitsKnob = 0.0f; // 1 bit
+    renderSample(L, R, kFs, crushed, outL, outR);
+    std::vector<float> distinct;
+    for (float v : outL)
+        if (std::none_of(distinct.begin(), distinct.end(), [v](float d) { return std::abs(d - v) < 1.0e-5f; }))
+            distinct.push_back(v);
+    CHECK(distinct.size() <= 2, "1 bit: two levels (%d)", (int) distinct.size());
+
+    SampleFx held = plain;
+    held.sampleRateKnob = 0.3f; // a few hundred Hz
+    renderSample(L, R, kFs, held, outL, outR);
+    int runs = 0;
+    for (size_t i = 1; i < outL.size(); ++i)
+        runs += outL[i] != outL[i - 1] ? 1 : 0;
+    CHECK(runs < (int) outL.size() / 20, "a low sample rate holds the samples (%d changes)", runs);
+
+    SampleFx driven = plain;
+    driven.distType = 1;
+    driven.drive = 1.0f;
+    renderSample(L, R, kFs, driven, outL, outR);
+    double crest = 0.0, sum = 0.0;
+    for (float v : outL)
+        sum += (double) v * v;
+    crest = (double) peakOf(outL) / std::sqrt(sum / (double) outL.size());
+    CHECK(crest < 1.3, "the overdrive squares the tone off (crest %.2f, a sine is 1.41)", crest);
+    SampleFx fuzzed = driven;
+    fuzzed.distType = 2;
+    renderSample(L, R, kFs, fuzzed, outL, outR);
+    CHECK(std::all_of(outL.begin(), outL.end(), [](float v) { return std::isfinite(v); }) && peakOf(outL) > 0.7f, "the fuzz works too");
+
+    // the EQ: cutting at 440 Hz makes the tone quieter than a level-only render of a 2-tone clip would be
+    Signal mix = sine(440.0, 0.5, 0.2f), other = sine(3000.0, 0.5, 0.2f);
+    std::vector<float> M(mix.size());
+    for (size_t i = 0; i < M.size(); ++i)
+        M[i] = mix[i] + other[i];
+    SampleFx eq = plain;
+    eq.eqOn = true;
+    eq.eqBands[3] = { true, EqType::Bell, 440.0f, -15.0f, 2.0f };
+    std::vector<float> eqL, eqR, flatL, flatR;
+    renderSample(M, M, kFs, eq, eqL, eqR);
+    renderSample(M, M, kFs, plain, flatL, flatR);
+    auto toneLevel = [](const std::vector<float>& v, double hz)
+    {
+        double re = 0.0, im = 0.0;
+        for (size_t i = 4800; i < v.size(); ++i)
+        {
+            re += v[i] * std::cos(6.283185307 * hz * (double) i / kFs);
+            im += v[i] * std::sin(6.283185307 * hz * (double) i / kFs);
+        }
+        return std::sqrt(re * re + im * im);
+    };
+    const double ratioEq = toneLevel(eqL, 440.0) / toneLevel(eqL, 3000.0), ratioFlat = toneLevel(flatL, 440.0) / toneLevel(flatL, 3000.0);
+    CHECK(ratioEq < 0.3 * ratioFlat, "a -15 dB bell at 440 Hz takes that tone down against the other (%.2f vs %.2f)", ratioEq, ratioFlat);
+
+    std::vector<float> empty, eL, eR;
+    renderSample(empty, empty, kFs, plain, eL, eR);
+    CHECK(eL.empty() && eR.empty(), "an empty clip stays empty");
+}
+
 void testTriggerEvents()
 {
     std::puts("trigger events: restart, next step, stutter, pick triggers off, steps on hits");
@@ -3075,6 +3156,7 @@ int main(int argc, char** argv)
     testStepTypes();
     testSeqOnly();
     testDelay();
+    testSampleRender();
     testSequenceLoop();
     testLoopSectionSamples();
     testEqReference();

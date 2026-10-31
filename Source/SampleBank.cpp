@@ -51,7 +51,9 @@ bitvibe::SampleClip loadClip(AudioFormatManager& formats, const File& file)
         clip.data.clear();
         return clip;
     }
-    const float gain = kNormalisedPeak / peak;
+    // Sounds saved by the sampler already sit at the level the player chose; everything else is levelled.
+    const bool keepLevel = reader->metadataValues.getValue(WavAudioFormat::bwavDescription, {}) == SampleBank::kKeepLevelMark;
+    const float gain = keepLevel ? jmin(1.0f, 1.0f / peak) : kNormalisedPeak / peak;
     for (auto& v : clip.data)
         v *= gain;
     return clip;
@@ -80,8 +82,24 @@ SampleBank::SampleBank()
     rebuild(kLoop);
 }
 
+namespace
+{
+File& soundsOverride()
+{
+    static File folder;
+    return folder;
+}
+} // namespace
+
+void SampleBank::setSoundsFolderOverride(const File& folder)
+{
+    soundsOverride() = folder;
+}
+
 File SampleBank::userFolder()
 {
+    if (soundsOverride() != File())
+        return soundsOverride();
     return File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Sounds");
 }
 
@@ -103,7 +121,7 @@ Array<File> SampleBank::libraryFiles()
     StringArray seen;
     for (const auto& folder : libraryFolders())
         if (folder.isDirectory())
-            for (const auto& f : folder.findChildFiles(File::findFiles, false, "*"))
+            for (const auto& f : folder.findChildFiles(File::findFiles, true, "*"))
                 if (isSoundFile(f) && !seen.contains(f.getFileName()))
                 {
                     seen.add(f.getFileName());
@@ -116,6 +134,17 @@ Array<File> SampleBank::libraryFiles()
     ByName byName;
     files.sort(byName);
     return files;
+}
+
+String SampleBank::groupOf(const File& sound)
+{
+    for (const auto& folder : libraryFolders())
+        if (sound.isAChildOf(folder))
+        {
+            const auto parent = sound.getParentDirectory();
+            return parent == folder ? String() : parent.getRelativePathFrom(folder).replaceCharacter('\\', '/');
+        }
+    return {};
 }
 
 // ---- remembered settings ------------------------------------------------------------------------
@@ -451,6 +480,37 @@ bool SampleBank::loadBank(const String& name, int section)
             return false;
     }
     setSelected(files, true, section); // also saves (and gives the loop section its own sounds)
+    return true;
+}
+
+bool SampleBank::addToBank(const String& bankName, const String& fileName)
+{
+    std::array<bool, 2> showing { false, false };
+    {
+        const ScopedLock sl(lock);
+        auto it = std::find_if(banks.begin(), banks.end(), [&](const Bank& b) { return b.name.equalsIgnoreCase(bankName); });
+        if (it == banks.end())
+            return false;
+        for (int s = 0; s < 2; ++s)
+        {
+            const auto list = (size_t) s;
+            if (activeBank[list] == it->name && (s == kMain || loopOwn))
+            {
+                auto a = it->files, c = selected[list];
+                a.sort(true);
+                c.sort(true);
+                showing[list] = a == c; // the list in use is that bank, unchanged
+            }
+        }
+        it->files.addIfNotAlreadyThere(fileName);
+        for (int s = 0; s < 2; ++s)
+            if (showing[(size_t) s])
+                selected[(size_t) s].addIfNotAlreadyThere(fileName);
+    }
+    for (int s = 0; s < 2; ++s)
+        if (showing[(size_t) s])
+            rebuild(s);
+    saveSettings();
     return true;
 }
 

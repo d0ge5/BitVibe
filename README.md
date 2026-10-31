@@ -58,7 +58,8 @@ SIMPLE / ADVANCED views, a resizable window and shareable preset files. See the
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need.
 
-**Also:** export and import presets as XML files to share, a resizable window, hover tips on every control
+**Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
+distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control
 and a quick-start help page. No reported latency, and light on CPU.
 
 ## Install
@@ -155,7 +156,10 @@ them).
   action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
   up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence.
 - **Sample blend:** put your own WAV, AIFF, FLAC or OGG files (up to 20 seconds) in `Documents/BitVibe/Sounds`
-  (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. **MIX** moves between the **BASE**
+  (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. Subfolders are read too, and CHOOSE
+  SOUNDS shows each one as a submenu with its own *Pick all* and *Pick none*, so a sorted library stays easy to pick
+  from. File names must differ across folders (a name found twice is used once). Free sound packs released under CC0,
+  such as [Kenney's audio packs](https://kenney.nl/assets/category:Audio), work well. **MIX** moves between the **BASE**
   and **MAX** volumes, **CHANCE** is how often a step gets a sound, and **PREVIEW** plays one so you can set the
   volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
   picks and banks are remembered between sessions. While **LOOP** is on (see the pedal above), **MAIN** and **LOOP**
@@ -179,6 +183,29 @@ them).
   EQ with your hands free (press it again to go back); **SAVE CLIP** writes the clip to a WAV file
   (`Documents/BitVibe/Clips` by default). The clip lasts until you capture again or the sample rate changes, and
   is not saved with the project.
+
+### The sampler
+
+<p align="center"><img src="artifacts/editor_sampler.png" width="560" alt="The SAMPLER page: record, pick the part, shape it, save"></p>
+
+**SAMPLER** (in the sample blend panel's title row) opens a page over the whole window for making your own sounds out
+of what another program on your computer is playing. **BACK TO THE PEDAL** closes it.
+
+1. **Record:** start the program and let it play, press **REFRESH**, pick it in **RECORD FROM** (or *Everything
+   except* the host you run BitVibe in) and press **RECORD**; press it again to stop. A recording is up to a minute.
+   This uses Windows' per-program recording, so it needs Windows 10 version 2004 or Windows 11; on macOS the page
+   opens but cannot record yet.
+2. **Pick the part:** drag across the waveform; drag the white edges to adjust; **ZOOM IN** to set them exactly.
+   **PLAY** plays the picked part as it will be saved, and changes to the effects are heard while it plays.
+3. **Shape it:** **DISTORTION** (off, the overdrive or the fuzz from the right-hand column, with DRIVE, TONE and
+   DIST LEVEL), **SAMPLE RATE** and **BITS** (the pedal's own crush), an **EQ** (the same panel as the main EQ, with
+   settings of its own) and **VOLUME**. The sound is levelled like every other sound, and VOLUME then says how loud it
+   sits next to them (0 dB = as loud as the others, -6 dB = half as loud); BitVibe keeps that level when it plays it.
+4. **Save:** give it a name, choose a bank to add it to if you like, and **SAVE SOUND**. It is saved as a WAV in the
+   sounds folder's **Sampled** subfolder and shows up in CHOOSE SOUNDS straight away. The sample blend uses up to 20
+   seconds of a sound.
+
+Only record what you have the right to use.
 
 ### Presets and morph
 
@@ -236,7 +263,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 492 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 500 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

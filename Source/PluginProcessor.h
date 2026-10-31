@@ -5,7 +5,9 @@
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
+#include "AppAudioCapture.h"
 #include "SampleBank.h"
+#include "dsp/SampleRender.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -36,6 +38,16 @@ inline constexpr const char* morph = "morph";
 inline constexpr const char* mix = "mix";
 inline constexpr const char* fxTriggers = "fxTriggers";
 inline constexpr const char* seqOnly = "seqOnly";
+// The sampler's settings (not automatable, not in presets; saved with the project): smpEq... is its own EQ, set with the
+// same panel as the main EQ (prefix "smpEq": smpEqOn, smpEqOutput, smpEq1Freq ...).
+inline constexpr const char* smpVolume = "smpVolume";
+inline constexpr const char* smpDistType = "smpDistType";
+inline constexpr const char* smpDrive = "smpDrive";
+inline constexpr const char* smpTone = "smpTone";
+inline constexpr const char* smpLevel = "smpLevel";
+inline constexpr const char* smpSample = "smpSample";
+inline constexpr const char* smpBits = "smpBits";
+inline constexpr const char* smpEqPrefix = "smpEq";
 inline constexpr const char* delayOn = "delayOn";
 inline constexpr const char* delayTime = "delayTime";
 inline constexpr const char* delayMix = "delayMix";
@@ -137,6 +149,24 @@ public:
     bool importPreset(const juce::XmlElement&, juce::String& message);
     static juce::File presetFolder(); // Documents/BitVibe/Presets
 
+    // ---- the sampler ----------------------------------------------------------------------------------------
+    // Records programs on this computer (see AppAudioCapture).
+    AppAudioCapture& getAppCapture() { return appCapture; }
+    // The sampler's effect settings as they stand.
+    bitvibe::SampleFx getSamplerFx() const;
+    // The sound the sampler's PLAY button plays (already processed), at its own rate. Message thread.
+    void setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate);
+    void playSamplerPreview();
+    void stopSamplerPreview();
+    // How far into the preview the playback is, in seconds (-1 while it is not playing).
+    float getSamplerPreviewSeconds() const { return previewSecondsOut.load(std::memory_order_relaxed); }
+    // Saves a processed sound as a WAV in the sounds folder's "Sampled" subfolder, under the name given (made unique
+    // in the library), marked so the sample blend keeps its level, and adds it to a bank when one is named. Returns
+    // false, with a reason, when it cannot be written.
+    bool saveSampledSound(const std::vector<float>& left, const std::vector<float>& right, double rate, const juce::String& name,
+                          const juce::String& bank, juce::String& message, juce::String* savedFileName = nullptr);
+    static juce::File sampledFolder();
+
     // The EQ's captured reference clip as a WAV file (24 bit, at the plug-in's sample rate). False, with a reason,
     // when there is no clip yet or the file cannot be written.
     bool saveCapturedClip(const juce::File&, juce::String& message);
@@ -221,6 +251,25 @@ private:
     bitvibe::Engine engine;
     DrumBeat drumBeat;
     SampleBank sampleBank;
+    AppAudioCapture appCapture;
+
+    // the sampler's preview player (the audio thread mixes it into the main output)
+    struct PreviewHolder
+    {
+        std::vector<float> left, right;
+        double rate = 48000.0;
+        PreviewHolder* nextRetired = nullptr;
+    };
+    HandOver<PreviewHolder> samplerPreview;
+    // PLAY and STOP: the last one pressed counts (the audio thread sees a new command number and what it wants)
+    std::atomic<int> previewCommands { 0 };
+    std::atomic<bool> previewWanted { false };
+    int seenPreviewCommand = 0;
+    const PreviewHolder* playingPreview = nullptr;
+    double previewPosition = 0.0, deviceRate = 48000.0;
+    bool previewPlaying = false;
+    std::atomic<float> previewSecondsOut { -1.0f };
+    void mixSamplerPreview(juce::AudioBuffer<float>& out, int numChannels, int numSamples);
     std::atomic<int> previewCounter { 0 };
     std::atomic<float> previewDb { -60.0f };
     std::atomic<std::uint32_t> previewPick { 0 };

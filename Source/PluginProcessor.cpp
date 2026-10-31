@@ -156,20 +156,27 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", true));
 
-    // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain ----
+    // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain; and the sampler's own copy ----
+    for (const bool sampler : { false, true })
     {
-        layout.add(std::make_unique<AudioParameterBool>(id(ids::eqOn), "EQ On", false));
+        const String prefix = sampler ? ids::smpEqPrefix : "eq", label = sampler ? "Sampler EQ" : "EQ";
+        const bool automatable = !sampler;
+        layout.add(std::make_unique<AudioParameterBool>(ParameterID { prefix + "On", 1 }, label + " On", false,
+                                                        AudioParameterBoolAttributes().withAutomatable(automatable)));
         auto dbText = AudioParameterFloatAttributes()
                           .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
-                          .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); });
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::eqOutput), "EQ Output", NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
+                          .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })
+                          .withAutomatable(automatable);
+        layout.add(std::make_unique<AudioParameterFloat>(ParameterID { prefix + "Output", 1 }, label + " Output",
+                                                         NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
         NormalisableRange<float> freqRange(bitvibe::kEqMinHz, bitvibe::kEqMaxHz);
         freqRange.setSkewForCentre(1000.0f);
         NormalisableRange<float> qRange(bitvibe::kEqMinQ, bitvibe::kEqMaxQ);
         qRange.setSkewForCentre(1.0f);
         auto hzText = AudioParameterFloatAttributes()
                           .withStringFromValueFunction([](float v, int) { return v >= 1000.0f ? String(v / 1000.0f, 2) + " kHz" : String(v, 1) + " Hz"; })
-                          .withValueFromStringFunction([](const String& t) { return t.containsIgnoreCase("k") ? t.getFloatValue() * 1000.0f : t.getFloatValue(); });
+                          .withValueFromStringFunction([](const String& t) { return t.containsIgnoreCase("k") ? t.getFloatValue() * 1000.0f : t.getFloatValue(); })
+                          .withAutomatable(automatable);
         StringArray types;
         for (int t = 0; t < bitvibe::kNumEqTypes; ++t)
             types.add(bitvibe::eqTypeName((bitvibe::EqType) t));
@@ -177,15 +184,33 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         for (int b = 0; b < bitvibe::kNumEqBands; ++b)
         {
             const auto& d = eqDefaults[(size_t) b];
-            const String n = "EQ " + String(b + 1) + " ";
-            layout.add(std::make_unique<AudioParameterBool>(ParameterID { ids::eqBand(b, "On"), 1 }, n + "On", d.on));
-            layout.add(std::make_unique<AudioParameterChoice>(ParameterID { ids::eqBand(b, "Type"), 1 }, n + "Type", types, (int) d.type));
-            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Freq"), 1 }, n + "Frequency", freqRange, d.freq, hzText));
-            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Gain"), 1 }, n + "Gain",
+            const String n = label + " " + String(b + 1) + " ";
+            auto band = [&](const char* what) { return ParameterID { prefix + String(b + 1) + what, 1 }; };
+            layout.add(std::make_unique<AudioParameterBool>(band("On"), n + "On", d.on, AudioParameterBoolAttributes().withAutomatable(automatable)));
+            layout.add(std::make_unique<AudioParameterChoice>(band("Type"), n + "Type", types, (int) d.type,
+                                                              AudioParameterChoiceAttributes().withAutomatable(automatable)));
+            layout.add(std::make_unique<AudioParameterFloat>(band("Freq"), n + "Frequency", freqRange, d.freq, hzText));
+            layout.add(std::make_unique<AudioParameterFloat>(band("Gain"), n + "Gain",
                                                              NormalisableRange<float>(-bitvibe::kEqMaxGainDb, bitvibe::kEqMaxGainDb, 0.1f), d.gainDb, dbText));
-            layout.add(std::make_unique<AudioParameterFloat>(ParameterID { ids::eqBand(b, "Q"), 1 }, n + "Q", qRange, d.q,
-                                                             AudioParameterFloatAttributes().withStringFromValueFunction([](float v, int) { return String(v, 2); })));
+            layout.add(std::make_unique<AudioParameterFloat>(band("Q"), n + "Q", qRange, d.q,
+                                                             AudioParameterFloatAttributes()
+                                                                 .withStringFromValueFunction([](float v, int) { return String(v, 2); })
+                                                                 .withAutomatable(automatable)));
         }
+    }
+    // ---- the sampler's effects (not automatable) ----
+    {
+        auto hidden = AudioParameterFloatAttributes().withAutomatable(false);
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpVolume), "Sampler Volume", NormalisableRange<float>(-24.0f, 0.0f, 0.1f), 0.0f,
+                                                         AudioParameterFloatAttributes().withAutomatable(false)
+                                                             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })));
+        layout.add(std::make_unique<AudioParameterChoice>(id(ids::smpDistType), "Sampler Distortion", StringArray { "Off", "Overdrive", "Fuzz" }, 0,
+                                                          AudioParameterChoiceAttributes().withAutomatable(false)));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpDrive), "Sampler Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpTone), "Sampler Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpLevel), "Sampler Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, hidden));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpSample), "Sampler Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
+        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpBits), "Sampler Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
     }
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
@@ -439,6 +464,7 @@ BitVibeProcessor::BitVibeProcessor()
 
 void BitVibeProcessor::prepareToPlay(double sampleRate, int)
 {
+    deviceRate = sampleRate;
     engine.prepare(sampleRate);
     drumBeat.setDeviceSampleRate(sampleRate);
     drumBeat.restartPlayback();
@@ -648,6 +674,7 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
             drumBeat.addAudio(monitor, monitor.getNumChannels(), numSamples, pBeatLevel->load());
     }
     drumBeat.endBlock(numSamples);
+    mixSamplerPreview(mainOut, numChannels, numSamples);
 }
 
 void BitVibeProcessor::switchSequencerType(int newType)
@@ -897,6 +924,164 @@ bool isSharedEffect(const String& id)
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
 }
 } // namespace
+
+// ------------------------------------------------------------------------------------------
+// The sampler
+
+bitvibe::SampleFx BitVibeProcessor::getSamplerFx() const
+{
+    auto value = [this](const String& id) { return apvts.getRawParameterValue(id)->load(); };
+    bitvibe::SampleFx fx;
+    fx.volumeDb = value(ids::smpVolume);
+    fx.distType = jlimit(0, 2, roundToInt(value(ids::smpDistType)));
+    fx.drive = value(ids::smpDrive);
+    fx.tone = value(ids::smpTone);
+    fx.level = value(ids::smpLevel);
+    fx.sampleRateKnob = value(ids::smpSample);
+    fx.bitsKnob = value(ids::smpBits);
+    const String eq = ids::smpEqPrefix;
+    fx.eqOn = value(eq + "On") > 0.5f;
+    fx.eqOutputDb = value(eq + "Output");
+    for (int b = 0; b < bitvibe::kNumEqBands; ++b)
+    {
+        auto& band = fx.eqBands[(size_t) b];
+        const String n = eq + String(b + 1);
+        band.on = value(n + "On") > 0.5f;
+        band.type = (bitvibe::EqType) jlimit(0, bitvibe::kNumEqTypes - 1, roundToInt(value(n + "Type")));
+        band.freq = value(n + "Freq");
+        band.gainDb = value(n + "Gain");
+        band.q = value(n + "Q");
+    }
+    return fx;
+}
+
+void BitVibeProcessor::setSamplerPreview(std::vector<float> left, std::vector<float> right, double rate)
+{
+    auto holder = std::make_unique<PreviewHolder>();
+    holder->left = std::move(left);
+    holder->right = std::move(right);
+    holder->rate = rate;
+    samplerPreview.publish(std::move(holder));
+}
+
+void BitVibeProcessor::playSamplerPreview()
+{
+    previewWanted.store(true, std::memory_order_relaxed);
+    previewCommands.fetch_add(1, std::memory_order_release);
+}
+
+void BitVibeProcessor::stopSamplerPreview()
+{
+    previewWanted.store(false, std::memory_order_relaxed);
+    previewCommands.fetch_add(1, std::memory_order_release);
+}
+
+// Audio thread: the sampler's preview goes straight into the main output, at the sound's own level.
+void BitVibeProcessor::mixSamplerPreview(AudioBuffer<float>& out, int numChannels, int numSamples)
+{
+    const auto* holder = samplerPreview.get();
+    if (const int command = previewCommands.load(std::memory_order_acquire); command != seenPreviewCommand)
+    {
+        seenPreviewCommand = command;
+        previewPlaying = previewWanted.load(std::memory_order_relaxed) && holder != nullptr;
+        previewPosition = 0.0; // PLAY starts from the beginning
+    }
+    playingPreview = holder;
+    if (!previewPlaying || holder == nullptr || holder->left.empty())
+    {
+        previewPlaying = false;
+        previewSecondsOut.store(-1.0f, std::memory_order_relaxed);
+        return;
+    }
+    const auto size = holder->left.size();
+    const double step = holder->rate / jmax(1.0, deviceRate);
+    for (int n = 0; n < numSamples; ++n)
+    {
+        const auto i = (size_t) previewPosition;
+        if (i + 1 >= size)
+        {
+            previewPlaying = false;
+            break;
+        }
+        const float frac = (float) (previewPosition - (double) i);
+        const float l = holder->left[i] + (holder->left[i + 1] - holder->left[i]) * frac;
+        const float r = holder->right[i] + (holder->right[i + 1] - holder->right[i]) * frac;
+        if (numChannels >= 2)
+        {
+            out.addSample(0, n, l);
+            out.addSample(1, n, r);
+        }
+        else if (numChannels == 1)
+        {
+            out.addSample(0, n, 0.5f * (l + r));
+        }
+        previewPosition += step;
+    }
+    previewSecondsOut.store(previewPlaying ? (float) (previewPosition / holder->rate) : -1.0f, std::memory_order_relaxed);
+}
+
+File BitVibeProcessor::sampledFolder()
+{
+    return SampleBank::userFolder().getChildFile("Sampled");
+}
+
+bool BitVibeProcessor::saveSampledSound(const std::vector<float>& left, const std::vector<float>& right, double rate, const String& rawName,
+                                        const String& bank, String& message, String* savedFileName)
+{
+    const auto frames = (int) jmin(left.size(), right.size());
+    if (frames <= 0)
+    {
+        message = "There is nothing to save: record something and pick the part you want.";
+        return false;
+    }
+    auto base = File::createLegalFileName(rawName.trim()).trim();
+    if (base.isEmpty())
+        base = "Sample";
+
+    // a name no other sound in the library has (lists and banks know sounds by file name)
+    StringArray taken;
+    for (const auto& f : SampleBank::libraryFiles())
+        taken.add(f.getFileName().toLowerCase());
+    const auto folder = sampledFolder();
+    folder.createDirectory();
+    String fileName = base + ".wav";
+    for (int i = 2; taken.contains(fileName.toLowerCase()) || folder.getChildFile(fileName).exists(); ++i)
+        fileName = base + " " + String(i) + ".wav";
+    const auto file = folder.getChildFile(fileName);
+
+    AudioBuffer<float> buffer(2, frames);
+    buffer.copyFrom(0, 0, left.data(), frames);
+    buffer.copyFrom(1, 0, right.data(), frames);
+    std::unique_ptr<OutputStream> out = std::make_unique<FileOutputStream>(file);
+    if (static_cast<FileOutputStream*>(out.get())->failedToOpen())
+    {
+        message = "BitVibe could not write " + file.getFullPathName() + ".";
+        return false;
+    }
+    auto writer = WavAudioFormat().createWriterFor(out, AudioFormatWriterOptions()
+                                                            .withSampleRate(rate)
+                                                            .withNumChannels(2)
+                                                            .withBitsPerSample(24)
+                                                            .withMetadataValues({ { WavAudioFormat::bwavDescription, SampleBank::kKeepLevelMark } }));
+    if (writer == nullptr || !writer->writeFromAudioSampleBuffer(buffer, 0, frames))
+    {
+        message = "BitVibe could not write " + file.getFullPathName() + ".";
+        return false;
+    }
+    writer.reset(); // finishes the file before the bank looks for it
+    message = "Saved \"" + fileName + "\" in Sounds/Sampled";
+    if (bank.isNotEmpty())
+    {
+        if (sampleBank.addToBank(bank, fileName))
+            message << " and added it to the bank \"" << bank << "\"";
+        else
+            message << " (the bank \"" << bank << "\" was not found)";
+    }
+    message << ".";
+    if (savedFileName != nullptr)
+        *savedFileName = fileName;
+    return true;
+}
 
 bool BitVibeProcessor::saveCapturedClip(const File& file, String& message)
 {

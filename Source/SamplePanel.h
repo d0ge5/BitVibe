@@ -30,6 +30,8 @@ public:
     // Which steps the panel sets up: SampleBank::kMain or kLoop (only while the sequence has a loop section).
     void showSection(int newSection);
 
+    std::function<void()> onOpenSampler; // the SAMPLER button
+
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
 
@@ -61,6 +63,7 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
     PedalButton mainButton { "MAIN" }, loopButton { "LOOP" };
+    PedalButton samplerButton { "SAMPLER" };
     juce::ToggleButton ownLevelsButton { "OWN LEVELS FOR THE LOOP" };
     std::unique_ptr<APVTS::ButtonAttachment> ownLevelsAtt;
     int section = SampleBank::kMain;
