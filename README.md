@@ -150,9 +150,10 @@ animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_be
 `Assets/beat_dog.jpg`), so it costs one small image draw per frame. Switch on **LIVE 3D** to draw the head in real
 time from its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15
 FPS**: smoother, and still light (well under a millisecond a frame). The numbered **HEADBANG ON** buttons pick the
-beats of the bar the head hits (pick fewer for a slower, heavier headbang); **SWAY** floats the head from side to
-side, landing on one side at a picked beat and the other at the next; **SMOOTH** (LIVE 3D) eases the slam into an
-even bob. All of it is remembered.
+beats of the bar the head drops on: the drop starts on the beat and is sudden, then the head rises smoothly back to
+the top for the next (pick fewer beats for a slower, heavier headbang). **SWAY** floats the head from side to side,
+landing on one side at a picked beat and the other at the next; **SMOOTH** (LIVE 3D) eases the headbang into an even
+bob. All of it is remembered.
 
 ### The right-hand side
 

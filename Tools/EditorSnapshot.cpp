@@ -1118,7 +1118,7 @@ void testSampler(const File& outDir)
     ed->showSampler(false);
 }
 
-// BEAT DOG: the sprite sheet is built in, and the frame follows the beat phase (frame 0 on the beat).
+// BEAT DOG: the sprite sheet is built in, and the frame follows the beat phase (the head drops on the beat).
 void testBeatDog()
 {
     std::puts("beat dog");
@@ -1129,17 +1129,20 @@ void testBeatDog()
     check(dog.hasSheet(), "the headbang frames are built into the plug-in");
     dog.setBeat(0.0f, 0);
     const auto onBeat = snapshot(dog, 1.0f);
-    check(dog.getFrame() == 0, "on the beat: the first frame (the head down)");
+    check(dog.getFrame() >= 17 && dog.getFrame() <= 21, "on the beat: the head at the top, about to drop (frame "
+              + String(dog.getFrame()) + ")");
+    dog.setBeat(0.16f, 1);
+    check(dog.getFrame() <= 3, "a moment later: the head down (frame " + String(dog.getFrame()) + ")");
     dog.setBeat(0.5f, 2);
     const auto between = snapshot(dog, 1.0f);
-    check(dog.getFrame() == 16, "halfway to the next beat: frame 16");
+    check(dog.getFrame() > 3 && dog.getFrame() < 19, "halfway to the next beat: rising (frame " + String(dog.getFrame()) + ")");
     int changed = 0;
     for (int y = 0; y < onBeat.getHeight(); y += 2)
         for (int x = 0; x < onBeat.getWidth(); x += 2)
             changed += onBeat.getPixelAt(x, y) != between.getPixelAt(x, y) ? 1 : 0;
     check(changed > 200, "the picture moves (" + String(changed) + " pixels differ)");
     dog.setBeat(0.9999f, 3);
-    check(dog.getFrame() == BeatDog::kFrames - 1, "the last moment before a beat: the last frame");
+    check(dog.getFrame() >= 17 && dog.getFrame() <= 21, "the last moment before a beat: back at the top");
 
     // LIVE 3D: drawn from the mesh at the frame rate chosen, both remembered
     check(beatdog::kNumVerts > 100 && beatdog::kNumEdges > 300 && beatdog::kNumFaces > 200,
@@ -1185,21 +1188,22 @@ void testBeatDog()
     check(!dog.isTimerRunning() && !uisettings::beatDogLive(), "LIVE 3D off: the timer stops, back to the pre-rendered frames");
     dog.setFrameRate(60);
 
-    // the picked beats: the head hits bottom on those only, rising in between and keeping the slam's snap
+    // the picked beats: the head drops on those only, rising in between and keeping the drop's snap
     const auto near = [](float a, float b) { return std::abs(a - b) < 0.01f; };
     dog.setBeatMask(0x1);
-    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.0f) && near(dog.motionAt(0.0f, 2, 16).between, 0.5f)
-              && dog.motionAt(0.0f, 2, 16).bang < 0.6f && near(dog.motionAt(0.8f, 3, 16).bang, 0.8f),
-          "beat 1 only: one headbang a bar, a long rise and the slam in the last 0.4 of a beat");
+    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.0f) && near(dog.motionAt(0.1f, 0, 16).bang, 0.1f)
+              && near(dog.motionAt(0.0f, 2, 16).between, 0.5f) && dog.motionAt(0.0f, 2, 16).bang > 0.3f
+              && dog.motionAt(0.9999f, 3, 16).bang > 0.99f,
+          "beat 1 only: one headbang a bar, the drop as quick as ever and a long rise");
     dog.setBeat(0.0f, 2);
-    check(dog.getFrame() > 5 && dog.getFrame() < 19, "the pre-rendered frames follow it (frame " + String(dog.getFrame()) + " halfway through the bar)");
+    check(dog.getFrame() > 3 && dog.getFrame() < 19, "the pre-rendered frames follow it (frame " + String(dog.getFrame()) + " halfway through the bar)");
     dog.setBeatMask(0x5);
     check(near(dog.motionAt(0.0f, 2, 16).bang, 0.0f) && near(dog.motionAt(0.0f, 1, 16).between, 0.5f), "beats 1 and 3: two a bar");
     dog.setBeatMask(0x9);
     check(near(dog.motionAt(0.0f, 0, 12).bang, 0.0f) && near(dog.motionAt(0.5f, 1, 12).between, 0.5f),
           "a beat the bar does not have (beat 4 of 3/4) is left out");
     dog.setBeatMask(0);
-    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.6f) && near(dog.motionAt(0.3f, 2, 16).bang, 0.6f), "no beats picked: the head waits at the top");
+    check(near(dog.motionAt(0.0f, 0, 16).bang, 0.0f) && near(dog.motionAt(0.3f, 2, 16).bang, 0.0f), "no beats picked: the head waits at the top");
     check(uisettings::beatDogBeats() == 0, "the picked beats are remembered");
     dog.setBeatMask(0x3f);
 
@@ -1221,12 +1225,12 @@ void testBeatDog()
     halfway.between = 0.25f;
     const float evenQuarter = dog.headAngle(halfway);
     dog.setSmoothness(0.0f);
-    const float bangQuarter = dog.headAngle(halfway); // the headbang is near the top by then
+    const float bangQuarter = dog.headAngle(halfway); // the headbang is still near the bottom then
     dog.setSmoothness(1.0f);
     halfway.bang = 0.0f;
     halfway.between = 0.0f;
-    check(std::abs(bangQuarter - evenQuarter) > 0.05f && evenQuarter > even && evenQuarter < dog.headAngle(halfway),
-          "SMOOTH turns the headbang into an even bob (the head at the top halfway, halfway down a quarter of the way)");
+    check(std::abs(bangQuarter - evenQuarter) > 0.05f && evenQuarter < even && evenQuarter > dog.headAngle(halfway),
+          "SMOOTH turns the headbang into an even bob (the head at the bottom halfway, halfway down a quarter of the way)");
 
     // both move the live picture
     const auto liveAt = [&](float smooth, float swayAmount, float phase) {
@@ -1262,6 +1266,33 @@ void testBeatDog()
         PNGImageFormat().writeImageToStream(snapshot(dog, 2.0f), *out);
     dog.setLive(false);
     dog.setBeatMask(0x3f);
+
+    // the headbang: the drop starts on the beat and is sudden, the rise after it smooth
+    dog.setSmoothness(0.0f);
+    dog.setSway(0.0f);
+    const auto angleAt = [&](float bang) {
+        BeatDog::Motion m;
+        m.bang = m.between = bang;
+        return dog.headAngle(m);
+    };
+    const auto steepest = [&](float from, float to) {
+        float most = 0.0f;
+        for (float p = from; p < to - 0.005f; p += 0.005f)
+            most = jmax(most, std::abs(angleAt(p + 0.005f) - angleAt(p)) / 0.005f);
+        return most;
+    };
+    const float dropSpeed = steepest(0.0f, 0.15f), riseSpeed = steepest(0.3f, 1.0f);
+    check(dropSpeed > 3.0f * riseSpeed, "the drop is sudden and the rise smooth (fastest drop " + String(dropSpeed, 1)
+              + ", fastest rise " + String(riseSpeed, 1) + " a beat)");
+    check(angleAt(0.0f) < angleAt(0.5f) && angleAt(0.02f) > angleAt(0.0f) && angleAt(0.15f) > angleAt(0.5f),
+          "on the beat the head is at the top and starts down, hitting bottom just after");
+    check(std::abs(angleAt(0.0f) - angleAt(0.9999f)) < 0.02f, "and is back at the top for the next beat");
+    BeatDog::Motion rising, falling;
+    rising.bang = 0.5f;
+    falling.bang = 0.08f;
+    const int risingFrame = dog.frameFor(rising), fallingFrame = dog.frameFor(falling);
+    check(risingFrame <= 19 && fallingFrame >= 19, "the pre-rendered frames follow it, going the right way (frames "
+              + String(risingFrame) + " rising, " + String(fallingFrame) + " dropping)");
     dog.setSmoothness(0.0f);
     dog.setSway(0.5f);
     dog.saveSettings();

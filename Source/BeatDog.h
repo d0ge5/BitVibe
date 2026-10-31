@@ -13,9 +13,9 @@ class PedalButton;
 //  - LIVE 3D: the same head drawn in real time from its mesh (BeatDogMesh.h, exported by the same Blender script), at
 //    60, 30 or 15 frames a second. Only the lines facing the camera are drawn, each with a soft glow, into an image at
 //    the frame rate chosen; the editor's own repaints just show that image.
-// The head hits bottom on the beats picked with the numbered buttons (all of them to start with), rising in between
-// and slamming down again. SWAY floats the head from side to side, landing on one side at a picked beat and on the
-// other at the next; SMOOTH (LIVE 3D only) eases the slam into an even bob. All of it is remembered.
+// The head drops hard on the beats picked with the numbered buttons (all of them to start with) and rises smoothly back
+// to the top before the next. SWAY floats the head from side to side, landing on one side at a picked beat and on the
+// other at the next; SMOOTH (LIVE 3D only) eases the headbang into an even bob. All of it is remembered.
 class BeatDog : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
@@ -52,8 +52,7 @@ public:
     float getSway() const { return sway; }
     void saveSettings();              // the knobs are saved when let go of, and when the editor closes
 
-    // The motion at a moment of the bar: how far through the headbang (0 = the head down, as on the curve rendered in
-    // Blender), how far from one picked beat to the next (0..1), and the float's side (-1..1) and lift (0..1).
+    // The motion at a moment of the bar: how far through the headbang (0 = a picked beat, where the head starts to drop), how far from one picked beat to the next (0..1), and the float's side (-1..1) and lift (0..1).
     struct Motion
     {
         float bang = 0.0f, between = 0.0f, side = 1.0f, lift = 0.0f;
@@ -61,6 +60,7 @@ public:
     Motion motionAt(float phase, int beatInBar, int barSteps);
     // The head's tilt for a motion, in radians: the headbang curve, eased toward an even bob by SMOOTH.
     float headAngle(const Motion&) const;
+    int frameFor(const Motion&) const; // the pre-rendered frame that shows it
 
     int getFrame() const { return frame; }
     bool hasSheet() const { return sheet.isValid(); }
