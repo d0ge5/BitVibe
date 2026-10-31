@@ -10,6 +10,8 @@
 #include "EqPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
+#include "BeatDog.h"
+#include "BeatDogMesh.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
 
@@ -606,7 +608,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 940, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 1112, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -1116,6 +1118,74 @@ void testSampler(const File& outDir)
     ed->showSampler(false);
 }
 
+// BEAT DOG: the sprite sheet is built in, and the frame follows the beat phase (frame 0 on the beat).
+void testBeatDog()
+{
+    std::puts("beat dog");
+    PedalLookAndFeel lookAndFeel;
+    BeatDog dog(lookAndFeel);
+    dog.setLive(false);
+    dog.setSize(456, 164);
+    check(dog.hasSheet(), "the headbang frames are built into the plug-in");
+    dog.setBeat(0.0f, 0);
+    const auto onBeat = snapshot(dog, 1.0f);
+    check(dog.getFrame() == 0, "on the beat: the first frame (the head down)");
+    dog.setBeat(0.5f, 2);
+    const auto between = snapshot(dog, 1.0f);
+    check(dog.getFrame() == 16, "halfway to the next beat: frame 16");
+    int changed = 0;
+    for (int y = 0; y < onBeat.getHeight(); y += 2)
+        for (int x = 0; x < onBeat.getWidth(); x += 2)
+            changed += onBeat.getPixelAt(x, y) != between.getPixelAt(x, y) ? 1 : 0;
+    check(changed > 200, "the picture moves (" + String(changed) + " pixels differ)");
+    dog.setBeat(0.9999f, 3);
+    check(dog.getFrame() == BeatDog::kFrames - 1, "the last moment before a beat: the last frame");
+
+    // LIVE 3D: drawn from the mesh at the frame rate chosen, both remembered
+    check(beatdog::kNumVerts > 100 && beatdog::kNumEdges > 300 && beatdog::kNumFaces > 200,
+          "the head's mesh is built in (" + String(beatdog::kNumVerts) + " points, " + String(beatdog::kNumEdges) + " lines)");
+    dog.setLive(true);
+    check(dog.isLive() && dog.isTimerRunning() && dog.getTimerInterval() <= 17, "LIVE 3D on: drawn 60 times a second by default");
+    dog.renderLiveFrame(0.0f);
+    const auto down = dog.getLiveImage().createCopy();
+    dog.renderLiveFrame(0.5f);
+    const auto up = dog.getLiveImage().createCopy();
+    int lit = 0, moved = 0;
+    for (int y = 0; y < down.getHeight(); ++y)
+        for (int x = 0; x < down.getWidth(); ++x)
+        {
+            lit += down.getPixelAt(x, y).getGreen() > 120 ? 1 : 0;
+            moved += down.getPixelAt(x, y) != up.getPixelAt(x, y) ? 1 : 0;
+        }
+    check(lit > 1500, "the live frame draws the wireframe (" + String(lit) + " bright pixels)");
+    check(moved > 1000, "and the head moves between the beat and halfway (" + String(moved) + " pixels differ)");
+    {
+        const auto start = Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < 120; ++i)
+            dog.renderLiveFrame((float) i / 120.0f);
+        const double ms = (Time::getMillisecondCounterHiRes() - start) / 120.0;
+        check(ms < 8.0, "a live frame takes " + String(ms, 2) + " ms to draw (" + String(ms * 60.0 / 10.0, 1) + "% of one core at 60 FPS)");
+    }
+    dog.setBeat(0.0f, 0, 128.0f);
+    dog.renderLiveFrame(0.0f);
+    const auto liveFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_beat_dog_live.png");
+    liveFile.deleteFile();
+    if (auto out = std::unique_ptr<FileOutputStream>(liveFile.createOutputStream()))
+        PNGImageFormat().writeImageToStream(snapshot(dog, 2.0f), *out);
+    dog.setFrameRate(30);
+    check(dog.getFrameRate() == 30 && dog.getTimerInterval() >= 32 && dog.getTimerInterval() <= 34, "30 FPS: the timer runs at 30");
+    dog.setFrameRate(15);
+    check(dog.getFrameRate() == 15 && dog.getTimerInterval() >= 65 && dog.getTimerInterval() <= 68, "15 FPS");
+    check(uisettings::beatDogLive() && uisettings::beatDogFps() == 15, "both remembered for next time");
+    {
+        BeatDog another(lookAndFeel);
+        check(another.isLive() && another.getFrameRate() == 15, "a new editor opens with them");
+    }
+    dog.setLive(false);
+    check(!dog.isTimerRunning() && !uisettings::beatDogLive(), "LIVE 3D off: the timer stops, back to the pre-rendered frames");
+    dog.setFrameRate(60);
+}
+
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -1241,7 +1311,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     // What a tooltip looks like in the editor's own style: show one for the MIX knob.
     if (imageFile != nullptr)
     {
-        const Point<int> mixKnob(240, 721); // below the 36-pixel tab strip
+        const Point<int> mixKnob(240, 721 + 172); // below the 36-pixel tab strip and the BEAT DOG pane
         // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
         // topmost visible child under the point the same way hit-testing would.
         Component* under = nullptr;
@@ -1996,6 +2066,7 @@ int main(int argc, char** argv)
     testLoopSectionSounds();
     testSoundSubfolders();
     testSampler(outDir);
+    testBeatDog();
     testPresetFiles();
     testBeatRouting();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");

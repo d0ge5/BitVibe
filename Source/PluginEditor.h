@@ -191,6 +191,7 @@ class PatternPanel;
 class EqPanel;
 class SamplePanel;
 class SamplerPage;
+class BeatDog;
 
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -271,6 +272,7 @@ private:
     Content content { *this };
     LevelMeter triggerMeter;
     StepStrip stepStrip;
+    std::unique_ptr<BeatDog> beatDog; // the headbanging husky under the pedal
     PedalButton helpButton { "? HELP" };
     PedalButton exportButton { "EXPORT" }, importButton { "IMPORT" };
     std::unique_ptr<juce::FileChooser> presetChooser;

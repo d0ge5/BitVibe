@@ -2336,6 +2336,34 @@ void testDelay()
 // The sampler's chain: with nothing on, the clip only comes out levelled to the sound peak; VOLUME sets that level; the
 // distortion, the sample-rate reducer, the bit crusher and the EQ each change it the way the pedal's own do.
 // MAX BEATS: a random sound plays at most that many beats of the tempo, then fades out.
+// The beat phase for BEAT DOG: from the bar clock, 0 on every quarter-note beat, a half halfway between, and the beat
+// of the bar counted 0..3.
+void testBeatInBarPhase()
+{
+    std::puts("beat phase");
+    Engine e;
+    e.prepare(kFs);
+    Params p = neutral();
+    p.tempoBpm = 120.0f; // a beat is 0.5 s = 24000 samples
+    Signal buf(240, 0.0f);
+    auto run = [&](int samples)
+    {
+        for (int done = 0; done < samples; done += 240)
+        {
+            float* ch = buf.data();
+            e.process(&ch, 1, std::min(240, samples - done), p);
+        }
+    };
+    run(12000); // a quarter second
+    CHECK(std::abs(e.getBeatInBarPhase() - 0.5f) < 0.02f && e.getBeatInBar() == 0, "halfway through the first beat: %.3f", (double) e.getBeatInBarPhase());
+    run(12240); // just past the second beat
+    CHECK(e.getBeatInBarPhase() < 0.03f && e.getBeatInBar() == 1, "just past the second beat: %.3f, beat %d",
+          (double) e.getBeatInBarPhase(), e.getBeatInBar());
+    run(48000 + 6000 - 240);
+    CHECK(std::abs(e.getBeatInBarPhase() - 0.25f) < 0.02f && e.getBeatInBar() == 3, "a quarter into the fourth beat: %.3f, beat %d",
+          (double) e.getBeatInBarPhase(), e.getBeatInBar());
+}
+
 void testSampleMaxBeats()
 {
     std::puts("sample max beats");
@@ -3202,6 +3230,7 @@ int main(int argc, char** argv)
     testStepTypes();
     testSeqOnly();
     testDelay();
+    testBeatInBarPhase();
     testSampleMaxBeats();
     testSampleRender();
     testSequenceLoop();

@@ -57,6 +57,25 @@ inline void setEqClipSeconds(float seconds)
     write(*xml);
 }
 
+// BEAT DOG: the live 3D version on or off, and its frame rate (60, 30 or 15).
+inline bool beatDogLive() { return read()->getBoolAttribute("beatDogLive", false); }
+
+inline void setBeatDogLive(bool live)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogLive", live);
+    write(*xml);
+}
+
+inline int beatDogFps() { return read()->getIntAttribute("beatDogFps", 60); }
+
+inline void setBeatDogFps(int fps)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogFps", fps);
+    write(*xml);
+}
+
 inline bool helpSeen() { return read()->getBoolAttribute("helpSeen", false); }
 
 inline void markHelpSeen()

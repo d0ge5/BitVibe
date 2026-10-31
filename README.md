@@ -143,6 +143,14 @@ while you turn it. You can drag the bottom-right corner to resize the window.
 
 It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean signal.
 
+**BEAT DOG** (the pane under the pedal) is a green wireframe husky that headbangs in time: its head slams down on
+every beat, rises slowly and drops again, ears flopping, with the tempo and the beat of the bar beside it. It follows
+the TEMPO knob, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
+animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
+`Assets/beat_dog.jpg`), so it costs one small image draw per frame. Switch on **LIVE 3D** to draw the head in real
+time from its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15
+FPS**: smoother, and still light (well under a millisecond a frame). Both choices are remembered.
+
 ### The right-hand side
 
 At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
@@ -265,7 +273,7 @@ cmake --build build --parallel
 <summary>Tests</summary>
 
 The sound engine is plain C++ with no JUCE dependency and has its own test suite
-(`Tests/EngineTests.cpp`, 505 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
+(`Tests/EngineTests.cpp`, 508 checks), which also passes under MSVC AddressSanitizer and runs on macOS in CI.
 Two more tools check the built plug-in:
 
 ```bat

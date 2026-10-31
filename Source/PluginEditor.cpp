@@ -4,6 +4,7 @@
 #include "PatternPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
+#include "BeatDog.h"
 #include "EqPanel.h"
 #include "UiSettings.h"
 
@@ -26,12 +27,14 @@ constexpr int kTabsH = 36;
 constexpr int kFaceDy = 100;
 constexpr int kWidth = 480;
 constexpr bool kShowDrumsTab = false;
-constexpr int kHeight = kTabsH + 804 + kFaceDy;
+constexpr int kHeight = kTabsH + 976 + kFaceDy;
 // The pedal page has a second column to the right of the pedal: reverb, sample blend and beat pattern panels.
 constexpr int kSideX = kWidth + 12, kPedalWidth = kWidth + 468;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
-const Rectangle<int> kGlobal { 12, 544, 456, 248 };
+const Rectangle<int> kBeatDog { 12, 544, 456, 164 };  // under the pedal
+constexpr int kGlobalDy = 172;                          // the global panel sits below the BEAT DOG pane
+const Rectangle<int> kGlobal { 12, 544 + kGlobalDy, 456, 248 };
 // Second-column panels, in face coordinates (so the first one starts level with the preset header).
 constexpr int kColY = 12 - kFaceDy;
 constexpr int kPanelGap = 8;
@@ -651,6 +654,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     };
     stepStrip.onStepMenu = [this](int step) { showStepMenu(step); };
     content.addAndMakeVisible(stepStrip);
+    beatDog = std::make_unique<BeatDog>(laf);
+    beatDog->beatSource = [this] { return std::make_pair(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar()); };
+    content.addAndMakeVisible(*beatDog);
     smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
@@ -870,7 +876,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
     for (auto& k : knobs)
     {
@@ -1523,21 +1529,22 @@ void BitVibeEditor::resized()
     // global panel: five knobs, then two rows of switches
     const std::array<Slider*, 5> small { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider };
     for (size_t i = 0; i < small.size(); ++i)
-        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, 585 })));
+        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, 585 + kGlobalDy })));
 
-    syncButton.setBounds(face({ 24, 654, 62, 24 }));
-    holdButton.setBounds(face({ 92, 654, 62, 24 }));
-    headroomBox.setBounds(face({ 170, 654, 124, 24 }));
-    stutterLenBox.setBounds(face({ 304, 654, 148, 24 }));
-    triggerMeter.setBounds(face({ 450, 559, 9, 52 }));
+    syncButton.setBounds(face({ 24, 654 + kGlobalDy, 62, 24 }));
+    holdButton.setBounds(face({ 92, 654 + kGlobalDy, 62, 24 }));
+    headroomBox.setBounds(face({ 170, 654 + kGlobalDy, 124, 24 }));
+    stutterLenBox.setBounds(face({ 304, 654 + kGlobalDy, 148, 24 }));
+    triggerMeter.setBounds(face({ 450, 559 + kGlobalDy, 9, 52 }));
+    beatDog->setBounds(face(kBeatDog));
     stepStrip.setBounds(face({ 186, 352, 140, 28 }));
-    fxTrigButton.setBounds(face({ 24, 688, 200, 24 }));
+    fxTrigButton.setBounds(face({ 24, 688 + kGlobalDy, 200, 24 }));
     seqOnlyButton.setBounds(face({ 186, 480, 108, 24 })); // the middle of the pedal, under the tempo
     // the sequence's loop section, on a row of its own
-    loopButton.setBounds(face({ 24, 738, 60, 24 }));
-    loopFromBox.setBounds(face({ 92, 738, 56, 24 }));   // "TO" is painted between the two step boxes
-    loopToBox.setBounds(face({ 176, 738, 56, 24 }));
-    loopRepeatsBox.setBounds(face({ 240, 738, 110, 24 }));
+    loopButton.setBounds(face({ 24, 738 + kGlobalDy, 60, 24 }));
+    loopFromBox.setBounds(face({ 92, 738 + kGlobalDy, 56, 24 }));   // "TO" is painted between the two step boxes
+    loopToBox.setBounds(face({ 176, 738 + kGlobalDy, 56, 24 }));
+    loopRepeatsBox.setBounds(face({ 240, 738 + kGlobalDy, 110, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
@@ -1699,7 +1706,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     // Global panel labels
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
-    g.drawText("GLOBAL", Rectangle<int>(26, 548, 80, 12), Justification::left);
+    g.drawText("GLOBAL", Rectangle<int>(26, 548 + kGlobalDy, 80, 12), Justification::left);
 
     struct Entry
     {
@@ -1732,17 +1739,17 @@ void BitVibeEditor::paintContent(Graphics& g)
         const int cx = kGlobalKnobX0 + (int) i * kGlobalKnobDx;
         g.setColour(kInk);
         g.setFont(bold(11.0f));
-        g.drawText(entries[i].name, Rectangle<int>(100, 14).withCentre({ cx, 619 }), Justification::centred);
+        g.drawText(entries[i].name, Rectangle<int>(100, 14).withCentre({ cx, 619 + kGlobalDy }), Justification::centred);
         g.setColour(kInkDim);
         g.setFont(plain(10.5f));
-        g.drawText(entries[i].value, Rectangle<int>(100, 13).withCentre({ cx, 633 }), Justification::centred);
+        g.drawText(entries[i].value, Rectangle<int>(100, 13).withCentre({ cx, 633 + kGlobalDy }), Justification::centred);
     }
     g.setColour(kInkDim);
     g.setFont(bold(9.5f));
-    g.drawText("HEADROOM", Rectangle<int>(172, 641, 120, 11), Justification::left);
-    g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641, 144, 11), Justification::left);
-    g.drawText("SEQUENCE LOOP", Rectangle<int>(26, 724, 200, 11), Justification::left);
-    g.drawText("TO", Rectangle<int>(148, 738, 28, 24), Justification::centred);
+    g.drawText("HEADROOM", Rectangle<int>(172, 641 + kGlobalDy, 120, 11), Justification::left);
+    g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641 + kGlobalDy, 144, 11), Justification::left);
+    g.drawText("SEQUENCE LOOP", Rectangle<int>(26, 724 + kGlobalDy, 200, 11), Justification::left);
+    g.drawText("TO", Rectangle<int>(148, 738 + kGlobalDy, 28, 24), Justification::centred);
 
     // The effect panels follow each other down the column in the order the sequenced sound goes through them:
     // an arrow in each gap.
@@ -1766,11 +1773,7 @@ void BitVibeEditor::paintContent(Graphics& g)
         const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
         const Rectangle<int> note(kSideX + 8, columnBottom() + 10, 440, 40);
         g.setFont(plain(10.5f));
-        if (advancedRight)
-        {
-            // ADVANCED fills the column: no room for the note
-        }
-        else if (sequenceOff && stutterOff)
+        if (sequenceOff && stutterOff)
         {
             g.setColour(kAccent);
             g.drawFittedText("The sequencer and the stutter are both off, so the effects on this side have nothing to act on. "
@@ -1877,6 +1880,7 @@ void BitVibeEditor::paintContent(Graphics& g)
 // editor opens or the Alt layer changes, so nothing shows a stale state first.
 void BitVibeEditor::updateLiveState()
 {
+    beatDog->setBeat(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar(), proc.getEffectiveBpm()); // repaints only on a change
     {
         std::array<StepStrip::Step, 6> steps {};
         for (int i = 0; i < 6; ++i)

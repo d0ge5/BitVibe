@@ -86,6 +86,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/SampleBank.cpp
         Source/AppAudioCapture.cpp
         Source/SamplerPage.cpp
+        Source/BeatDog.cpp
         Source/DrumBeat.cpp)
 
     # The DRUMS tab lists the audio files in this folder (local builds only; installed copies use
@@ -101,8 +102,12 @@ if(BITVIBE_BUILD_PLUGIN)
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
+    # the BEAT DOG animation: a sprite sheet rendered by Tools/beatdog/build_beat_dog.py
+    juce_add_binary_data(BitVibeAssets SOURCES Assets/beat_dog.jpg)
+
     target_link_libraries(BitVibe
         PRIVATE
+            BitVibeAssets
             bitvibe_dsp
             juce::juce_audio_utils
         PUBLIC
@@ -140,6 +145,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/SampleBank.cpp
         Source/AppAudioCapture.cpp
         Source/SamplerPage.cpp
+        Source/BeatDog.cpp
             Source/DrumBeat.cpp)
         target_include_directories(BitVibeEditorSnapshot PRIVATE Source)
         target_compile_definitions(BitVibeEditorSnapshot PRIVATE
@@ -149,6 +155,7 @@ if(BITVIBE_BUILD_PLUGIN)
             JUCE_USE_CURL=0
             JUCE_WEB_BROWSER=0)
         target_link_libraries(BitVibeEditorSnapshot PRIVATE
+            BitVibeAssets
             bitvibe_dsp
             juce::juce_audio_utils
             juce::juce_recommended_config_flags)

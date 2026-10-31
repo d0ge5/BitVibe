@@ -531,6 +531,12 @@ public:
         beatPhaseOut.store((float) beatPhase, std::memory_order_relaxed);
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
         patternStepOut.store(patternIdx, std::memory_order_relaxed);
+        {
+            // the quarter-note beat on the bar clock (which follows the host's position with SYNC on)
+            const double beatSteps = (double) (patternIdx % 4) + patternPhase / std::max(1.0, beatSamples * 0.25);
+            beatInBarPhaseOut.store((float) std::clamp(beatSteps / 4.0, 0.0, 0.99999), std::memory_order_relaxed);
+            beatInBarOut.store(patternIdx / 4, std::memory_order_relaxed);
+        }
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
         if (inputPeak > inputPeakOut.load(std::memory_order_relaxed))
             inputPeakOut.store(inputPeak, std::memory_order_relaxed);
@@ -549,6 +555,9 @@ public:
     int getCurrentStep() const { return stepOut.load(std::memory_order_relaxed); }
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
+    // How far through the current quarter-note beat the bar clock is (0 = on the beat), and which beat of the bar it is.
+    float getBeatInBarPhase() const { return beatInBarPhaseOut.load(std::memory_order_relaxed); }
+    int getBeatInBar() const { return beatInBarOut.load(std::memory_order_relaxed); }
 
     // The EQ's reference sound: capture, the clip playing through the EQ, the spectrum feed (see EqReference.h).
     EqReference& getEqReference() { return eqReference; }
@@ -1019,6 +1028,8 @@ private:
     double patternPhase = 0.0;
     bool patternFresh = true;
     std::atomic<int> patternStepOut { 0 };
+    std::atomic<float> beatInBarPhaseOut { 0.0f };
+    std::atomic<int> beatInBarOut { 0 };
     std::atomic<int> patternRestartRequests { 0 };
     int seenPatternRestarts = 0;
     const SampleSet* lastSampleSet = nullptr;
