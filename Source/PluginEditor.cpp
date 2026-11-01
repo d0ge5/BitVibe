@@ -672,6 +672,11 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     reverbOnButton.setLookAndFeel(&laf);
     content.addAndMakeVisible(reverbOnButton);
     reverbOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::reverbOn, reverbOnButton);
+    reverbOnButton.onClick = [this]
+    {
+        if (reverbOnButton.getToggleState())
+            pedalstyle::raiseMixIfSilent(proc.apvts, ids::reverbMix, 0.3f);
+    };
     reverbReverseButton.onClick = [this]
     {
         // the tick belongs to the type of reverb that is showing
@@ -908,7 +913,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     content.toBack();
     baseWidth = kPedalWidth;
     baseHeight = kHeight;
-    scale = savedScale = uisettings::loadWindowScale();
+    savedScale = uisettings::loadWindowScale();
+    scale = uisettings::fittingScale(savedScale, baseWidth, baseHeight, uisettings::screenArea()); // the whole window on screen
     constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
     setConstrainer(&constrainer);
     setResizable(true, true);

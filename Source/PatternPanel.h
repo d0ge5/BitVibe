@@ -25,12 +25,17 @@ public:
     // SIMPLE hides the time signature, RESTART BAR and PATTERN LOCK (their settings still apply).
     void setAdvanced(bool advanced);
 
+    // With the ACTION at Off the pattern does nothing, so the grid and its buttons are dimmed like a switched-off panel
+    // (they can still be set up).
+    bool isDimmed() const { return pattern.action == bitvibe::DrumAction::Off; }
+
 private:
     void layoutGrid();
     int cellAt(juce::Point<float>) const;
     int beatLabelAt(juce::Point<float>) const;
     void setSteps(std::uint32_t steps);
     void randomise();
+    void updateDimming();
 
     BitVibeProcessor& proc;
     DrumBeat& beat;

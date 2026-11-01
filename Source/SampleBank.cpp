@@ -96,6 +96,20 @@ void SampleBank::setSoundsFolderOverride(const File& folder)
     soundsOverride() = folder;
 }
 
+namespace
+{
+bool& repoSoundsEnabled()
+{
+    static bool enabled = true;
+    return enabled;
+}
+} // namespace
+
+void SampleBank::setRepoSoundsEnabled(bool enabled)
+{
+    repoSoundsEnabled() = enabled;
+}
+
 File SampleBank::userFolder()
 {
     if (soundsOverride() != File())
@@ -109,7 +123,7 @@ Array<File> SampleBank::libraryFolders()
     folders.add(userFolder());
    #ifdef BITVIBE_SOUNDS_DIR
     const File repoSounds(BITVIBE_SOUNDS_DIR); // the source tree's GoodSounds folder (local builds only)
-    if (repoSounds.isDirectory())
+    if (repoSounds.isDirectory() && repoSoundsEnabled())
         folders.add(repoSounds);
    #endif
     return folders;

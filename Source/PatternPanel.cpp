@@ -40,6 +40,7 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
         current.action = (DrumAction) jlimit(0, kNumDrumActions - 1, actionBox.getSelectedId() - 1);
         beat.setPattern(current);
         pattern = current;
+        updateDimming();
         repaint();
     };
     addAndMakeVisible(actionBox);
@@ -103,6 +104,15 @@ void PatternPanel::setAdvanced(bool on)
     for (Component* c : std::initializer_list<Component*> { &signatureBox, &restartButton, &lockButton })
         c->setVisible(on);
     repaint();
+}
+
+void PatternPanel::updateDimming()
+{
+    const float alpha = isDimmed() ? kOffAlpha : 1.0f;
+    for (Component* c : std::initializer_list<Component*> { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton,
+                                                            &restartButton, &lockButton })
+        if (c->getAlpha() != alpha)
+            c->setAlpha(alpha);
 }
 
 void PatternPanel::resized()
@@ -220,6 +230,7 @@ void PatternPanel::refresh()
         actionBox.setSelectedId((int) pattern.action + 1, dontSendNotification);
         signatureBox.setSelectedId(pattern.signature + 1, dontSendNotification);
     }
+    updateDimming();
     repaint();
 }
 
@@ -244,7 +255,7 @@ void PatternPanel::paint(Graphics& g)
     Colour textColour = inkDim;
     if (!active)
     {
-        text = "Choose what the pattern does";
+        text = "Off: choose an ACTION to use the pattern";
         textColour = accent;
     }
     else
@@ -286,6 +297,10 @@ void PatternPanel::paint(Graphics& g)
         g.setFont(plain(10.0f));
         g.drawText(hidden + " (ADVANCED to change)", 204, kRowY, 240, kRowH, Justification::centredLeft, true);
     }
+
+    // The grid: dimmed while the ACTION is Off, like a switched-off panel.
+    if (!active)
+        g.beginTransparencyLayer(kOffAlpha);
 
     // The step the bar is at right now (the engine's own clock), so it is easy to see where a step sits in time.
     const int playing = jlimit(0, ts.totalSteps - 1, proc.getEngine().getPatternStep());
@@ -331,4 +346,6 @@ void PatternPanel::paint(Graphics& g)
         g.setFont(bold(10.5f));
         g.drawText(String(b + 1), r.toNearestInt(), Justification::centred);
     }
+    if (!active)
+        g.endTransparencyLayer();
 }

@@ -2,8 +2,11 @@
 
 #include "SampleBank.h"
 
+#include <optional>
+
 // Editor settings the player leaves behind, remembered between sessions in the same folder as the sample settings
-// (see SampleBank::settingsFolder()): the window size (1.0 is the size the editor is designed at) and whether the
+// (see SampleBank::settingsFolder()): the window size (1.0 is the size the editor is designed at; a window is opened
+// smaller when that would not fit on the screen, without forgetting the size chosen) and whether the
 // quick-start help has been seen (it opens by itself the first time).
 namespace uisettings
 {
@@ -35,6 +38,34 @@ inline void saveWindowScale(float scale)
     auto xml = read();
     xml->setAttribute("scale", (double) juce::jlimit(kMinScale, kMaxScale, scale));
     write(*xml);
+}
+
+// The screen the editor opens on (the main display's area without the taskbar or dock). Tests set their own.
+inline std::optional<juce::Rectangle<int>>& screenAreaOverride()
+{
+    static std::optional<juce::Rectangle<int>> area;
+    return area;
+}
+
+inline juce::Rectangle<int> screenArea()
+{
+    if (screenAreaOverride().has_value())
+        return *screenAreaOverride();
+    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        return display->userArea;
+    return {};
+}
+
+// The size to open a window of baseWidth x baseHeight at: the one wanted, or smaller if that would not fit on the
+// screen, leaving room for the host's own window frame and title bar. Never below kMinScale.
+inline float fittingScale(float wanted, int baseWidth, int baseHeight, juce::Rectangle<int> screen)
+{
+    constexpr int kFrameWidth = 16, kFrameHeight = 90;
+    if (screen.isEmpty() || baseWidth <= 0 || baseHeight <= 0)
+        return juce::jlimit(kMinScale, kMaxScale, wanted);
+    const float fit = juce::jmin((float) (screen.getWidth() - kFrameWidth) / (float) baseWidth,
+                                 (float) (screen.getHeight() - kFrameHeight) / (float) baseHeight);
+    return juce::jlimit(kMinScale, kMaxScale, juce::jmin(wanted, std::floor(fit * 100.0f) / 100.0f));
 }
 
 // The right-hand column: false = SIMPLE (the controls that matter most), true = ADVANCED (everything).

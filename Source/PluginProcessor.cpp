@@ -136,7 +136,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
     layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" }, 0));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbOn), "Reverb On", true));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbOn), "Reverb On", false)); // off, like the other effects
     layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbDecay), "Reverb Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     // Each type of reverb has its own REVERSE tick (the tail swells up after the sound instead of dying away).
     layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseRoom), "Reverse Room Reverb", false));
@@ -154,7 +154,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     layout.add(std::make_unique<AudioParameterBool>(id(ids::distReverb), "Distort Reverb Too", false));
 
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", true));
+    layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
 
     // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain; and the sampler's own copy ----
     for (const bool sampler : { false, true })

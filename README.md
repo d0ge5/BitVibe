@@ -102,7 +102,8 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 Click **? HELP** at the top for a one-page quick start (it opens by itself the first time). Hover over any
 control for a short description, double-click a knob to reset it, and look at the bubble that shows its value
-while you turn it. You can drag the bottom-right corner to resize the window.
+while you turn it. You can drag the bottom-right corner to resize the window; it remembers the size, and opens
+smaller when that size would not fit on your screen.
 
 ### The pedal
 
@@ -162,14 +163,17 @@ At the top, the **beat pattern** decides when the sequence fires. Below it, the 
 stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** delay,
 **4** reverb, **5** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
 light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
+They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
 them).
 
 - **Beat pattern:** click the steps of the bar where the sequence should trigger, choose a time signature and an
   action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
-  up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence.
+  up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence. While
+  the action is *Off* the pattern does nothing, and the grid is dimmed to show it.
 - **Sample blend:** put your own WAV, AIFF, FLAC or OGG files (up to 20 seconds) in `Documents/BitVibe/Sounds`
-  (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. Subfolders are read too, and CHOOSE
+  (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. With no sounds at all the panel says
+  **NO SOUNDS YET** and shows the folder button; the first sounds you add are found and picked by themselves. Subfolders are read too, and CHOOSE
   SOUNDS shows each one as a submenu with its own *Pick all* and *Pick none*, so a sorted library stays easy to pick
   from. File names must differ across folders (a name found twice is used once). Free sound packs released under CC0,
   such as [Kenney's audio packs](https://kenney.nl/assets/category:Audio), work well. **MIX** moves between the **BASE**

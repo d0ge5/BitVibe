@@ -37,6 +37,17 @@ inline void setPowerActive(juce::ToggleButton& b, bool active)
     }
 }
 inline constexpr float kOffAlpha = 0.4f; // a switched-off panel's controls
+// Switching an effect on with its mix all the way down would change nothing you can hear, so the player's click also
+// brings the mix up to a level that can be heard. (Only a click does this: a host or a project keeps its own values.)
+inline void raiseMixIfSilent(juce::AudioProcessorValueTreeState& apvts, const juce::String& mixId, float audible)
+{
+    if (auto* param = apvts.getParameter(mixId); param != nullptr && param->getValue() <= 0.0f)
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost(param->convertTo0to1(audible));
+        param->endChangeGesture();
+    }
+}
 
 // What a sequencer step controls, in one colour each: pitch, filter, sample rate.
 inline juce::Colour stepTypeColour(int type)
@@ -91,6 +102,7 @@ public:
         text = std::move(newText);
         repaint();
     }
+    const juce::String& getText() const { return text; }
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;

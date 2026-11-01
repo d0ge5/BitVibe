@@ -8,6 +8,7 @@
 
 #include "PluginEditor.h"
 #include "EqPanel.h"
+#include "PatternPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
 #include "BeatDog.h"
@@ -355,6 +356,7 @@ void testReverbParams()
     std::puts("reverb (processor level)");
     const auto in = makeInput(48000);
     auto p = makeProcessor();
+    setValue(*p, ids::reverbOn, 1.0f); // off to start with
     setValue(*p, ids::seqPlay, 5.0f); // continuous sequencer: everything is sequenced
     setValue(*p, ids::tempo, 120.0f);
 
@@ -432,6 +434,7 @@ void testSampleBlendParams()
     }
     const auto in = makeInput(48000);
     auto p = makeProcessor();
+    setValue(*p, ids::sampleOn, 1.0f); // off to start with
     setValue(*p, ids::seqPlay, 5.0f); // a looping sequence: steps keep starting
     setValue(*p, ids::tempo, 240.0f);
     p->getSampleBank().selectAll();
@@ -599,6 +602,136 @@ void testSoundBanks()
         auto p = makeProcessor();
         check(p->getSampleBank().getNumSelected() == library.size() && p->getSampleBank().getBankNames().isEmpty(), "a damaged settings file falls back to the defaults");
     }
+}
+
+// What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
+// looks off while it is off, and the sample blend says when there are no sounds to blend.
+void testEasierStart()
+{
+    std::puts("first run");
+    // the window fits the screen it opens on
+    const Rectangle<int> fullHd(0, 0, 1920, 1040), laptop(0, 0, 1366, 728), big(0, 0, 3840, 2120);
+    const float onFullHd = uisettings::fittingScale(1.0f, 948, 1112, fullHd);
+    check(onFullHd < 1.0f && 1112.0f * onFullHd <= 1040.0f - 90.0f && onFullHd > 0.8f,
+          "on a 1080p screen the window opens at " + String(roundToInt(onFullHd * 100.0f)) + "%, so all of it is on screen");
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1112, laptop) - uisettings::kMinScale) < 1.0e-4f, "on a small laptop screen: the smallest size");
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1112, big) - 1.0f) < 1.0e-4f
+              && std::abs(uisettings::fittingScale(1.5f, 948, 1112, big) - 1.5f) < 1.0e-4f,
+          "on a big screen: the size chosen");
+    {
+        auto p = makeProcessor();
+        const auto keep = uisettings::screenAreaOverride();
+        uisettings::screenAreaOverride() = fullHd;
+        uisettings::saveWindowScale(1.25f);
+        std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+        check(ed->getHeight() <= 1040 - 90, "a new editor on that screen fits (" + String(ed->getWidth()) + " x " + String(ed->getHeight()) + ")");
+        check(std::abs(uisettings::loadWindowScale() - 1.25f) < 1.0e-4f, "and the size chosen on a bigger screen is not forgotten");
+        ed.reset();
+        uisettings::screenAreaOverride() = keep;
+        uisettings::saveWindowScale(1.0f);
+    }
+
+    // the reverb and the sample blend start off, and switching one on brings its mix up from silence
+    auto p = makeProcessor();
+    check(p->apvts.getRawParameterValue(ids::reverbOn)->load() < 0.5f && p->apvts.getRawParameterValue(ids::sampleOn)->load() < 0.5f,
+          "the reverb and the sample blend start off, like the other effects");
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ToggleButton* reverbOn = nullptr;
+    SamplePanel* samples = nullptr;
+    PatternPanel* pattern = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+    {
+        if (auto* b = dynamic_cast<ToggleButton*>(c); b != nullptr && b->getTooltip().startsWith("REVERB ON"))
+            reverbOn = b;
+        if (samples == nullptr)
+            samples = dynamic_cast<SamplePanel*>(c);
+        if (pattern == nullptr)
+            pattern = dynamic_cast<PatternPanel*>(c);
+    }
+    if (reverbOn == nullptr || samples == nullptr || pattern == nullptr)
+    {
+        check(false, "the reverb ON button, the sample panel and the pattern panel are on the page");
+        return;
+    }
+    check(p->apvts.getRawParameterValue(ids::reverbMix)->load() < 1.0e-6f, "the reverb mix starts at 0%");
+    reverbOn->setToggleState(true, sendNotification);
+    check(p->apvts.getRawParameterValue(ids::reverbOn)->load() > 0.5f && std::abs(p->apvts.getRawParameterValue(ids::reverbMix)->load() - 0.3f) < 0.01f,
+          "REVERB ON with the mix at 0%: the mix comes up to 30%, so it can be heard");
+    reverbOn->setToggleState(false, sendNotification);
+    setValue(*p, ids::reverbMix, 0.6f);
+    reverbOn->setToggleState(true, sendNotification);
+    check(std::abs(p->apvts.getRawParameterValue(ids::reverbMix)->load() - 0.6f) < 0.01f, "a mix that is already up is left alone");
+    ToggleButton* samplesOn = nullptr;
+    for (auto* c : samples->getChildren())
+        if (auto* b = dynamic_cast<ToggleButton*>(c); b != nullptr && b->getTooltip().startsWith("SAMPLES ON"))
+            samplesOn = b;
+    setValue(*p, ids::sampleMix, 0.0f);
+    if (samplesOn != nullptr)
+        samplesOn->setToggleState(true, sendNotification);
+    check(samplesOn != nullptr && p->apvts.getRawParameterValue(ids::sampleOn)->load() > 0.5f
+              && std::abs(p->apvts.getRawParameterValue(ids::sampleMix)->load() - 0.75f) < 0.01f,
+          "SAMPLES ON with the mix at 0%: the mix comes up to 75%");
+
+    // the beat pattern looks off while its ACTION is Off
+    const auto allButtons = [&](auto test) {
+        bool all = true;
+        for (auto* c : pattern->getChildren())
+            if (dynamic_cast<PedalButton*>(c) != nullptr)
+                all = all && test(c->getAlpha());
+        return all;
+    };
+    check(pattern->isDimmed() && allButtons([](float a) { return a < 0.5f; }),
+          "the beat pattern starts with its ACTION at Off, its grid and buttons dimmed like a switched-off panel");
+    auto beatPattern = p->getDrumBeat().getPattern();
+    beatPattern.action = bitvibe::DrumAction::RestartSequence;
+    p->getDrumBeat().setPattern(beatPattern);
+    pattern->refresh();
+    check(!pattern->isDimmed() && allButtons([](float a) { return a > 0.99f; }), "with an ACTION chosen it lights up");
+    beatPattern.action = bitvibe::DrumAction::Off;
+    p->getDrumBeat().setPattern(beatPattern);
+    ed.reset();
+
+    // no sounds at all: the sample blend says so and shows the sounds folder, in SIMPLE too
+    const auto library = SampleBank::libraryFiles();
+    const File soundsFolder = SampleBank::userFolder();
+    const File empty = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_no_sounds");
+    empty.deleteRecursively();
+    empty.createDirectory();
+    SampleBank::setSoundsFolderOverride(empty);
+    SampleBank::setRepoSoundsEnabled(false);
+    {
+        PedalLookAndFeel lookAndFeel;
+        auto q = makeProcessor();
+        SamplePanel panel(*q, lookAndFeel);
+        panel.setAdvanced(false);
+        PedalButton* choose = nullptr;
+        PedalButton* folder = nullptr;
+        for (auto* c : panel.getChildren())
+            if (auto* b = dynamic_cast<PedalButton*>(c))
+            {
+                if (b->getText().startsWith("NO SOUNDS") || b->getText().startsWith("CHOOSE"))
+                    choose = b;
+                if (b->getText().contains("FOLDER"))
+                    folder = b;
+            }
+        check(panel.hasNoSounds() && choose != nullptr && choose->getText() == "NO SOUNDS YET", "with no sound files the panel says NO SOUNDS YET");
+        check(folder != nullptr && folder->isVisible() && folder->getText().startsWith("ADD SOUNDS"),
+              "and shows ADD SOUNDS: OPEN THE FOLDER, in SIMPLE too");
+        if (!library.isEmpty())
+        {
+            library[0].copyFileTo(empty.getChildFile(library[0].getFileName()));
+            panel.lookForNewSounds(true);
+            panel.refresh();
+            check(!panel.hasNoSounds() && q->getSampleBank().getNumSelected() == 1 && choose != nullptr
+                      && choose->getText().startsWith("CHOOSE SOUNDS (1 OF 1)"),
+                  "a sound added to the folder is found and picked (" + (choose != nullptr ? choose->getText() : String()) + ")");
+            check(folder != nullptr && !folder->isVisible(), "and the folder button goes back to ADVANCED");
+        }
+    }
+    SampleBank::setRepoSoundsEnabled(true);
+    SampleBank::setSoundsFolderOverride(soundsFolder);
+    empty.deleteRecursively();
+    makeProcessor()->getSampleBank().selectAll();
 }
 
 // The window can be resized: the content is scaled to the window, the shape stays, and the size is remembered.
@@ -2037,6 +2170,7 @@ int main(int argc, char** argv)
         if (auto writer = WavAudioFormat().createWriterFor(out, AudioFormatWriterOptions().withSampleRate(48000.0).withNumChannels(1).withBitsPerSample(16)))
             writer->writeFromAudioSampleBuffer(tone, 0, 4800);
     }
+    uisettings::screenAreaOverride() = Rectangle<int>(0, 0, 3840, 2160); // a big screen: the editor opens at its designed size
     uisettings::markHelpSeen(); // the quick-start help would otherwise cover the screenshots
     uisettings::setAdvancedRight(true); // and the screenshots show every control
     const File outDir(argv[1]);
@@ -2177,6 +2311,7 @@ int main(int argc, char** argv)
     testBeatDog();
     testPresetFiles();
     testBeatRouting();
+    testEasierStart();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

@@ -42,6 +42,8 @@ public:
     static void setSettingsFolderOverride(const juce::File& folder);
     // The same for the player's sounds folder (the sampler saves into it).
     static void setSoundsFolderOverride(const juce::File& folder);
+    // Tests: leave out the source tree's sounds folder that local builds also read, so the library can be empty.
+    static void setRepoSoundsEnabled(bool enabled);
     static juce::File settingsFolder();
     static juce::File settingsFile();
 

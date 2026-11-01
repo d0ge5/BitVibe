@@ -36,6 +36,14 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     onButton.setLookAndFeel(&laf);
     makePowerButton(onButton);
     onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleOn, onButton);
+    onButton.onClick = [this]
+    {
+        if (onButton.getToggleState() && rawValue(mixId()) <= 0.0f)
+        {
+            pedalstyle::raiseMixIfSilent(proc.apvts, mixId(), 0.75f);
+            rememberKnobs();
+        }
+    };
     onButton.setTooltip("SAMPLES ON: switches the random sounds on or off. Off, no sound is added to the sequence. Your list, banks and volumes "
                         "stay as they are. The light glows while the sequence plays, which is when the sounds come in.");
     addAndMakeVisible(onButton);
@@ -206,7 +214,8 @@ void SamplePanel::resized()
     mainButton.setBounds(318, 2, 60, 20);
     loopButton.setBounds(382, 2, 60, 20);
     // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
-    folderButton.setVisible(advanced && !editingLoop());
+    folderButton.setVisible((advanced || numAvailable == 0) && !editingLoop());
+    folderButton.setText(numAvailable == 0 ? "ADD SOUNDS: OPEN THE FOLDER" : "OPEN SOUNDS FOLDER");
     ownLevelsButton.setVisible(editingLoop());
     ownLevelsButton.setBounds(12, 80, 238, 24);
     bankBox.setBounds(12, 24, advanced ? 108 : 238, 24);
@@ -222,8 +231,26 @@ void SamplePanel::resized()
     previewButton.setBounds(228, 132, 100, 24);
 }
 
+void SamplePanel::lookForNewSounds(bool now)
+{
+    if (numAvailable > 0)
+        return;
+    const double nowMs = Time::getMillisecondCounterHiRes();
+    if (!now && nowMs - lastScanMs < 2000.0)
+        return;
+    lastScanMs = nowMs;
+    numAvailable = SampleBank::libraryFiles().size();
+    if (numAvailable == 0)
+        return;
+    if (bank.getNumSelected(SampleBank::kMain) == 0)
+        bank.selectAll(SampleBank::kMain);
+    shownButtonText = {};
+    resized();
+}
+
 void SamplePanel::refresh()
 {
+    lookForNewSounds();
     setPowerActive(onButton, proc.getEngine().isEffectSideActive());
     {
         const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
@@ -246,7 +273,7 @@ void SamplePanel::refresh()
     const bool sameAsMain = editingLoop() && !bank.loopHasOwnSounds();
     String text;
     if (numAvailable == 0)
-        text = "NO SOUNDS FOUND";
+        text = "NO SOUNDS YET";
     else if (sameAsMain)
         text = "CHOOSE SOUNDS (SAME AS MAIN)";
     else
@@ -324,6 +351,7 @@ void SamplePanel::openFolder()
     const auto folder = SampleBank::userFolder();
     folder.createDirectory();
     folder.startAsProcess();
+    lastScanMs = 0.0; // look again soon: the player is probably adding some
 }
 
 void SamplePanel::askBankName()
