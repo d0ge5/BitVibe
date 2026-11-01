@@ -4,6 +4,7 @@
 #include "BinaryData.h"
 #include "PluginEditor.h"
 #include "UiSettings.h"
+#include "dsp/Mapping.h"
 
 #include <array>
 #include <cmath>
@@ -209,11 +210,11 @@ void BeatDog::setBeatMask(int mask)
 void BeatDog::setSmoothness(float amount)
 {
     amount = jlimit(0.0f, 1.0f, amount);
-    if (amount == smoothness)
+    if (bitvibe::sameFloat(amount, smoothness))
         return;
     smoothness = amount;
     knobsChanged = true;
-    if (smoothKnob.getValue() != amount)
+    if (!bitvibe::sameFloat((float) smoothKnob.getValue(), amount))
         smoothKnob.setValue(amount, dontSendNotification);
     repaint();
 }
@@ -221,11 +222,11 @@ void BeatDog::setSmoothness(float amount)
 void BeatDog::setSway(float amount)
 {
     amount = jlimit(0.0f, 1.0f, amount);
-    if (amount == sway)
+    if (bitvibe::sameFloat(amount, sway))
         return;
     sway = amount;
     knobsChanged = true;
-    if (swayKnob.getValue() != amount)
+    if (!bitvibe::sameFloat((float) swayKnob.getValue(), amount))
         swayKnob.setValue(amount, dontSendNotification);
     repaint();
 }
@@ -328,7 +329,7 @@ float BeatDog::headAngle(const Motion& m) const
 const float* BeatDog::earsFor(float gap)
 {
     static_assert(kEarSteps == beatdog::kTableSize);
-    if (gap == earsGap && smoothness == earsSmooth)
+    if (bitvibe::sameFloat(gap, earsGap) && bitvibe::sameFloat(smoothness, earsSmooth))
         return ears.data();
     earsGap = gap;
     earsSmooth = smoothness;
@@ -435,7 +436,7 @@ void BeatDog::drawLiveFrame(const Motion& motion)
         V3 v = rest * kWeights[i][0];
         for (int e = 0; e < 2; ++e)
             if (kWeights[i][1 + e] > 0.0f)
-                v = v + (earBase[e] + earRot[(size_t) e](rest - earBase[e])) * kWeights[i][1 + e];
+                v = v + (earBase[(size_t) e] + earRot[(size_t) e](rest - earBase[(size_t) e])) * kWeights[i][1 + e];
         const V3 w = neck + headRot(v - neck) + shift;
         const V3 c { kView[0][0] * w.x + kView[0][1] * w.y + kView[0][2] * w.z + kView[0][3],
                      kView[1][0] * w.x + kView[1][1] * w.y + kView[1][2] * w.z + kView[1][3],
