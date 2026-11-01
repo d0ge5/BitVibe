@@ -25,149 +25,178 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     using namespace bitvibe;
     Layout layout;
     auto id = [](const char* s) { return ParameterID { s, 1 }; };
+    // The parameters reach the host in groups (shown as folders in most hosts' automation lists). A group is started
+    // or picked up again by name; what follows is added to it.
+    std::vector<std::unique_ptr<AudioProcessorParameterGroup>> groups;
+    AudioProcessorParameterGroup* group = nullptr;
+    auto inGroup = [&](const String& groupId, const String& name)
+    {
+        for (auto& g : groups)
+            if (g->getID() == groupId)
+            {
+                group = g.get();
+                return;
+            }
+        groups.push_back(std::make_unique<AudioProcessorParameterGroup>(groupId, name, " | "));
+        group = groups.back().get();
+    };
+    auto add = [&](auto parameter) { group->addChild(std::move(parameter)); };
 
     // ---- front panel -------------------------------------------------------------------
-    layout.add(std::make_unique<AudioParameterFloat>(
+    inGroup("pedal", "Pedal");
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::sampleRate), "Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([](float v, int) { return hzText(mapping::sampleRateHz(v)); })));
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::filter), "Filter", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([](float v, int) { return hzText(mapping::filterHz(v)); })));
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::bits), "Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([](float v, int) { return String(mapping::bitDepth(v), 1) + " bit"; })));
 
-    layout.add(std::make_unique<AudioParameterInt>(id(ids::stutter), "Stutter", 0, mapping::kStutterPositions - 1, 0));
-    layout.add(std::make_unique<AudioParameterChoice>(
-        id(ids::seqPlay), "Sequencer Play",
+    add(std::make_unique<AudioParameterInt>(id(ids::stutter), "Stutter", 0, mapping::kStutterPositions - 1, 0));
+    add(std::make_unique<AudioParameterChoice>(
+        id(ids::seqPlay), "Sequencer",
         StringArray { "Off", "Once", "Twice", "4 Times", "8 Times", "Continuous" }, 5));
-    layout.add(std::make_unique<AudioParameterChoice>(
-        id(ids::seqMult), "Sequencer Mult",
+    add(std::make_unique<AudioParameterChoice>(
+        id(ids::seqMult), "Seq Mult",
         StringArray { "x1", "x2", "x4", "x8", "x16", "x32", "x64", "x128" }, 1));
 
     // ---- second layer (Alt): six sequencer steps ----------------------------------------
+    inGroup("sequencer", "Sequencer");
     const Params defaults;
     for (int i = 0; i < kNumSteps; ++i)
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::step(i).toRawUTF8()), "Step " + String(i + 1),
+        add(std::make_unique<AudioParameterFloat>(id(ids::step(i).toRawUTF8()), "Step " + String(i + 1),
                                                          NormalisableRange<float>(0.0f, 1.0f),
                                                          defaults.steps[(size_t) i]));
 
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
+    add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
     // the step knobs each sequencer type was left with (stored in the preset slots; hidden from the host's automation)
     {
         static const char* typeNames[3] { "Pitch", "Filter", "Sample Rate" };
         for (int t = 0; t < 3; ++t)
             for (int i = 0; i < kNumSteps; ++i)
-                layout.add(std::make_unique<AudioParameterFloat>(id(ids::stepMem(t, i).toRawUTF8()),
+                add(std::make_unique<AudioParameterFloat>(id(ids::stepMem(t, i).toRawUTF8()),
                                                                  String(typeNames[t]) + " Step " + String(i + 1) + " Memory",
                                                                  NormalisableRange<float>(-1.0f, 1.0f), -1.0f,
                                                                  AudioParameterFloatAttributes().withAutomatable(false)));
     }
     // each step can control something else than the sequencer type (stored in the preset slots)
     for (int i = 0; i < kNumSteps; ++i)
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
+        add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
                                                           StringArray { "Sequencer Type", "Pitch", "Filter", "Sample Rate" }, 0));
 
     // ---- the loop section of the sequence (stored in the preset slots) ----------------------
     {
         const StringArray stepNames { "Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6" };
-        layout.add(std::make_unique<AudioParameterBool>(id(ids::loopOn), "Sequence Loop", false));
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopFrom), "Loop From", stepNames, 3));
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopTo), "Loop To", stepNames, 5));
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::loopRepeats), "Loop Repeats",
+        add(std::make_unique<AudioParameterBool>(id(ids::loopOn), "Sequence Loop", false));
+        add(std::make_unique<AudioParameterChoice>(id(ids::loopFrom), "Loop From", stepNames, 3));
+        add(std::make_unique<AudioParameterChoice>(id(ids::loopTo), "Loop To", stepNames, 5));
+        add(std::make_unique<AudioParameterChoice>(id(ids::loopRepeats), "Loop Repeats",
                                                           StringArray { "Forever", "2 Times", "3 Times", "4 Times", "8 Times", "16 Times" }, 0));
     }
 
     // ---- tempo, switches ---------------------------------------------------------------
+    inGroup("pedal", "Pedal");
     NormalisableRange<float> tempoRange(kMinTempoBpm, kMaxTempoKnobBpm, 0.1f);
     tempoRange.setSkewForCentre(110.0f);
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::tempo), "Tempo", tempoRange, 120.0f,
         withText([](float v, int) { return String(v, 1) + " BPM"; })));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::tempoSync), "Sync To Host", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::bypass), "Bypass", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::hold), "Stutter Hold", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::tempoSync), "Sync To Host", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::bypass), "Bypass", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::hold), "Stutter Hold", false));
 
     // ---- global settings ---------------------------------------------------------------
-    layout.add(std::make_unique<AudioParameterFloat>(
+    inGroup("inout", "Input and Output");
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::inputGain), "Input Gain", NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f,
         withText([](float v, int) { return String(v, 1) + " dB"; })));
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::outputGain), "Output Gain", NormalisableRange<float>(-24.0f, 12.0f, 0.1f), 0.0f,
         withText([](float v, int) { return String(v, 1) + " dB"; })));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::headroom), "Headroom",
+    add(std::make_unique<AudioParameterChoice>(id(ids::headroom), "Headroom",
                                                       StringArray { "Instrument", "Line" }, 0));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sensitivity), "Trigger Sensitivity",
+    add(std::make_unique<AudioParameterFloat>(id(ids::sensitivity), "Trigger Sensitivity",
                                                      NormalisableRange<float>(0.0f, 1.0f), 0.5f));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::stutterLen), "Stutter Length",
+    add(std::make_unique<AudioParameterChoice>(id(ids::stutterLen), "Stutter Length",
                                                       StringArray { "1/4 note", "1/8 note", "1/16 note" }, 1));
 
     // ---- expression morph --------------------------------------------------------------
+    inGroup("pedal", "Pedal");
     // 0 = toe-up knob set, 1 = toe-down knob set; only heard while Expression Morph is on.
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::expression), "Expression", NormalisableRange<float>(0.0f, 1.0f), 0.0f,
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::morph), "Expression Morph", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::morph), "Morph", false));
 
     // ---- blend and trigger-only effects --------------------------------------------------
+    inGroup("inout", "Input and Output");
     // Mix: 0 = only the clean input, 1 = only the effect. Both settings belong to the rig, not to a
     // preset slot (see the comment in the header).
-    layout.add(std::make_unique<AudioParameterFloat>(
-        id(ids::mix), "Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::mix), "Dry/Wet", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "% effect"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
     // only the sequenced sound leaves the plug-in (a rig setting, like the mix)
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::seqOnly), "Sequence Only", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::seqOnly), "Seq Only", false));
 
     // ---- reverb on the sequenced sound (rig settings too). Mix 0 = off. -------------------
+    inGroup("reverb", "Reverb");
     auto percent = AudioParameterFloatAttributes()
                        .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
                        .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); });
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbTone), "Reverb Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbMix), "Reverb Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterFloat>(id(ids::reverbTone), "Reverb Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::reverbMix), "Reverb Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::reverbLevel), "Reverb Level", NormalisableRange<float>(-30.0f, 6.0f, 0.1f), 0.0f,
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" }, 0));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbOn), "Reverb On", false)); // off, like the other effects
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbDecay), "Reverb Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" }, 0));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbOn), "Reverb On", false)); // off, like the other effects
+    add(std::make_unique<AudioParameterFloat>(id(ids::reverbDecay), "Reverb Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     // Each type of reverb has its own REVERSE tick (the tail swells up after the sound instead of dying away).
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseRoom), "Reverse Room Reverb", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseHall), "Reverse Hall Reverb", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseSpring), "Reverse Spring Reverb", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReversePlate), "Reverse Plate Reverb", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseShimmer), "Reverse Shimmer Reverb", false));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseGated), "Reverse Gated Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseRoom), "Reverse Room Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseHall), "Reverse Hall Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseSpring), "Reverse Spring Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReversePlate), "Reverse Plate Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseShimmer), "Reverse Shimmer Reverb", false));
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseGated), "Reverse Gated Reverb", false));
     // ---- distortion on the sequenced sound (rig settings): drive, tone and level like the classic green pedal ----
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::distType), "Distortion Type", StringArray { "Overdrive", "Fuzz" }, 0));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distDrive), "Distortion Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distTone), "Distortion Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::distLevel), "Distortion Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::distReverb), "Distort Reverb Too", false));
+    inGroup("distortion", "Distortion");
+    add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
+    add(std::make_unique<AudioParameterChoice>(id(ids::distType), "Distortion Type", StringArray { "Overdrive", "Fuzz" }, 0));
+    add(std::make_unique<AudioParameterFloat>(id(ids::distDrive), "Distortion Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::distTone), "Distortion Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::distLevel), "Distortion Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
+    add(std::make_unique<AudioParameterBool>(id(ids::distReverb), "Distort Reverb Too", false));
 
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
+    inGroup("samples", "Sample Blend");
+    add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
 
     // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain; and the sampler's own copy ----
     for (const bool sampler : { false, true })
     {
         const String prefix = sampler ? ids::smpEqPrefix : "eq", label = sampler ? "Sampler EQ" : "EQ";
         const bool automatable = !sampler;
-        layout.add(std::make_unique<AudioParameterBool>(ParameterID { prefix + "On", 1 }, label + " On", false,
+        if (sampler)
+            inGroup("sampler", "Sampler");
+        else
+            inGroup("eq", "EQ");
+        add(std::make_unique<AudioParameterBool>(ParameterID { prefix + "On", 1 }, label + " On", false,
                                                         AudioParameterBoolAttributes().withAutomatable(automatable)));
         auto dbText = AudioParameterFloatAttributes()
                           .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
                           .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })
                           .withAutomatable(automatable);
-        layout.add(std::make_unique<AudioParameterFloat>(ParameterID { prefix + "Output", 1 }, label + " Output",
+        add(std::make_unique<AudioParameterFloat>(ParameterID { prefix + "Output", 1 }, label + " Output",
                                                          NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
         NormalisableRange<float> freqRange(bitvibe::kEqMinHz, bitvibe::kEqMaxHz);
         freqRange.setSkewForCentre(1000.0f);
@@ -186,52 +215,54 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             const auto& d = eqDefaults[(size_t) b];
             const String n = label + " " + String(b + 1) + " ";
             auto band = [&](const char* what) { return ParameterID { prefix + String(b + 1) + what, 1 }; };
-            layout.add(std::make_unique<AudioParameterBool>(band("On"), n + "On", d.on, AudioParameterBoolAttributes().withAutomatable(automatable)));
-            layout.add(std::make_unique<AudioParameterChoice>(band("Type"), n + "Type", types, (int) d.type,
+            add(std::make_unique<AudioParameterBool>(band("On"), n + "On", d.on, AudioParameterBoolAttributes().withAutomatable(automatable)));
+            add(std::make_unique<AudioParameterChoice>(band("Type"), n + "Type", types, (int) d.type,
                                                               AudioParameterChoiceAttributes().withAutomatable(automatable)));
-            layout.add(std::make_unique<AudioParameterFloat>(band("Freq"), n + "Frequency", freqRange, d.freq, hzText));
-            layout.add(std::make_unique<AudioParameterFloat>(band("Gain"), n + "Gain",
+            add(std::make_unique<AudioParameterFloat>(band("Freq"), n + "Frequency", freqRange, d.freq, hzText));
+            add(std::make_unique<AudioParameterFloat>(band("Gain"), n + "Gain",
                                                              NormalisableRange<float>(-bitvibe::kEqMaxGainDb, bitvibe::kEqMaxGainDb, 0.1f), d.gainDb, dbText));
-            layout.add(std::make_unique<AudioParameterFloat>(band("Q"), n + "Q", qRange, d.q,
+            add(std::make_unique<AudioParameterFloat>(band("Q"), n + "Q", qRange, d.q,
                                                              AudioParameterFloatAttributes()
                                                                  .withStringFromValueFunction([](float v, int) { return String(v, 2); })
                                                                  .withAutomatable(automatable)));
         }
     }
     // ---- the sampler's effects (not automatable) ----
+    inGroup("sampler", "Sampler");
     {
         auto hidden = AudioParameterFloatAttributes().withAutomatable(false);
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpVolume), "Sampler Volume", NormalisableRange<float>(-24.0f, 0.0f, 0.1f), 0.0f,
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpVolume), "Sampler Volume", NormalisableRange<float>(-24.0f, 0.0f, 0.1f), 0.0f,
                                                          AudioParameterFloatAttributes().withAutomatable(false)
                                                              .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })));
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::smpDistType), "Sampler Distortion", StringArray { "Off", "Overdrive", "Fuzz" }, 0,
+        add(std::make_unique<AudioParameterChoice>(id(ids::smpDistType), "Sampler Distortion", StringArray { "Off", "Overdrive", "Fuzz" }, 0,
                                                           AudioParameterChoiceAttributes().withAutomatable(false)));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpDrive), "Sampler Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpTone), "Sampler Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpLevel), "Sampler Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, hidden));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpSample), "Sampler Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::smpBits), "Sampler Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpDrive), "Sampler Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpTone), "Sampler Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpLevel), "Sampler Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, hidden));
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpSample), "Sampler Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
+        add(std::make_unique<AudioParameterFloat>(id(ids::smpBits), "Sampler Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
     }
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
+    inGroup("samples", "Sample Blend");
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
     // The volume range of the sounds: MIX goes from the base volume (0) to the max volume (1). The bottom of a knob is silence.
     auto volumeText = AudioParameterFloatAttributes()
                           .withStringFromValueFunction([](float v, int) { return v <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("Off") : String(v, 1) + " dB"; })
                           .withValueFromStringFunction([](const String& t) { return t.trim().equalsIgnoreCase("off") ? bitvibe::Engine::kSampleOffDb : t.getFloatValue(); });
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleBase), "Sample Base Volume",
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleBase), "Sample Base Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleMax), "Sample Max Volume",
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleMax), "Sample Max Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
     // how long a random sound may play, in beats of the tempo (a rig setting like the mix)
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::sampleMaxBeats), "Sample Max Length",
+    add(std::make_unique<AudioParameterChoice>(id(ids::sampleMaxBeats), "Sample Max Beats",
                                                       StringArray { "Whole Sound", "1/4 Beat", "1/2 Beat", "1 Beat", "2 Beats", "4 Beats", "8 Beats" }, 0));
     // the loop section's own volumes (used when Loop Own Levels is on)
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::sampleLoopOwn), "Sample Loop Own Levels", false));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMix), "Sample Loop Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopChance), "Sample Loop Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopBase), "Sample Loop Base Volume",
+    add(std::make_unique<AudioParameterBool>(id(ids::sampleLoopOwn), "Sample Loop Own Levels", false));
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMix), "Sample Loop Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopChance), "Sample Loop Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopBase), "Sample Loop Base Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
-    layout.add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMax), "Sample Loop Max Volume",
+    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMax), "Sample Loop Max Volume",
                                                      NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
     {
         // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
@@ -248,42 +279,49 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         lowRange.setSkewForCentre(200.0f);
         NormalisableRange<float> highRange(200.0f, 20000.0f);
         highRange.setSkewForCentre(3000.0f);
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbLowCut), "Reverb Low Cut", lowRange, 20.0f,
+        inGroup("reverb", "Reverb");
+        add(std::make_unique<AudioParameterFloat>(id(ids::reverbLowCut), "Reverb Low Cut", lowRange, 20.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::reverbHighCut), "Reverb High Cut", highRange, 20000.0f,
+        add(std::make_unique<AudioParameterFloat>(id(ids::reverbHighCut), "Reverb High Cut", highRange, 20000.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
 
         // ---- the delay on the sequenced sound (rig settings): a note length of the tempo, echoes that ring on ----
-        layout.add(std::make_unique<AudioParameterBool>(id(ids::delayOn), "Delay On", false));
+        inGroup("delay", "Delay");
+        add(std::make_unique<AudioParameterBool>(id(ids::delayOn), "Delay On", false));
         StringArray times;
         for (const auto& d : bitvibe::kDelayDivisions)
             times.add(d.name);
-        layout.add(std::make_unique<AudioParameterChoice>(id(ids::delayTime), "Delay Time", times, bitvibe::kDefaultDelayDivision));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayMix), "Delay Mix", NormalisableRange<float>(0.0f, 1.0f), 0.4f, percent));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayDecay), "Delay Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
-        layout.add(std::make_unique<AudioParameterInt>(id(ids::delayRepeats), "Delay Repeats", 1, bitvibe::kDelayForever, 4,
+        add(std::make_unique<AudioParameterChoice>(id(ids::delayTime), "Delay Time", times, bitvibe::kDefaultDelayDivision));
+        add(std::make_unique<AudioParameterFloat>(id(ids::delayMix), "Delay Mix", NormalisableRange<float>(0.0f, 1.0f), 0.4f, percent));
+        add(std::make_unique<AudioParameterFloat>(id(ids::delayDecay), "Delay Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
+        add(std::make_unique<AudioParameterInt>(id(ids::delayRepeats), "Delay Repeats", 1, bitvibe::kDelayForever, 4,
                                                        AudioParameterIntAttributes().withStringFromValueFunction(
                                                            [](int v, int) { return v >= bitvibe::kDelayForever ? String("Forever") : String(v); })));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayLowCut), "Delay Low Cut", lowRange, 20.0f,
+        add(std::make_unique<AudioParameterFloat>(id(ids::delayLowCut), "Delay Low Cut", lowRange, 20.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
-        layout.add(std::make_unique<AudioParameterFloat>(id(ids::delayHighCut), "Delay High Cut", highRange, 20000.0f,
+        add(std::make_unique<AudioParameterFloat>(id(ids::delayHighCut), "Delay High Cut", highRange, 20000.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
     }
 
     // ---- drum beat (DRUMS tab) -----------------------------------------------------------
+    inGroup("drums", "Drum Beat");
     // Also rig settings, not stored in preset slots.
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
-    layout.add(std::make_unique<AudioParameterFloat>(
+    add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
+    add(std::make_unique<AudioParameterFloat>(
         id(ids::beatLevel), "Beat Level", NormalisableRange<float>(DrumBeat::kBeatOffDb, 6.0f, 0.1f), -6.0f,
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return v <= DrumBeat::kBeatOffDb ? String("Off") : String(v, 1) + " dB"; })
             .withValueFromStringFunction([](const String& t)
                                          { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
-    layout.add(std::make_unique<AudioParameterBool>(id(ids::patternLock), "Pattern Lock", false));
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
+    add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
+    inGroup("pattern", "Beat Pattern");
+    add(std::make_unique<AudioParameterBool>(id(ids::patternLock), "Pattern Lock", false));
+    inGroup("drums", "Drum Beat");
+    add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
     // Where the beat's sound goes (see BeatRoute.h). Also a rig setting.
-    layout.add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
+    add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
+    for (auto& g : groups)
+        layout.add(std::move(g));
     return layout;
 }
 

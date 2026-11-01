@@ -185,13 +185,14 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                          "A click or a double-click picks everything again.");
     addAndMakeVisible(*waveform);
     playButton.onClick = [this] { play(); };
+    loopButton.toggle = true;
     loopButton.onClick = [this]
     {
         setLooping(!loopButton.lit);
         if (loopButton.lit && !previewing)
             play();
     };
-    loopButton.setTooltip("LOOP: play the picked part over and over, so you can turn the knobs and the EQ while you listen. "
+    loopButton.setTooltip("REPEAT: play the picked part over and over, so you can turn the knobs and the EQ while you listen. "
                           "Press again (or STOP) to stop looping.");
     stopButton.onClick = [this] { stopPlaying(); };
     allButton.onClick = [this] { setSelection(0, (int64) recL.size()); };
@@ -215,7 +216,9 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::smpDistType)))
         distBox.addItemList(choice->choices, 1);
     distBox.setLookAndFeel(&laf);
-    distBox.setTooltip("DISTORTION: none, the overdrive or the fuzz from the right-hand column, on this sound.");
+    distBox.setTooltip("DISTORTION: none, the overdrive or the fuzz from the right-hand column, on this sound. The sound goes through "
+                       "the distortion, the sample rate, the bits and the EQ (right) in that order; then it is levelled, and VOLUME sets "
+                       "how loud it sits next to your other sounds.");
     distAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::smpDistType, distBox);
     addAndMakeVisible(distBox);
     const std::array<std::tuple<KnobSlider*, std::unique_ptr<APVTS::SliderAttachment>*, const char*, const char*>, 6> knobs { {
@@ -223,7 +226,7 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         { &driveSlider, &driveAtt, ids::smpDrive, "DRIVE: how hard the distortion (SUSTAIN for the fuzz) works." },
         { &toneSlider, &toneAtt, ids::smpTone, "TONE: darker (left) or brighter (right) distortion." },
         { &levelSlider, &levelAtt, ids::smpLevel, "LEVEL: the distortion's output, before the sound is levelled." },
-        { &rateSlider, &rateAtt, ids::smpSample, "SAMPLE RATE: like the pedal's SAMPLE knob. Fully right = untouched, left = grittier and lower." },
+        { &rateSlider, &rateAtt, ids::smpSample, "SAMPLE RATE: like the pedal's RATE knob. Fully right = untouched, left = grittier and lower." },
         { &bitsSlider, &bitsAtt, ids::smpBits, "BITS: like the pedal's BITS knob. Fully right = untouched (24 bit), left = fewer bits, more crush." },
     } };
     for (const auto& [slider, att, id, tip] : knobs)
@@ -399,17 +402,13 @@ void SamplerPage::paint(Graphics& g)
     for (size_t i = 0; i < std::size(labels); ++i)
     {
         const bool dim = i < 3 && !distOn;
-        g.setColour(ink.withAlpha(dim ? 0.4f : 1.0f));
+        g.setColour(inkLabel.withAlpha(dim ? 0.4f : 1.0f));
         g.setFont(bold(10.5f));
         g.drawText(labels[i].name, Rectangle<int>(100, 13).withCentre(labels[i].at), Justification::centred);
         g.setColour(inkDim.withAlpha(dim ? 0.4f : 1.0f));
         g.setFont(plain(10.0f));
         g.drawText(labels[i].value, Rectangle<int>(100, 12).withCentre(labels[i].at.translated(0, 13)), Justification::centred);
     }
-    g.setColour(inkDim);
-    g.setFont(plain(10.0f));
-    g.drawFittedText("Order: distortion, sample rate, bits, EQ (right), then the sound is levelled and VOLUME sets how loud it sits next to your other sounds.",
-                     Rectangle<int>(kShapeBox.getX() + 200, kShapeBox.getY() + 122, 140, 64), Justification::topLeft, 5);
 
     // 4 SAVE
     drawBox(g, kSaveBox, 4, "SAVE");
@@ -428,7 +427,7 @@ void SamplerPage::paint(Graphics& g)
     g.setColour(inkDim);
     g.setFont(plain(11.5f));
     g.drawFittedText("1  Start the program you want to sample and let it play, press REFRESH, pick it and press RECORD. Press it again to stop.\n"
-                     "2  Drag across the waveform to pick the part you want. PLAY lets you hear it as it will be saved; LOOP keeps it going.\n"
+                     "2  Drag across the waveform to pick the part you want. PLAY lets you hear it as it will be saved; REPEAT keeps it going.\n"
                      "3  Shape it: distortion, sample rate and bits, the EQ and the volume. PLAY again to hear the change.\n"
                      "4  Name it, choose a bank if you like, and SAVE SOUND. It is in CHOOSE SOUNDS, in the Sampled folder, straight away.\n"
                      "Only record what you have the right to use.",

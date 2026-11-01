@@ -113,7 +113,8 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                          "With the base left at Off, fully left means no sounds. Remembered next time.");
     baseSlider.setTooltip("BASE VOLUME: how loud the sounds are with MIX fully left. Fully left = Off. Let go of the knob to hear a sound at this volume.");
     maxSlider.setTooltip("MAX VOLUME: how loud the sounds are with MIX fully right. Let go of the knob to hear a sound at this volume.");
-    previewButton.setTooltip("PREVIEW: plays one of the sounds you picked at the BASE volume, then the same sound at the MAX volume, so you can set both by ear.");
+    previewButton.setTooltip("PREVIEW: plays one of the sounds you picked at the BASE volume, then the same sound at the MAX volume, so you can set both by ear. "
+                             "Letting go of the BASE or MAX knob plays a sound at that volume too.");
     chanceSlider.setTooltip("SAMPLE CHANCE: how often a step gets a sound. 100% = every step, lower = now and then. Remembered next time.");
 
     numAvailable = SampleBank::libraryFiles().size();
@@ -507,21 +508,11 @@ void SamplePanel::paint(Graphics& g)
                               { "BASE", volumeText(rawValue(baseId())), 62, 180 },
                               { "MAX", volumeText(rawValue(maxId())), 154, 180 } };
     for (const auto& e : entries)
-    {
-        g.setColour(ink.withMultipliedAlpha(alpha));
-        g.setFont(bold(11.0f));
-        g.drawText(e.name, Rectangle<int>(68, 14).withCentre({ e.cx, e.y }), Justification::centred);
-        g.setColour(inkDim.withMultipliedAlpha(alpha));
-        g.setFont(plain(10.5f));
-        g.drawText(e.value, Rectangle<int>(68, 13).withCentre({ e.cx, e.y + 14 }), Justification::centred);
-    }
+        drawControlLabel(g, e.cx, e.y - 7, e.name, e.value, alpha);
 
     if (!advanced)
         return; // SIMPLE: no volume range row
     g.setColour(inkDim.withMultipliedAlpha(alpha));
     g.setFont(bold(10.0f));
-    g.drawText("VOLUME RANGE: THE MIX KNOB MOVES BETWEEN BASE AND MAX", 14, 116, 428, 12, Justification::left);
-    g.setFont(plain(10.0f));
-    g.drawFittedText("Plays a picked sound at the base volume, then at the max volume. Letting go of a knob plays it too.",
-                     Rectangle<int>(228, 162, 214, 36), Justification::topLeft, 3);
+    g.drawText("VOLUME RANGE", 14, 116, 428, 12, Justification::left);
 }

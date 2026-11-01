@@ -11,6 +11,7 @@ namespace pedalstyle
 {
 inline const juce::Colour ink { 0xfff2f0e6 };    // engraved text
 inline const juce::Colour inkDim { 0xff9a988f };
+inline const juce::Colour inkLabel { 0xffc4c2b9 }; // a control's name: quieter than a panel's title, louder than its value
 inline const juce::Colour accent { 0xffffa31a }; // Alt layer / lit LEDs
 inline const juce::Colour red { 0xffff3b30 };
 inline const juce::Colour panel { 0xff17171a };
@@ -22,6 +23,10 @@ inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(h, juce::
 // number in a small badge at (x, y) and the title after it (y is the top of the title row).
 void drawPanelTitle(juce::Graphics&, int x, int y, int number, const juce::String& title);
 inline constexpr int kPanelTitleX = 64; // where a numbered title starts, right of the power button
+// A panel's title without a number, in the same style (the loudest text in a panel), and a control's name and value
+// under it (centred on cx, the name's top at y).
+void drawSectionTitle(juce::Graphics&, int x, int y, const juce::String& title);
+void drawControlLabel(juce::Graphics&, int cx, int y, const juce::String& name, const juce::String& value, float alpha = 1.0f);
 
 // A panel's power button: a ToggleButton with this property set is drawn as a pill with a light (lit when on, glowing
 // while the property "active" is set, i.e. while the effect is acting on the sound) and ON / OFF.
@@ -37,6 +42,14 @@ inline void setPowerActive(juce::ToggleButton& b, bool active)
     }
 }
 inline constexpr float kOffAlpha = 0.4f; // a switched-off panel's controls
+// The light on a switch (centre c): orange when on, dark when off.
+inline void drawSwitchLight(juce::Graphics& g, juce::Point<float> c, bool on)
+{
+    g.setColour(on ? accent : juce::Colour(0xff111113));
+    g.fillEllipse(c.x - 3.0f, c.y - 3.0f, 6.0f, 6.0f);
+    g.setColour(on ? accent.brighter(0.4f) : juce::Colour(0xff4a4a50));
+    g.drawEllipse(c.x - 3.0f, c.y - 3.0f, 6.0f, 6.0f, 0.8f);
+}
 // Switching an effect on with its mix all the way down would change nothing you can hear, so the player's click also
 // brings the mix up to a level that can be heard. (Only a click does this: a host or a project keeps its own values.)
 inline void raiseMixIfSilent(juce::AudioProcessorValueTreeState& apvts, const juce::String& mixId, float audible)
@@ -89,14 +102,16 @@ private:
     bool down = false;
 };
 
-// Small rectangular push button (ALT, sequencer type).
+// Small rectangular push button (ALT, sequencer type). A button that switches something on and off (toggle = true)
+// has a light on its left, so it can be told from a button that does something once; arrow = true draws a small
+// down arrow (a button that opens a menu).
 class PedalButton : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit PedalButton(juce::String label) : text(std::move(label)) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
 
     std::function<void()> onClick;
-    bool lit = false;
+    bool lit = false, toggle = false, arrow = false;
     void setText(juce::String newText)
     {
         text = std::move(newText);
@@ -111,6 +126,41 @@ public:
 private:
     juce::String text;
     bool pressed = false;
+};
+
+// The big tempo read-out: drag it up or down to change the tempo, double-click it to type one.
+class TempoReadout : public juce::Label
+{
+public:
+    std::function<void()> onDragStart, onDragEnd;
+    std::function<void(float pixelsUp)> onDrag;
+
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        juce::Label::mouseDown(e);
+        dragging = false;
+    }
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if (!dragging && std::abs(e.getDistanceFromDragStartY()) > 2)
+        {
+            dragging = true;
+            if (onDragStart)
+                onDragStart();
+        }
+        if (dragging && onDrag)
+            onDrag((float) -e.getDistanceFromDragStartY());
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        juce::Label::mouseUp(e);
+        if (dragging && onDragEnd)
+            onDragEnd();
+        dragging = false;
+    }
+
+private:
+    bool dragging = false;
 };
 
 // A rotary knob that repaints when it is grabbed or let go, so the look-and-feel can draw it bigger while it is held.
@@ -226,8 +276,9 @@ public:
     // Shows the DRUMS tab (true) or the pedal (false).
     void showDrums(bool on);
 
-    // The right-hand column in SIMPLE mode (the controls that matter most) or ADVANCED mode (every control).
-    // Settings that SIMPLE hides keep working; they are only out of the way. The choice is remembered.
+    // SIMPLE mode (the controls that matter most, on both sides) or ADVANCED mode (every control). Settings that SIMPLE
+    // hides keep working; they are only out of the way, and the panels say when one of them is on. The window is
+    // shorter in SIMPLE (BEAT DOG moves into the room left at the bottom of the right-hand column). Remembered.
     void setRightMode(bool advanced);
     bool isAdvancedRight() const { return advancedRight; }
 
@@ -266,6 +317,12 @@ private:
     juce::Rectangle<int> reverbArea() const;
     int eqTop() const;
     int columnBottom() const;
+    // The panel under the pedal (input, output and, in ADVANCED, the stutter and loop settings), BEAT DOG (under the
+    // pedal in ADVANCED, at the bottom of the right-hand column in SIMPLE), and the height of the page for the mode.
+    int globalTop() const;
+    int globalHeight() const;
+    juce::Rectangle<int> beatDogArea() const;
+    int pedalPageHeight() const;
     void timerCallback() override;
     void updateLiveState();
     void buildBackground();
@@ -286,8 +343,9 @@ private:
     StepStrip stepStrip;
     std::unique_ptr<BeatDog> beatDog; // the headbanging husky under the pedal
     PedalButton helpButton { "? HELP" };
-    PedalButton exportButton { "EXPORT" }, importButton { "IMPORT" };
+    PedalButton presetMenuButton { "" }; // the arrow in the preset name box: save, rename, export, import
     std::unique_ptr<juce::FileChooser> presetChooser;
+    void showPresetMenu();
     void exportPresetFile();
     void importPresetFile();
     PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
@@ -318,9 +376,9 @@ private:
     double flashStepUntil = 0.0;
 
     // global panel
-    KnobSlider tempoSlider, inSlider, mixSlider, outSlider, trigSlider;
-    std::unique_ptr<APVTS::SliderAttachment> tempoAtt, inAtt, mixAtt, outAtt, trigAtt;
-    juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" }, fxTrigButton { "FX ONLY ON TRIGGERS" };
+    KnobSlider inSlider, mixSlider, outSlider, trigSlider;
+    std::unique_ptr<APVTS::SliderAttachment> inAtt, mixAtt, outAtt, trigAtt;
+    juce::ToggleButton syncButton { "SYNC" }, holdButton { "STUTTER HOLD" }, fxTrigButton { "FX ON TRIGGERS" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ToggleButton seqOnlyButton { "SEQ ONLY" };
     std::unique_ptr<APVTS::ButtonAttachment> seqOnlyAtt;
@@ -363,21 +421,22 @@ private:
     // footswitches and buttons
     FootSwitch bypassSwitch, tapSwitch;
     PedalButton altButton { "ALT" };
-    PedalButton typePitchButton { "PITCH" }, typeFilterButton { "FILTER" }, typeRateButton { "SAMPLE" }; // what the sequencer changes
+    PedalButton typePitchButton { "PITCH" }, typeFilterButton { "FILTER" }, typeRateButton { "RATE" }; // what the sequencer changes
     void showSeqType();
 
     // preset bar and expression morph strip (the panel above the pedal face)
     juce::Label presetLabel;
     PedalButton prevButton { "<" }, nextButton { ">" }, saveButton { "SAVE" };
-    PedalButton setUpButton { "SET UP" }, setDownButton { "SET DOWN" };
+    PedalButton setUpButton { "STORE A" }, setDownButton { "STORE B" }; // the two sounds the morph goes between
     juce::Slider expressionSlider;
     std::unique_ptr<APVTS::SliderAttachment> expressionAtt;
     juce::ToggleButton morphButton { "MORPH" };
     std::unique_ptr<APVTS::ButtonAttachment> morphAtt;
 
     juce::ParameterAttachment bypassParam, holdParam, typeParam, tempoParam;
-    juce::Label tempoLabel; // the big BPM read-out: click it to type a tempo
+    TempoReadout tempoLabel; // the big BPM read-out: drag it to change the tempo, double-click it to type one
     bool tempoEditable = true;
+    float dragStartBpm = 120.0f;
 
     int shownProgram = -1;
     juce::String shownName;

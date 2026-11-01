@@ -126,6 +126,7 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     sheet = ImageCache::getFromMemory(BinaryData::beat_dog_jpg, BinaryData::beat_dog_jpgSize);
 
     liveButton = std::make_unique<PedalButton>("LIVE 3D"); // lit while the live version is on
+    liveButton->toggle = true;
     auto* button = liveButton.get();
     button->setTooltip("LIVE 3D: draw the dog in real time from its 3D mesh instead of the pre-rendered frames: smoother, at the "
                        "frame rate chosen below, and uses a little more CPU. Off: the pre-rendered animation (the lightest).");
@@ -537,9 +538,7 @@ void BeatDog::paint(Graphics& g)
     g.fillRoundedRectangle(bounds, 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(inkDim);
-    g.setFont(bold(10.0f));
-    g.drawText("BEAT DOG", 14, 4, 100, 12, Justification::left);
+    drawSectionTitle(g, 14, 4, "BEAT DOG");
 
     // the screen: the live frame, or the pre-rendered frame for this moment, swayed as a picture
     const auto screen = screenArea();
@@ -565,21 +564,24 @@ void BeatDog::paint(Graphics& g)
     g.setColour(Colour(0xff1f3a26));
     g.drawRoundedRectangle(screen.toFloat().expanded(3.0f), 6.0f, 1.5f);
 
-    // the tempo, in the screen's green
+    // the beat of the bar (the tempo is on the pedal)
     const auto mono = [](float size) { return Font(FontOptions(Font::getDefaultMonospacedFontName(), size, Font::bold)); };
-    g.setColour(kGreen);
-    g.setFont(mono(30.0f));
-    g.drawText(String(tempoTenths / 10.0, 1), 24, 26, screen.getX() - 34, 36, Justification::centredLeft);
-    g.setColour(kGreen.withAlpha(0.6f));
-    g.setFont(mono(12.0f));
-    g.drawText("BPM", 24, 60, 60, 14, Justification::centredLeft);
+    g.setColour(inkDim);
+    g.setFont(bold(9.5f));
+    g.drawText("BEAT", 24, 24, 60, 12, Justification::centredLeft);
+    g.setColour(accent);
+    g.setFont(mono(34.0f));
+    g.drawText(String(beat + 1), 22, 34, 30, 38, Justification::centredLeft);
+    g.setColour(inkDim);
+    g.setFont(mono(14.0f));
+    g.drawText("/ " + String(beatsInBar()), 50, 48, 50, 18, Justification::centredLeft);
 
     // the knobs' names and settings
     for (const auto* knob : { &smoothKnob, &swayKnob })
     {
         const bool on = knob->isEnabled();
         const auto column = Rectangle<int>(64, 11).withCentre({ knob->getBounds().getCentreX(), knob->getBottom() + 8 });
-        g.setColour(on ? ink : inkDim.withAlpha(0.5f));
+        g.setColour(on ? inkLabel : inkDim.withAlpha(0.5f));
         g.setFont(bold(10.0f));
         g.drawText(knob == &smoothKnob ? "SMOOTH" : "SWAY", column, Justification::centred);
         g.setColour(on ? inkDim : inkDim.withAlpha(0.4f));
@@ -588,7 +590,7 @@ void BeatDog::paint(Graphics& g)
         g.drawText(on ? value : "LIVE 3D", column.translated(0, 11), Justification::centred);
     }
 
-    // the beats the head hits: lit green when picked, filled while playing
+    // the beats the head hits: lit when picked, filled while playing
     g.setColour(inkDim);
     g.setFont(bold(9.0f));
     g.drawText("HEADBANG ON", beatButton(0).getX(), 24, 140, 12, Justification::left);
@@ -596,11 +598,11 @@ void BeatDog::paint(Graphics& g)
     {
         const auto r = beatButton(b).toFloat();
         const bool picked = ((beatMask >> b) & 1) != 0, playing = b == beat;
-        g.setColour(playing ? (picked ? kGreen : Colour(0xff2a3a2e)) : Colour(0xff0b0f0c));
+        g.setColour(playing ? (picked ? accent : Colour(0xff3a3a40)) : Colour(0xff111113));
         g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(picked ? kGreen.withAlpha(playing ? 1.0f : 0.8f) : Colour(0xff2d3830));
+        g.setColour(picked ? accent.withAlpha(playing ? 1.0f : 0.8f) : Colour(0xff34343a));
         g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.2f);
-        g.setColour(playing && picked ? Colours::black : (picked ? kGreen : Colour(0xff4a5a4e)));
+        g.setColour(playing && picked ? Colours::black : (picked ? accent : Colour(0xff5a5a62)));
         g.setFont(mono(12.0f));
         g.drawText(String(b + 1), r, Justification::centred);
     }

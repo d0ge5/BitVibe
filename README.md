@@ -34,7 +34,7 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random) and a hold to freeze it.
 - **6-step sequencer** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole sequence or
-  for each step on its own. Each step can be skipped or muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, tapped or typed in). A **loop section**
+  for each step on its own. Each step can be skipped or muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
@@ -56,10 +56,11 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
   or save it as a WAV.
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
-- **SIMPLE or ADVANCED** view, so you only see what you need.
+- **SIMPLE or ADVANCED** view, so you only see what you need (SIMPLE also makes the window shorter).
 
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
-distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control
+distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control,
+host automation sorted into groups (Pedal, Sequencer, Input and Output, each effect)
 and a quick-start help page, and **BEAT DOG**, a wireframe husky that headbangs in time. No reported latency, and
 light on CPU.
 
@@ -103,7 +104,9 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 Click **? HELP** at the top for a one-page quick start (it opens by itself the first time). Hover over any
 control for a short description, double-click a knob to reset it, and look at the bubble that shows its value
 while you turn it. You can drag the bottom-right corner to resize the window; it remembers the size, and opens
-smaller when that size would not fit on your screen.
+smaller when that size would not fit on your screen. **SIMPLE / ADVANCED** (top right) shows the controls that matter
+most or all of them, on both sides; what SIMPLE hides keeps working, and the panels say when a hidden setting is on.
+Buttons with a small light on the left switch something on and off; the others do something once.
 
 ### The pedal
 
@@ -111,7 +114,7 @@ smaller when that size would not fit on your screen.
 
 | Knob | What it does | Alt layer |
 | --- | --- | --- |
-| **Sample** | Sample-rate reduction (fully clockwise = off) | Step 1 |
+| **Rate** | Sample-rate reduction (fully clockwise = off) | Step 1 |
 | **Filter** | Ladder low-pass (fully clockwise = off) | Step 2 |
 | **Bits** | Bit depth, 24 to 1 bit (fully clockwise = off) | Step 3 |
 | **Stutter** | Off, then three speeds with 1 to 16 repeats, then random | Step 4 |
@@ -119,35 +122,43 @@ smaller when that size would not fit on your screen.
 | **Seq Mult** | Sequencer speed as a multiple of the tempo | Step 6 |
 
 - **ALT** swaps the knobs for the six sequencer steps. A step at minimum is skipped, at maximum muted.
-- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **SAMPLE** rate. On the ALT layer each step
-  has **P**, **F** and **S** tags next to its name: with none lit it follows those buttons; click one to make that step
+- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **RATE** (the sample rate). On the ALT layer each step
+  has **P**, **F** and **R** tags next to its name: with none lit it follows those buttons; click one to make that step
   change pitch, the filter or the sample rate on its own (click it again to follow the buttons). Steps are drawn in
   the colour of what they control: blue for pitch, green for filter, purple for sample rate. It is saved with the preset.
   **Each type remembers its own step knobs**: set the six steps for pitch, press FILTER and set them for the filter, and
   pressing PITCH again brings the pitch steps back exactly as you left them (a type you have not used yet starts from
-  the knobs as they are). Steps with a P / F / S choice of their own keep their knob through the switch. The
+  the knobs as they are). Steps with a P / F / R choice of their own keep their knob through the switch. The
   remembered knobs are saved with the preset and travel in exported preset files.
 - **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step, the playing step
   outlined, the loop section framed. Click a step to see its knob, **drag across steps** to make them the loop
   section, and **right-click** a step to set what it controls or to loop it alone.
-- **TAP** sets the tempo (or click the big BPM number and type one). Holding it, or the HOLD button, freezes the stutter.
-- **BYPASS** switches the effect off. **TRIGGER** sets how easily picked notes start the stutter and sequencer.
-- **LOOP** (under the global knobs) repeats part of the sequence. Choose its first and last step and how often it
+- **TEMPO** is the big number in the middle: drag it up or down, double-click it to type a BPM, or tap **TAP**.
+  **SYNC** under it follows your DAW's tempo instead. Holding TAP freezes the stutter for as long as you hold it.
+- **BYPASS** switches the effect off.
+
+Under the pedal, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the stutter and
+sequencer) with a meter of your playing against the trigger line, which lights up when a pick is caught, and
+**HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT**, **SEQ ONLY** and,
+in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, **STUTTER HOLD** (freezes the stutter until you
+switch it off) and the sequence loop:
+
+- **SEQUENCE LOOP** repeats part of the sequence. Choose its first and last step and how often it
   plays (2 to 16 times, or forever), or drag across the step strip; the looped steps are framed on it. Each time the sequence
   restarts (a hard pick or the beat pattern), it plays from step 1 again, so the steps before the loop come back
   once and then the loop takes over. For example, loop steps 4 to 6 forever on a filter sequence to keep the
   sweep going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
-- **MIX** blends your clean input with the effect. **FX ONLY ON TRIGGERS** applies the crush and filter only
+- **DRY/WET** blends your clean input with the effect. **FX ON TRIGGERS** applies the crush and filter only
   while a stutter or sequence plays, so your playing stays clean in between.
-- **SEQ ONLY** (in the middle of the pedal, under the tempo) cuts your clean signal so only the sequenced sound
+- **SEQ ONLY** cuts your clean signal so only the sequenced sound
   leaves the plug-in: it is silent between sequences, the reverb still rings out, and DRY/WET does nothing while it
   is on. Handy on a parallel track or with the clean guitar on another channel.
 
 It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean signal.
 
-**BEAT DOG** (the pane under the pedal) is a green wireframe husky that headbangs in time: its head nods forward on
-the beat and pulls back again, ears flopping, with the tempo and the beat of the bar beside it. It follows
-the TEMPO knob, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
+**BEAT DOG** (under the pedal in ADVANCED, at the bottom of the right-hand side in SIMPLE) is a green wireframe husky
+that headbangs in time: its head nods forward on the beat and pulls back again, ears flopping, with the beat of the
+bar beside it. It follows the tempo, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
 animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
 `Assets/beat_dog.jpg`), so it costs one small image draw per frame. Switch on **LIVE 3D** to draw the head in real
 time from its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15
@@ -214,11 +225,11 @@ of what another program on your computer is playing. **BACK TO THE PEDAL** close
    This uses Windows' per-program recording, so it needs Windows 10 version 2004 or Windows 11; on macOS the page
    opens but cannot record yet.
 2. **Pick the part:** drag across the waveform; drag the white edges to adjust; **ZOOM IN** to set them exactly.
-   **PLAY** plays the picked part as it will be saved, and changes to the effects are heard while it plays. **LOOP**
+   **PLAY** plays the picked part as it will be saved, and changes to the effects are heard while it plays. **REPEAT**
    keeps playing it over and over (also while you move its edges), so you can tweak the settings as you listen.
 3. **Shape it:** **DISTORTION** (off, the overdrive or the fuzz from the right-hand column, with DRIVE, TONE and
    DIST LEVEL), **SAMPLE RATE** and **BITS** (the pedal's own crush), an **EQ** (the same panel as the main EQ, with
-   settings of its own, showing the spectrum of what PLAY or LOOP is playing before and after it) and **VOLUME**. The sound is levelled like every other sound, and VOLUME then says how loud it
+   settings of its own, showing the spectrum of what PLAY or REPEAT is playing before and after it) and **VOLUME**. The sound is levelled like every other sound, and VOLUME then says how loud it
    sits next to them (0 dB = as loud as the others, -6 dB = half as loud); BitVibe keeps that level when it plays it.
 4. **Save:** give it a name, choose a bank to add it to if you like, and **SAVE SOUND**. It is saved as a WAV in the
    sounds folder's **Sampled** subfolder and shows up in CHOOSE SOUNDS straight away. The sample blend uses up to 20
@@ -231,11 +242,12 @@ Only record what you have the right to use.
 - The bar at the top holds **16 preset slots** (they also appear as programs in your DAW). `<` and `>` step
   through them and double-clicking the name renames one. Slots 1 to 12 are factory sounds, 13 to 16 are blank.
   Changes are written into a slot only when you press **SAVE**.
-- **EXPORT** saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
+- The **arrow in the name box** opens the preset menu: save, rename, **Export to a file** and **Import from a file**.
+  Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
-  audio files, and not your own levels, trigger setting or sync. **IMPORT** loads such a file into the slot
+  audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Expression morph:** press **SET UP** with one sound on the knobs and **SET DOWN** with another, switch on
+- **Expression morph:** press **STORE A** with one sound on the knobs and **STORE B** with another, switch on
   **MORPH**, and the **Expression** slider (or your DAW automation or a MIDI pedal) blends between them.
 
 ## Building from source

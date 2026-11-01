@@ -428,16 +428,10 @@ void EqPanel::paint(Graphics& g)
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(inkDim);
-    g.setFont(bold(10.0f));
     if (referenceTools)
         drawPanelTitle(g, kPanelTitleX, 4, 5, "EQ");
     else
-    {
-        g.setColour(inkDim);
-        g.setFont(bold(10.0f));
-        g.drawText("EQ", kPanelTitleX, 5, 100, 12, Justification::left);
-    }
+        drawSectionTitle(g, kPanelTitleX, 4, "EQ");
     g.setColour(inkDim);
     g.setFont(plain(10.0f));
     g.drawText(clipStatus, 369, 4, 80, 14, Justification::left);
@@ -541,7 +535,7 @@ void EqPanel::paint(Graphics& g)
     for (size_t i = 0; i < entries.size(); ++i)
     {
         const int x = 52 + (int) i * 112;
-        g.setColour(ink);
+        g.setColour(inkLabel);
         g.setFont(bold(10.5f));
         g.drawText(entries[i].first, x, kKnobY + 4, 64, 13, Justification::left);
         g.setColour(inkDim);

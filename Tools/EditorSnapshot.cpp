@@ -604,6 +604,80 @@ void testSoundBanks()
     }
 }
 
+// The page's layout: one tempo control (drag or type), SIMPLE hides the stutter and loop settings under the pedal and
+// says when one is on, a shorter window in SIMPLE with BEAT DOG in the right-hand column, and the host sees the
+// parameters in groups, named as on the pedal.
+void testLayout()
+{
+    std::puts("layout");
+    auto p = makeProcessor();
+    {
+        // the host's groups
+        StringArray groups;
+        for (auto* g : p->getParameterTree().getSubgroups(false))
+            groups.add(g->getName());
+        check(groups.size() >= 10 && groups.contains("Pedal") && groups.contains("Input and Output") && groups.contains("Sample Blend")
+                  && groups.contains("Sampler"),
+              "the host sees the parameters in groups (" + groups.joinIntoString(", ") + ")");
+        int outside = 0;
+        for (auto* node : p->getParameterTree())
+            outside += node->getParameter() != nullptr ? 1 : 0;
+        check(outside == 0, "and none outside a group");
+        check(p->apvts.getParameter(ids::mix)->getName(64) == "Dry/Wet" && p->apvts.getParameter(ids::seqPlay)->getName(64) == "Sequencer"
+                  && p->apvts.getParameter(ids::sampleMaxBeats)->getName(64) == "Sample Max Beats",
+              "named as on the pedal (Dry/Wet, Sequencer, Sample Max Beats)");
+    }
+
+    uisettings::setAdvancedRight(true);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    const int advancedHeight = ed->getHeight();
+    TempoReadout* tempo = nullptr;
+    BeatDog* dog = nullptr;
+    Component* loopBox = nullptr;
+    int tempoKnobs = 0;
+    for (auto* c : ed->getContent().getChildren())
+    {
+        if (tempo == nullptr)
+            tempo = dynamic_cast<TempoReadout*>(c);
+        if (dog == nullptr)
+            dog = dynamic_cast<BeatDog*>(c);
+        if (auto* box = dynamic_cast<ComboBox*>(c); box != nullptr && box->getTooltip().startsWith("LOOP REPEATS"))
+            loopBox = box;
+        if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith("TEMPO"))
+            ++tempoKnobs;
+    }
+    if (tempo == nullptr || dog == nullptr || loopBox == nullptr)
+    {
+        check(false, "the tempo read-out, BEAT DOG and the loop settings are on the page");
+        return;
+    }
+    check(tempoKnobs == 1, "one tempo control on the page (the read-out on the pedal)");
+    setValue(*p, ids::tempo, 120.0f);
+    tempo->onDragStart();
+    tempo->onDrag(20.0f);
+    tempo->onDragEnd();
+    check(std::abs(p->apvts.getRawParameterValue(ids::tempo)->load() - 130.0f) < 0.05f, "dragging the tempo up 20 pixels: 120 to 130 BPM");
+    setValue(*p, ids::tempo, 120.0f);
+    check(dog->getX() < 480 && loopBox->isVisible(), "ADVANCED: BEAT DOG under the pedal, the loop settings showing");
+
+    ed->setRightMode(false);
+    check(ed->getHeight() < advancedHeight - 150 && dog->getX() > 480 && !loopBox->isVisible(),
+          "SIMPLE: a shorter window (" + String(ed->getHeight()) + " instead of " + String(advancedHeight)
+              + "), BEAT DOG in the right-hand column, the loop settings hidden");
+    check(dog->getBottom() <= ed->getContent().getHeight() - 12, "and everything still fits");
+    setValue(*p, ids::loopOn, 1.0f);
+    const auto withLoop = snapshot(*ed, 1.0f);
+    setValue(*p, ids::loopOn, 0.0f);
+    const auto withoutLoop = snapshot(*ed, 1.0f);
+    int changed = 0;
+    for (int y = 816; y < 838; ++y) // the line under the SIMPLE panel's buttons (window coordinates)
+        for (int x = 30; x < 460; ++x)
+            changed += withLoop.getPixelAt(x, y) != withoutLoop.getPixelAt(x, y) ? 1 : 0;
+    check(changed > 40, "and a line says when a hidden setting is on (SEQUENCE LOOP: " + String(changed) + " pixels)");
+    ed->setRightMode(true);
+    check(ed->getHeight() == advancedHeight, "ADVANCED again: the full height");
+}
+
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
 // looks off while it is off, and the sample blend says when there are no sounds to blend.
 void testEasierStart()
@@ -611,12 +685,12 @@ void testEasierStart()
     std::puts("first run");
     // the window fits the screen it opens on
     const Rectangle<int> fullHd(0, 0, 1920, 1040), laptop(0, 0, 1366, 728), big(0, 0, 3840, 2120);
-    const float onFullHd = uisettings::fittingScale(1.0f, 948, 1112, fullHd);
-    check(onFullHd < 1.0f && 1112.0f * onFullHd <= 1040.0f - 90.0f && onFullHd > 0.8f,
+    const float onFullHd = uisettings::fittingScale(1.0f, 948, 1080, fullHd);
+    check(onFullHd < 1.0f && 1080.0f * onFullHd <= 1040.0f - 90.0f && onFullHd > 0.8f,
           "on a 1080p screen the window opens at " + String(roundToInt(onFullHd * 100.0f)) + "%, so all of it is on screen");
-    check(std::abs(uisettings::fittingScale(1.0f, 948, 1112, laptop) - uisettings::kMinScale) < 1.0e-4f, "on a small laptop screen: the smallest size");
-    check(std::abs(uisettings::fittingScale(1.0f, 948, 1112, big) - 1.0f) < 1.0e-4f
-              && std::abs(uisettings::fittingScale(1.5f, 948, 1112, big) - 1.5f) < 1.0e-4f,
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1080, laptop) - uisettings::kMinScale) < 1.0e-4f, "on a small laptop screen: the smallest size");
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1080, big) - 1.0f) < 1.0e-4f
+              && std::abs(uisettings::fittingScale(1.5f, 948, 1080, big) - 1.5f) < 1.0e-4f,
           "on a big screen: the size chosen");
     {
         auto p = makeProcessor();
@@ -741,7 +815,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 1112, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 1080, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -1544,7 +1618,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
+    check(controls == 74 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 74 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -1552,7 +1626,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     // What a tooltip looks like in the editor's own style: show one for the MIX knob.
     if (imageFile != nullptr)
     {
-        const Point<int> mixKnob(240, 721 + 172); // below the 36-pixel tab strip and the BEAT DOG pane
+        const Point<int> mixKnob(300, 898); // in the panel under the BEAT DOG pane (ADVANCED), right half
         // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
         // topmost visible child under the point the same way hit-testing would.
         Component* under = nullptr;
@@ -2312,6 +2386,7 @@ int main(int argc, char** argv)
     testPresetFiles();
     testBeatRouting();
     testEasierStart();
+    testLayout();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

@@ -57,7 +57,7 @@ private:
     float meterLevel = 0.0f;
 
     std::unique_ptr<Waveform> waveform;
-    PedalButton playButton { "PLAY" }, stopButton { "STOP" }, loopButton { "LOOP" }, allButton { "PICK ALL" }, zoomButton { "ZOOM IN" };
+    PedalButton playButton { "PLAY" }, stopButton { "STOP" }, loopButton { "REPEAT" }, allButton { "PICK ALL" }, zoomButton { "ZOOM IN" };
 
     juce::ComboBox distBox;
     std::unique_ptr<APVTS::ComboBoxAttachment> distAtt;

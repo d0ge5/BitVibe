@@ -32,9 +32,7 @@ constexpr int kHeight = kTabsH + 976 + kFaceDy;
 constexpr int kSideX = kWidth + 12, kPedalWidth = kWidth + 468;
 const Rectangle<int> kHeader { 12, 12, 456, 88 };
 const Rectangle<int> kFace { 12, 12, 456, 520 };
-const Rectangle<int> kBeatDog { 12, 544, 456, 164 };  // under the pedal
-constexpr int kGlobalDy = 172;                          // the global panel sits below the BEAT DOG pane
-const Rectangle<int> kGlobal { 12, 544 + kGlobalDy, 456, 248 };
+const Rectangle<int> kBeatDog { 12, 544, 456, 164 };  // under the pedal (ADVANCED)
 // Second-column panels, in face coordinates (so the first one starts level with the preset header).
 constexpr int kColY = 12 - kFaceDy;
 constexpr int kPanelGap = 8;
@@ -49,9 +47,6 @@ const Rectangle<int> kCaptionBounds { 24, 82, 432, 12 };
 constexpr std::array<int, 3> kColX { 88, 240, 392 };
 constexpr std::array<int, 2> kRowY { 142, 288 };
 constexpr int kKnobSize = 88;
-
-// The five global knobs share one row: centre of the first and the spacing (face coordinates).
-constexpr int kGlobalKnobX0 = 58, kGlobalKnobDx = 91;
 
 const Colour kInk = pedalstyle::ink;
 const Colour kInkDim = pedalstyle::inkDim;
@@ -205,9 +200,26 @@ void pedalstyle::drawPanelTitle(Graphics& g, int x, int y, int number, const Str
     g.setColour(Colour(0xff17171a));
     g.setFont(bold(9.5f));
     g.drawText(String(number), badge, Justification::centred);
-    g.setColour(kInkDim);
-    g.setFont(bold(10.0f));
-    g.drawText(title, x + 18, y + 1, 300, 12, Justification::left);
+    g.setColour(kInk);
+    g.setFont(bold(11.5f));
+    g.drawText(title, x + 18, y, 300, 14, Justification::left);
+}
+
+void pedalstyle::drawSectionTitle(Graphics& g, int x, int y, const String& title)
+{
+    g.setColour(kInk);
+    g.setFont(bold(11.5f));
+    g.drawText(title, x, y, 300, 14, Justification::left);
+}
+
+void pedalstyle::drawControlLabel(Graphics& g, int cx, int y, const String& name, const String& value, float alpha)
+{
+    g.setColour(pedalstyle::inkLabel.withMultipliedAlpha(alpha));
+    g.setFont(bold(10.5f));
+    g.drawText(name, Rectangle<int>(100, 14).withCentre({ cx, y + 7 }), Justification::centred);
+    g.setColour(kInkDim.withMultipliedAlpha(alpha));
+    g.setFont(plain(10.5f));
+    g.drawText(value, Rectangle<int>(100, 13).withCentre({ cx, y + 21 }), Justification::centred);
 }
 
 void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highlighted, bool)
@@ -234,14 +246,16 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
         g.drawText(on ? "ON" : "OFF", r.withTrimmedLeft(18.0f), Justification::centred);
         return;
     }
+    // a switch: a light on the left, so it reads as on / off rather than as a button that does something once
     g.setGradientFill(ColourGradient(on ? Colour(0xff6a4a12) : Colour(0xff34343a), r.getX(), r.getY(),
                                      on ? Colour(0xff3d2a08) : Colour(0xff1a1a1d), r.getX(), r.getBottom(), false));
     g.fillRoundedRectangle(r, 4.0f);
     g.setColour(highlighted ? Colour(0xff6a6a72) : Colour(0xff0c0c0e));
     g.drawRoundedRectangle(r, 4.0f, 1.2f);
+    pedalstyle::drawSwitchLight(g, { r.getX() + 9.0f, r.getCentreY() }, on);
     g.setColour(on ? kInk : kInkDim);
     g.setFont(bold(11.0f));
-    g.drawText(b.getButtonText(), b.getLocalBounds(), Justification::centred);
+    g.drawText(b.getButtonText(), b.getLocalBounds().withTrimmedLeft(14), Justification::centred);
 }
 
 void PedalLookAndFeel::drawComboBox(Graphics& g, int w, int h, bool, int, int, int, int, ComboBox& box)
@@ -429,7 +443,7 @@ void StepTypeTags::set(int newOwn, int newEffective)
 
 void StepTypeTags::paint(Graphics& g)
 {
-    static const char* letters[3] { "P", "F", "S" };
+    static const char* letters[3] { "P", "F", "R" };
     const float w = ((float) getWidth() - 4.0f) / 3.0f;
     for (int i = 0; i < 3; ++i)
     {
@@ -460,7 +474,7 @@ void StepTypeTags::mouseUp(const MouseEvent& e)
 void HelpOverlay::paint(Graphics& g)
 {
     g.fillAll(Colours::black.withAlpha(0.84f));
-    const auto card = getLocalBounds().reduced(60, 185).toFloat();
+    const auto card = getLocalBounds().withSizeKeepingCentre(getWidth() - 120, jmin(getHeight() - 40, 600)).toFloat();
     g.setColour(Colour(0xff17171a));
     g.fillRoundedRectangle(card, 12.0f);
     g.setColour(kAccent);
@@ -476,16 +490,17 @@ void HelpOverlay::paint(Graphics& g)
     area.removeFromTop(10);
 
     static const char* steps[] = {
-        "1.  Play. A picked note starts the STUTTER and the SEQUENCER. TRIGGER sets how hard you must pick; the thin meter "
-        "next to it shows your playing against that line and flashes when a pick is caught.",
+        "1.  Play. A picked note starts the STUTTER and the SEQUENCER. TRIGGER sets how hard you must pick; the meter "
+        "next to it shows your playing against that line and lights up when a pick is caught.",
         "2.  Turn up SEQUENCER (how many times the six-step sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
         "the steps change: pitch, filter or sample rate. The coloured bars above TEMPO are the steps: click one to see its knob, "
         "drag across them to loop those steps.",
-        "3.  SAMPLE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
+        "3.  RATE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
         "signal and sends out only the sequenced sound); OUTPUT sets the level.",
         "4.  On the right, the BEAT PATTERN can start the sequence on chosen steps of a bar. Below it, the numbered panels work on "
         "the sequenced sound only, in that order: random sounds, distortion or fuzz, delay, reverb, EQ. Their ON lights glow while they act.",
-        "5.  Hover over anything for a short description. Double-click a knob to reset it. Drag the bottom-right corner to resize the window.",
+        "5.  Hover over anything for a short description. Double-click a knob to reset it. SIMPLE / ADVANCED (top right) shows fewer or all "
+        "controls. Drag the bottom-right corner to resize the window.",
     };
     g.setFont(plain(12.5f));
     for (const auto* text : steps)
@@ -551,7 +566,7 @@ void LevelMeter::paint(Graphics& g)
     const float top = toY(level);
     if (top < b.getBottom())
     {
-        g.setColour(lit ? kAccent : (level >= threshold ? Colour(0xffd9b36a) : Colour(0xff6f9a5c)));
+        g.setColour(lit ? kAccent : (level >= threshold ? kAccent.withAlpha(0.55f) : Colour(0xff6a6a72)));
         g.fillRect(b.withTop(top).reduced(1.0f, 0.0f));
     }
     g.setColour(kInk);
@@ -568,9 +583,25 @@ void PedalButton::paint(Graphics& g)
     g.fillRoundedRectangle(b, 4.0f);
     g.setColour(Colours::black);
     g.drawRoundedRectangle(b, 4.0f, 1.2f);
+    auto textArea = getLocalBounds();
+    if (toggle)
+    {
+        pedalstyle::drawSwitchLight(g, { b.getX() + 9.0f, b.getCentreY() }, lit);
+        textArea.removeFromLeft(14);
+    }
+    if (arrow)
+    {
+        const float ax = text.isEmpty() ? b.getCentreX() : b.getRight() - 10.0f, ay = b.getCentreY();
+        Path p;
+        p.addTriangle(ax - 4.0f, ay - 2.0f, ax + 4.0f, ay - 2.0f, ax, ay + 3.0f);
+        g.setColour(lit ? kInk : kInkDim);
+        g.fillPath(p);
+        if (!text.isEmpty())
+            textArea.removeFromRight(16);
+    }
     g.setColour(lit ? kInk : kInkDim);
     g.setFont(bold(11.0f));
-    g.drawText(text, getLocalBounds(), Justification::centred);
+    g.drawText(text, textArea, Justification::centred);
 }
 
 void PedalButton::mouseDown(const MouseEvent&)
@@ -602,7 +633,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     static constexpr const char* frontIds[kKnobs] = { ids::sampleRate, ids::filter, ids::bits,
                                                       ids::stutter,    ids::seqPlay, ids::seqMult };
-    static constexpr const char* labels[kKnobs] = { "SAMPLE", "FILTER", "BITS", "STUTTER", "SEQUENCER", "SEQ MULT" };
+    static constexpr const char* labels[kKnobs] = { "RATE", "FILTER", "BITS", "STUTTER", "SEQUENCER", "SEQ MULT" };
     const int ticks[kKnobs] = { 11, 11, 11, bitvibe::mapping::kStutterPositions, bitvibe::mapping::kSeqPlayPositions,
                                 bitvibe::mapping::kSeqMultPositions };
 
@@ -636,7 +667,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     triggerMeter.setTooltip("INPUT METER: how hard you are playing (after INPUT). The white line is how hard a pick has to be to start the "
                             "stutter and sequencer (set with TRIGGER); the bar lights orange when a pick is caught.");
     content.addAndMakeVisible(triggerMeter);
-    stepStrip.setTooltip("THE SEQUENCE: one bar per step, coloured by what it controls (blue = pitch, green = filter, purple = sample rate; "
+    stepStrip.setTooltip("THE SEQUENCE: one bar per step, coloured by what it controls (blue = pitch, green = filter, purple = rate; "
                          "a dash = skipped, a cross = muted). Click a step to show its knob. Drag across steps to loop them. Right-click a step for more.");
     stepStrip.onStepClick = [this](int step)
     {
@@ -660,7 +691,6 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         return BeatDog::Position { engine.getBeatInBarPhase(), engine.getBeatInBar(), engine.getBarSteps() };
     };
     content.addAndMakeVisible(*beatDog);
-    smallKnob(tempoSlider, tempoAtt, ids::tempo);
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
     smallKnob(outSlider, outAtt, ids::outputGain);
@@ -800,6 +830,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         }
     };
 
+    altButton.toggle = true;
     altButton.onClick = [this] { setAltLayer(!altLayer); };
     // switching the type remembers the step knobs of the type being left and brings back those of the new one
     typePitchButton.onClick = [this] { proc.switchSequencerType(0); showSeqType(); };
@@ -817,7 +848,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     for (int i = 0; i < kKnobs; ++i)
     {
         auto& tags = stepTypeTags[(size_t) i];
-        tags.setTooltip("STEP " + String(i + 1) + " CONTROLS: P = pitch, F = filter, S = sample rate. A lit letter is this step's own choice; "
+        tags.setTooltip("STEP " + String(i + 1) + " CONTROLS: P = pitch, F = filter, R = rate (the sample rate). A lit letter is this step's own choice; "
                         "with none lit it follows the SEQ TYPE buttons (outlined). Click the lit letter again to follow them.");
         tags.setMouseCursor(MouseCursor::PointingHandCursor);
         tags.onPick = [this, i](int choice) { setStepType(i, choice); };
@@ -825,11 +856,31 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     }
 
     // preset bar: previous / next slot, the name (double-click to rename) and SAVE
-    // the tempo read-out in the middle of the pedal: click it and type a BPM (Enter to set, Esc to cancel)
+    // the tempo read-out in the middle of the pedal: drag it up or down, or double-click it and type a BPM (Enter to set,
+    // Esc to cancel). It is the one tempo control on the page (with TAP and SYNC).
     tempoLabel.setLookAndFeel(&laf);
     tempoLabel.setFont(bold(24.0f));
     tempoLabel.setJustificationType(Justification::centred);
-    tempoLabel.setEditable(true, true, false);
+    tempoLabel.setEditable(false, true, false);
+    tempoLabel.setMouseCursor(MouseCursor::UpDownResizeCursor);
+    tempoLabel.onDragStart = [this]
+    {
+        if (!tempoEditable)
+            return;
+        dragStartBpm = rawValue(ids::tempo);
+        tempoParam.beginGesture();
+    };
+    tempoLabel.onDrag = [this](float pixelsUp)
+    {
+        if (tempoEditable) // half a BPM a pixel, in tenths
+            tempoParam.setValueAsPartOfGesture(jlimit(bitvibe::kMinTempoBpm, bitvibe::kMaxTempoKnobBpm,
+                                                      std::round((dragStartBpm + pixelsUp * 0.5f) * 10.0f) / 10.0f));
+    };
+    tempoLabel.onDragEnd = [this]
+    {
+        if (tempoEditable)
+            tempoParam.endGesture();
+    };
     tempoLabel.onTextChange = [this]
     {
         const auto text = tempoLabel.getText();
@@ -856,7 +907,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         proc.saveCurrentPreset();
         flashSaveUntil = Time::getMillisecondCounterHiRes() + 500.0;
     };
-    for (auto* b : { &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton })
+    presetMenuButton.arrow = true;
+    presetMenuButton.onClick = [this] { showPresetMenu(); };
+    for (auto* b : { &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &presetMenuButton })
         content.addAndMakeVisible(*b);
     content.addAndMakeVisible(presetLabel);
 
@@ -882,10 +935,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     refreshPresetName();
     setTooltips();
 
-    pedalComponents = { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
+    pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
-                        &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton };
+                        &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
     {
         pedalComponents.push_back(&k.front);
@@ -911,8 +964,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     // The window can be resized (the shape stays): the pane is drawn at its designed size and scaled to fit.
     addAndMakeVisible(content);
     content.toBack();
+    advancedRight = uisettings::advancedRight();
+    samplePanel->setAdvanced(advancedRight); // its height sets where the column ends
     baseWidth = kPedalWidth;
-    baseHeight = kHeight;
+    baseHeight = pedalPageHeight();
     savedScale = uisettings::loadWindowScale();
     scale = uisettings::fittingScale(savedScale, baseWidth, baseHeight, uisettings::screenArea()); // the whole window on screen
     constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
@@ -929,21 +984,14 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         helpOverlay.toFront(false);
     };
     content.addAndMakeVisible(helpButton);
-    exportButton.setTooltip("EXPORT: save the sound you hear as a preset file (XML) to give to other players: the knobs, the sequence, "
-                            "the effects, the beat pattern and the list of sounds. Your levels and trigger setting stay out.");
-    importButton.setTooltip("IMPORT: load a preset file someone gave you into the preset slot that is showing (it replaces that slot's "
-                            "name and sound; pick a free slot first if you want to keep it).");
-    exportButton.onClick = [this] { exportPresetFile(); };
-    importButton.onClick = [this] { importPresetFile(); };
-    content.addAndMakeVisible(exportButton);
-    content.addAndMakeVisible(importButton);
-    simpleButton.setTooltip("SIMPLE: the right-hand side shows only the controls you need to make a sound. What it hides keeps its settings.");
-    advancedButton.setTooltip("ADVANCED: the right-hand side shows every control: tone, cuts, levels, sound banks, sample volumes, time signature and more.");
+    simpleButton.setTooltip("SIMPLE: shows only the controls you need to make a sound, and a shorter window. What it hides keeps its "
+                            "settings, and the panels say when one of them is on.");
+    advancedButton.setTooltip("ADVANCED: shows every control: tone, cuts, levels, sound banks, sample volumes, the EQ, the time signature, "
+                              "the stutter length and hold, the sequence loop and more.");
     simpleButton.onClick = [this] { setRightMode(false); };
     advancedButton.onClick = [this] { setRightMode(true); };
     content.addAndMakeVisible(simpleButton);
     content.addAndMakeVisible(advancedButton);
-    advancedRight = uisettings::advancedRight();
     applyRightMode();
     content.addChildComponent(helpOverlay);
     if (!uisettings::helpSeen())
@@ -963,7 +1011,7 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
         k.step.setLookAndFeel(nullptr);
     }
-    for (auto* s : { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
+    for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider })
         s->setLookAndFeel(nullptr);
     delayTimeBox.setLookAndFeel(nullptr);
@@ -1024,7 +1072,7 @@ void BitVibeEditor::showSeqType()
 
 void BitVibeEditor::showSampler(bool show)
 {
-    samplerPage->setBounds(0, 0, kPedalWidth, kHeight);
+    samplerPage->setBounds(0, 0, kPedalWidth, baseHeight);
     samplerPage->setVisible(show);
     if (show)
         samplerPage->toFront(false);
@@ -1058,7 +1106,7 @@ void BitVibeEditor::showDrums(bool on)
     }
     drumPage->setVisible(on);
     baseWidth = on ? kWidth : kPedalWidth;
-    baseHeight = kHeight;
+    baseHeight = on ? kHeight : pedalPageHeight();
     constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
     applySize();
     pedalTab.lit = !on;
@@ -1066,6 +1114,31 @@ void BitVibeEditor::showDrums(bool on)
     pedalTab.repaint();
     drumsTab.repaint();
     repaint();
+}
+
+// The arrow in the preset name box: what can be done with the preset that is showing.
+void BitVibeEditor::showPresetMenu()
+{
+    PopupMenu menu;
+    menu.addItem(1, "Save to slot " + String(proc.getCurrentProgram() + 1).paddedLeft('0', 2));
+    menu.addItem(2, "Rename...");
+    menu.addSeparator();
+    menu.addItem(3, "Export to a file...");
+    menu.addItem(4, "Import from a file...");
+    Component::SafePointer<BitVibeEditor> safe(this);
+    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&presetMenuButton).withMinimumWidth(180), [safe](int result)
+    {
+        if (safe == nullptr)
+            return;
+        if (result == 1)
+            safe->saveButton.onClick();
+        else if (result == 2)
+            safe->presetLabel.showEditor();
+        else if (result == 3)
+            safe->exportPresetFile();
+        else if (result == 4)
+            safe->importPresetFile();
+    });
 }
 
 void BitVibeEditor::exportPresetFile()
@@ -1089,7 +1162,8 @@ void BitVibeEditor::exportPresetFile()
                                    const bool ok = xml->writeTo(file);
                                    AlertWindow::showMessageBoxAsync(ok ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
                                                                     ok ? "Preset exported" : "Could not export",
-                                                                    ok ? "Saved to " + file.getFullPathName() + ". Give this file to another BitVibe player and they can load it with IMPORT."
+                                                                    ok ? "Saved to " + file.getFullPathName() + ". Give this file to another BitVibe player: they load it with Import "
+                                                                            "from a file, in the menu by the preset name."
                                                                        : "BitVibe could not write " + file.getFullPathName() + ".");
                                });
 }
@@ -1129,12 +1203,15 @@ void BitVibeEditor::setRightMode(bool advanced)
 }
 
 // SIMPLE keeps: distortion type, on, drive and level; reverb type, reverse, decay and mix; the sound bank list, the
-// sound chooser, sample mix and chance; the pattern's action, its ready-made patterns and its grid.
+// sound chooser, sample mix and chance; the pattern's action, its ready-made patterns and its grid; under the pedal,
+// input, trigger, headroom, dry/wet, output and SEQ ONLY.
 void BitVibeEditor::applyRightMode()
 {
     const bool show = advancedRight && !drumsShown;
     for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton, &reverbToneSlider, &reverbLevelSlider,
-                                                            &reverbLowSlider, &reverbHighSlider, &delayLowSlider, &delayHighSlider })
+                                                            &reverbLowSlider, &reverbHighSlider, &delayLowSlider, &delayHighSlider,
+                                                            &fxTrigButton, &holdButton, &stutterLenBox, &loopButton, &loopFromBox,
+                                                            &loopToBox, &loopRepeatsBox })
         c->setVisible(show);
     samplePanel->setAdvanced(advancedRight);
     eqPanel->setVisible(show); // the EQ is an ADVANCED control
@@ -1143,6 +1220,14 @@ void BitVibeEditor::applyRightMode()
     advancedButton.lit = advancedRight;
     simpleButton.repaint();
     advancedButton.repaint();
+    if (!drumsShown && pedalPageHeight() != baseHeight) // SIMPLE has a shorter window
+    {
+        baseHeight = pedalPageHeight();
+        constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
+        applySize();
+        if (samplerPage->isVisible())
+            showSampler(true);
+    }
     resized();
     repaint();
 }
@@ -1153,7 +1238,18 @@ Rectangle<int> BitVibeEditor::distArea() const { return { kSideX, samplesTop() +
 Rectangle<int> BitVibeEditor::delayArea() const { return distArea().translated(0, 100 + kPanelGap); }
 Rectangle<int> BitVibeEditor::reverbArea() const { return delayArea().translated(0, 100 + kPanelGap); }
 int BitVibeEditor::eqTop() const { return reverbArea().getBottom() + kPanelGap; }
-int BitVibeEditor::columnBottom() const { return advancedRight ? eqTop() + EqPanel::kHeight : reverbArea().getBottom(); }
+int BitVibeEditor::columnBottom() const { return advancedRight ? eqTop() + EqPanel::kHeight : beatDogArea().getBottom(); }
+int BitVibeEditor::globalTop() const { return advancedRight ? kBeatDog.getBottom() + kPanelGap : kBeatDog.getY(); }
+int BitVibeEditor::globalHeight() const { return advancedRight ? 216 : 162; }
+Rectangle<int> BitVibeEditor::beatDogArea() const
+{
+    return advancedRight ? kBeatDog : Rectangle<int>(kSideX, reverbArea().getBottom() + kPanelGap, kBeatDog.getWidth(), kBeatDog.getHeight());
+}
+// Tall enough for the longer column, and for the note that can show under the right-hand one.
+int BitVibeEditor::pedalPageHeight() const
+{
+    return kTabsH + kFaceDy + jmax(globalTop() + globalHeight(), columnBottom() + 46) + 12;
+}
 
 void BitVibeEditor::stepProgram(int direction)
 {
@@ -1232,7 +1328,7 @@ String BitVibeEditor::readoutText(int i) const
         }
         case 4:
         {
-            static const char* names[] = { "OFF", "ONCE", "TWICE", "4 TIMES", "8 TIMES", "LOOP" };
+            static const char* names[] = { "OFF", "ONCE", "TWICE", "4 TIMES", "8 TIMES", "CONTINUOUS" };
             return names[jlimit(0, 5, roundToInt(rawValue(ids::seqPlay)))];
         }
         default: return "x" + String(mapping::seqMultiplier(roundToInt(rawValue(ids::seqMult)))) + " TEMPO";
@@ -1245,12 +1341,13 @@ String BitVibeEditor::readoutText(int i) const
 void BitVibeEditor::setTooltips()
 {
     static const char* frontTips[kKnobs] = {
-        "SAMPLE: lowers the sample rate for a gritty, aliased sound. Turn left for more. Fully right = off.",
+        "RATE: lowers the sample rate for a gritty, aliased sound. Turn left for more. Fully right = off.",
         "FILTER: a low-pass filter that darkens the sound. Turn left to close it. Fully right = off.",
         "BITS: lowers the bit depth for digital distortion. Turn left for more. Fully right = off.",
         "STUTTER: after each picked note, repeats a short slice of it. Left = off, then 1 to 16 repeats at normal, "
         "double or half speed. Fully right = random.",
-        "SEQUENCER: how many times the 6-step sequence plays after each picked note: off, once, twice, 4, 8 or looping.",
+        "SEQUENCER: how many times the 6-step sequence plays after each picked note: off, once, twice, 4 or 8 times, or "
+        "continuously.",
         "SEQ MULT: how fast the sequencer runs, as a multiple of the tempo (x1 to x128)."
     };
     for (int i = 0; i < kKnobs; ++i)
@@ -1260,16 +1357,15 @@ void BitVibeEditor::setTooltips()
     // footswitches and buttons
     bypassSwitch.setTooltip("BYPASS: switches the effect on or off. The red light shows it is on.");
     tapSwitch.setTooltip("TAP: tap to set the tempo. Press and hold to freeze the stutter.");
-    altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer.");
+    altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer (the light is on while they show).");
     typePitchButton.setTooltip("SEQ TYPE: PITCH. The six step knobs set a pitch shift for each step, from -12 to +12 semitones. "
                               "Each type remembers its own step knobs: switch away and back and they are where you left them.");
     typeFilterButton.setTooltip("SEQ TYPE: FILTER. The six step knobs set the filter cutoff of each step, as a percent of the FILTER knob. "
                                 "Each type remembers its own step knobs: switch away and back and they are where you left them.");
-    typeRateButton.setTooltip("SEQ TYPE: SAMPLE RATE. The six step knobs set the sample rate of each step, as a percent of the SAMPLE knob. "
+    typeRateButton.setTooltip("SEQ TYPE: RATE. The six step knobs set the sample rate of each step, as a percent of the RATE knob. "
                               "Each type remembers its own step knobs: switch away and back and they are where you left them.");
 
     // global panel
-    tempoSlider.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Turn the knob, click the big BPM number to type a tempo, tap, or turn on SYNC.");
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
     reverbDecaySlider.setTooltip("REVERB DECAY: how long the reverb rings. Left = short, middle = normal, right = long (up to four times as long). "
                                  "With REVERSE on it sets how long the swell takes.");
@@ -1311,13 +1407,14 @@ void BitVibeEditor::setTooltips()
     mixSlider.setTooltip("DRY/WET: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
     trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
-    syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo knob.");
-    holdButton.setTooltip("HOLD: freeze the stutter on the current (or next) note until you switch this off.");
+    syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo set here.");
+    holdButton.setTooltip("STUTTER HOLD: freeze the stutter on the current (or next) note until you switch this off. Holding the TAP "
+                          "switch does the same for as long as you hold it.");
     seqOnlyButton.setTooltip("SEQ ONLY: cut your clean signal and send out only the sequenced sound. Between sequences the plug-in is "
                              "silent (the reverb still rings out); DRY/WET has no effect while this is on.");
-    fxTrigButton.setTooltip("FX ONLY ON TRIGGERS: when on, the sample-rate, bit and filter effects only act while the stutter or "
-                            "sequencer is playing; the rest of the time your signal stays clean. A sequencer set to LOOP is always playing.");
-    headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths.");
+    fxTrigButton.setTooltip("FX ON TRIGGERS: when on, the rate, bit and filter effects only act while the stutter or "
+                            "sequencer is playing; the rest of the time your signal stays clean. A sequencer set to CONTINUOUS is always playing.");
+    headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths. Set it first, then INPUT and TRIGGER.");
     loopButton.setTooltip("LOOP: keep part of the sequence going. The steps chosen with FROM and TO repeat (forever, or the number of "
                           "times chosen) before the sequence goes on; a restart still plays the steps before them first. Framed on the step strip.");
     loopFromBox.setTooltip("LOOP FROM: the first step of the loop section (set it and TO to the same step to hold one step).");
@@ -1330,12 +1427,14 @@ void BitVibeEditor::setTooltips()
     prevButton.setTooltip("Previous preset.");
     nextButton.setTooltip("Next preset.");
     saveButton.setTooltip("SAVE: store the current sound in this preset slot.");
-    tempoLabel.setTooltip("TEMPO: the speed of the sequencer and stutter. Click the number and type a BPM (23.4 to 240), then press Enter. "
-                          "While SYNC is on it shows the host tempo.");
+    tempoLabel.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Drag the number up or down, double-click it "
+                          "to type one, tap the TAP switch, or turn on SYNC to follow your DAW (the number then shows the host tempo).");
     presetLabel.setTooltip("The preset name. Double-click to rename it. An orange dot means the sound has unsaved changes.");
-    setUpButton.setTooltip("SET UP: store the current knobs as the 'toe up' sound (expression slider fully left).");
-    setDownButton.setTooltip("SET DOWN: store the current knobs as the 'toe down' sound (expression slider fully right).");
-    expressionSlider.setTooltip("EXPRESSION: sweeps from the SET UP sound to the SET DOWN sound. Needs MORPH switched on.");
+    presetMenuButton.setTooltip("PRESET MENU: save to this slot, rename, export the sound as a file to give to other players, or import "
+                                "a file someone gave you (it replaces the slot that is showing).");
+    setUpButton.setTooltip("STORE A: keep the knobs as they are now as sound A, the 'toe up' end (expression slider fully left).");
+    setDownButton.setTooltip("STORE B: keep the knobs as they are now as sound B, the 'toe down' end (expression slider fully right).");
+    expressionSlider.setTooltip("EXPRESSION: sweeps from sound A to sound B. Needs MORPH switched on.");
     morphButton.setTooltip("MORPH: when on, the sound follows the expression slider instead of the knobs.");
 }
 
@@ -1351,7 +1450,7 @@ void BitVibeEditor::updateStepTooltips()
         const char* what = type == bitvibe::SeqType::Pitch
                                ? "its pitch shift, from -12 to +12 semitones (centre = unshifted)"
                                : (type == bitvibe::SeqType::Filter ? "its filter cutoff, as a percent of the FILTER knob"
-                                                                   : "its sample rate, as a percent of the SAMPLE knob");
+                                                                   : "its sample rate, as a percent of the RATE knob");
         knobs[(size_t) i].step.setTooltip("STEP " + String(i + 1) + ": " + what + ". Fully left skips this step, fully right mutes it.");
     }
     tooltipSeqType = types;
@@ -1386,13 +1485,13 @@ void BitVibeEditor::setLoopFromStrip(int first, int last)
 void BitVibeEditor::showStepMenu(int step)
 {
     const int own = jlimit(0, 3, roundToInt(rawValue(ids::stepType(step).toRawUTF8())));
-    static const char* typeNames[3] { "PITCH", "FILTER", "SAMPLE RATE" };
+    static const char* typeNames[3] { "PITCH", "FILTER", "RATE" };
     PopupMenu menu;
     menu.addSectionHeader("STEP " + String(step + 1));
     menu.addItem(1, "Follow SEQ TYPE (" + String(typeNames[(int) seqType()]) + ")", true, own == 0);
     menu.addItem(2, "Pitch", true, own == 1);
     menu.addItem(3, "Filter", true, own == 2);
-    menu.addItem(4, "Sample rate", true, own == 3);
+    menu.addItem(4, "Rate (sample rate)", true, own == 3);
     menu.addSeparator();
     menu.addItem(10, "Show this step's knob");
     menu.addItem(11, "Loop this step only");
@@ -1433,9 +1532,6 @@ void BitVibeEditor::buildBackground()
     g.addTransform(AffineTransform::scale(backgroundScale));
 
     g.fillAll(Colour(0xff0d0d0f));
-    g.setColour(kInkDim);
-    g.setFont(bold(12.0f));
-    g.drawText("BITVIBE", Rectangle<int>(kWidth - 140, 8, 128, 24), Justification::centredRight);
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     const auto header = kHeader.toFloat();
@@ -1473,13 +1569,6 @@ void BitVibeEditor::buildBackground()
     g.drawRoundedRectangle(face.reduced(0.5f), 16.0f, 1.0f);
     g.setColour(Colours::black.withAlpha(0.8f));
     g.drawRoundedRectangle(face.expanded(0.5f), 16.0f, 1.5f);
-
-    // Global panel
-    const auto glob = kGlobal.toFloat();
-    g.setColour(Colour(0xff17171a));
-    g.fillRoundedRectangle(glob, 10.0f);
-    g.setColour(Colour(0xff2c2c31));
-    g.drawRoundedRectangle(glob.reduced(0.5f), 10.0f, 1.0f);
 }
 
 void BitVibeEditor::applySize()
@@ -1511,6 +1600,7 @@ void BitVibeEditor::resized()
     nextButton.setBounds(kNextBounds);
     saveButton.setBounds(kSaveBounds);
     presetLabel.setBounds(kNameBox.reduced(40, 1));
+    presetMenuButton.setBounds(kNameBox.getRight() - 26, kNameBox.getY() + 2, 24, 22);
     setUpButton.setBounds(kSetUpBounds);
     expressionSlider.setBounds(kExpressionBounds);
     setDownButton.setBounds(kSetDownBounds);
@@ -1535,25 +1625,27 @@ void BitVibeEditor::resized()
     bypassSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 88, 462 })));
     tapSwitch.setBounds(face(Rectangle<int>(84, 84).withCentre({ 392, 462 })));
 
-    // global panel: five knobs, then two rows of switches
-    const std::array<Slider*, 5> small { &tempoSlider, &inSlider, &mixSlider, &outSlider, &trigSlider };
-    for (size_t i = 0; i < small.size(); ++i)
-        small[i]->setBounds(face(Rectangle<int>(52, 52).withCentre({ kGlobalKnobX0 + (int) i * kGlobalKnobDx, 585 + kGlobalDy })));
-
-    syncButton.setBounds(face({ 24, 654 + kGlobalDy, 62, 24 }));
-    holdButton.setBounds(face({ 92, 654 + kGlobalDy, 62, 24 }));
-    headroomBox.setBounds(face({ 170, 654 + kGlobalDy, 124, 24 }));
-    stutterLenBox.setBounds(face({ 304, 654 + kGlobalDy, 148, 24 }));
-    triggerMeter.setBounds(face({ 450, 559 + kGlobalDy, 9, 52 }));
-    beatDog->setBounds(face(kBeatDog));
     stepStrip.setBounds(face({ 186, 352, 140, 28 }));
-    fxTrigButton.setBounds(face({ 24, 688 + kGlobalDy, 200, 24 }));
-    seqOnlyButton.setBounds(face({ 186, 480, 108, 24 })); // the middle of the pedal, under the tempo
-    // the sequence's loop section, on a row of its own
-    loopButton.setBounds(face({ 24, 738 + kGlobalDy, 60, 24 }));
-    loopFromBox.setBounds(face({ 92, 738 + kGlobalDy, 56, 24 }));   // "TO" is painted between the two step boxes
-    loopToBox.setBounds(face({ 176, 738 + kGlobalDy, 56, 24 }));
-    loopRepeatsBox.setBounds(face({ 240, 738 + kGlobalDy, 110, 24 }));
+    syncButton.setBounds(face({ 194, 480, 92, 24 })); // the middle of the pedal, under the tempo it changes
+    beatDog->setBounds(face(beatDogArea()));
+
+    // under the pedal: your signal in (input, trigger and its meter, headroom) on the left, what comes out (dry/wet,
+    // output, SEQ ONLY, FX ON TRIGGERS) on the right, then in ADVANCED the stutter and the sequence loop
+    const int gy = globalTop();
+    inSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 62, gy + 46 })));
+    trigSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 150, gy + 46 })));
+    triggerMeter.setBounds(face({ 192, gy + 20, 14, 80 }));
+    mixSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 300, gy + 46 })));
+    outSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 404, gy + 46 })));
+    headroomBox.setBounds(face({ 98, gy + 110, 128, 24 }));
+    seqOnlyButton.setBounds(face({ 252, gy + 110, 84, 24 }));
+    fxTrigButton.setBounds(face({ 340, gy + 110, 116, 24 }));
+    stutterLenBox.setBounds(face({ 98, gy + 144, 128, 24 }));
+    holdButton.setBounds(face({ 252, gy + 144, 120, 24 }));
+    loopButton.setBounds(face({ 116, gy + 178, 60, 24 }));
+    loopFromBox.setBounds(face({ 182, gy + 178, 52, 24 })); // "TO" is painted between the two step boxes
+    loopToBox.setBounds(face({ 256, gy + 178, 52, 24 }));
+    loopRepeatsBox.setBounds(face({ 316, gy + 178, 110, 24 }));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
@@ -1595,9 +1687,7 @@ void BitVibeEditor::resized()
     for (auto* c : pedalComponents)
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
-    helpButton.setBounds(kWidth - 140 - 76, 8, 70, 24);
-    exportButton.setBounds(12, 8, 78, 24);
-    importButton.setBounds(94, 8, 78, 24);
+    helpButton.setBounds(12, 8, 70, 24);
     simpleButton.setBounds(kSideX + 300, 8, 76, 24);
     advancedButton.setBounds(kSideX + 380, 8, 76, 24);
     helpOverlay.setBounds(0, 0, baseWidth, baseHeight);
@@ -1612,9 +1702,6 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.drawImage(background, 0, 0, baseWidth, baseHeight, 0, 0, roundToInt((float) baseWidth * backgroundScale), roundToInt((float) baseHeight * backgroundScale));
     if (drumsShown)
         return; // the DRUMS page paints everything below the tabs
-    g.setColour(kInkDim);
-    g.setFont(bold(10.0f));
-    g.drawText("CONTROLS ON THIS SIDE:", Rectangle<int>(kSideX + 130, 8, 164, 24), Justification::centredRight);
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     // Header: slot number and modified mark beside the preset name, state line under the morph strip
@@ -1627,14 +1714,13 @@ void BitVibeEditor::paintContent(Graphics& g)
         if (proc.isCurrentPresetModified())
         {
             g.setColour(kAccent);
-            g.fillEllipse(Rectangle<float>(7.0f, 7.0f).withCentre({ (float) kNameBox.getRight() - 16.0f, (float) kNameBox.getCentreY() }));
+            g.fillEllipse(Rectangle<float>(7.0f, 7.0f).withCentre({ (float) kNameBox.getRight() - 34.0f, (float) kNameBox.getCentreY() }));
         }
 
         g.setColour(morphOn ? kAccent : kInkDim);
         g.setFont(plain(10.0f));
-        const String caption = morphOn ? "MORPH ON: THE SOUND FOLLOWS EXPRESSION " + String(roundToInt(rawValue(ids::expression) * 100.0f))
-                                             + "%, THE KNOBS ONLY FILL THE SETS"
-                                       : "MORPH OFF: THE KNOBS ARE HEARD";
+        const String caption = morphOn ? "MORPH ON:  " + String(roundToInt(rawValue(ids::expression) * 100.0f)) + "% OF THE WAY FROM A TO B"
+                                       : "MORPH OFF";
         g.drawText(caption, kCaptionBounds, Justification::centred);
     }
 
@@ -1687,7 +1773,6 @@ void BitVibeEditor::paintContent(Graphics& g)
 
     const bool tapBlink = proc.getEngine().getBeatPhase() < 0.18f;
     drawLed(g, { 392.0f, 410.0f }, 6.0f, kAccent, tapBlink);
-    drawLed(g, { 392.0f - 52.0f, 383.0f }, 4.5f, kAccent, altLayer);
 
     g.setColour(kInkDim);
     g.setFont(bold(10.0f));
@@ -1712,10 +1797,52 @@ void BitVibeEditor::paintContent(Graphics& g)
         g.drawText("STUTTER HOLD", Rectangle<int>(130, 14).withCentre({ 240, 468 }), Justification::centred);
     }
 
-    // Global panel labels
-    g.setColour(kInkDim);
-    g.setFont(bold(10.0f));
-    g.drawText("GLOBAL", Rectangle<int>(26, 548 + kGlobalDy, 80, 12), Justification::left);
+    // The panel under the pedal (it moves with the mode, so it is drawn here rather than in the background)
+    {
+        const int gy = globalTop();
+        const Rectangle<float> panelArea(12.0f, (float) gy, 456.0f, (float) globalHeight());
+        g.setColour(pedalstyle::panel);
+        g.fillRoundedRectangle(panelArea, 10.0f);
+        g.setColour(pedalstyle::panelEdge);
+        g.drawRoundedRectangle(panelArea.reduced(0.5f), 10.0f, 1.0f);
+        g.drawVerticalLine(240, (float) gy + 10.0f, (float) gy + 136.0f);
+        pedalstyle::drawSectionTitle(g, 26, gy + 6, "YOUR SIGNAL IN");
+        pedalstyle::drawSectionTitle(g, 252, gy + 6, "WHAT COMES OUT");
+        const bool seqOnly = rawValue(ids::seqOnly) > 0.5f;
+        pedalstyle::drawControlLabel(g, 62, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
+        pedalstyle::drawControlLabel(g, 150, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");
+        pedalstyle::drawControlLabel(g, 300, gy + 76, "DRY/WET", seqOnly ? String("SEQ ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet");
+        pedalstyle::drawControlLabel(g, 404, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
+        g.setColour(kInkDim);
+        g.setFont(bold(9.5f));
+        g.drawText("HEADROOM", Rectangle<int>(24, gy + 110, 72, 24), Justification::centredLeft);
+        if (advancedRight)
+        {
+            g.drawText("STUTTER", Rectangle<int>(24, gy + 144, 72, 24), Justification::centredLeft);
+            g.drawText("SEQUENCE LOOP", Rectangle<int>(24, gy + 178, 90, 24), Justification::centredLeft);
+            g.drawText("TO", Rectangle<int>(234, gy + 178, 22, 24), Justification::centred);
+        }
+        else
+        {
+            // what SIMPLE hides, when it is changing the sound
+            StringArray on;
+            if (rawValue(ids::loopOn) > 0.5f)
+                on.add("SEQUENCE LOOP " + loopFromBox.getText() + " TO " + loopToBox.getText() + " " + loopRepeatsBox.getText().toUpperCase());
+            if (rawValue(ids::fxTriggers) > 0.5f)
+                on.add("FX ON TRIGGERS");
+            if (rawValue(ids::hold) > 0.5f)
+                on.add("STUTTER HOLD");
+            if (roundToInt(rawValue(ids::stutterLen)) != 1)
+                on.add("STUTTER " + stutterLenBox.getText().toUpperCase());
+            if (!on.isEmpty())
+            {
+                g.setColour(kAccent);
+                g.setFont(plain(10.0f));
+                g.drawFittedText("Also on: " + on.joinIntoString(", ") + "  (ADVANCED to change)", Rectangle<int>(24, gy + 140, 432, 14),
+                                 Justification::centredLeft, 1, 0.9f);
+            }
+        }
+    }
 
     struct Entry
     {
@@ -1736,30 +1863,6 @@ void BitVibeEditor::paintContent(Graphics& g)
             }
         return kSideX + (int) std::lround(456.0 * ((double) index + 0.5) / (double) jmax(1, shown));
     };
-    const std::array<Entry, 5> entries {{
-        { "TEMPO", String(rawValue(ids::tempo), 1) },
-        { "INPUT", String(rawValue(ids::inputGain), 1) + " dB" },
-        { "DRY/WET", rawValue(ids::seqOnly) > 0.5f ? String("SEQ ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet" },
-        { "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB" },
-        { "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%" },
-    }};
-    for (size_t i = 0; i < entries.size(); ++i)
-    {
-        const int cx = kGlobalKnobX0 + (int) i * kGlobalKnobDx;
-        g.setColour(kInk);
-        g.setFont(bold(11.0f));
-        g.drawText(entries[i].name, Rectangle<int>(100, 14).withCentre({ cx, 619 + kGlobalDy }), Justification::centred);
-        g.setColour(kInkDim);
-        g.setFont(plain(10.5f));
-        g.drawText(entries[i].value, Rectangle<int>(100, 13).withCentre({ cx, 633 + kGlobalDy }), Justification::centred);
-    }
-    g.setColour(kInkDim);
-    g.setFont(bold(9.5f));
-    g.drawText("HEADROOM", Rectangle<int>(172, 641 + kGlobalDy, 120, 11), Justification::left);
-    g.drawText("STUTTER LENGTH", Rectangle<int>(306, 641 + kGlobalDy, 144, 11), Justification::left);
-    g.drawText("SEQUENCE LOOP", Rectangle<int>(26, 724 + kGlobalDy, 200, 11), Justification::left);
-    g.drawText("TO", Rectangle<int>(148, 738 + kGlobalDy, 28, 24), Justification::centred);
-
     // The effect panels follow each other down the column in the order the sequenced sound goes through them:
     // an arrow in each gap.
     {
@@ -1776,23 +1879,17 @@ void BitVibeEditor::paintContent(Graphics& g)
         }
     }
 
-    // Under the right-hand column: what the numbers mean, or why those panels may be quiet.
+    // Under the right-hand column: why those panels may be quiet.
     {
         const bool sequenceOff = roundToInt(rawValue(ids::seqPlay)) == 0;
         const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
-        const Rectangle<int> note(kSideX + 8, columnBottom() + 10, 440, 40);
-        g.setFont(plain(10.5f));
         if (sequenceOff && stutterOff)
         {
             g.setColour(kAccent);
+            g.setFont(plain(10.5f));
             g.drawFittedText("The sequencer and the stutter are both off, so the effects on this side have nothing to act on. "
-                             "Turn up the SEQUENCER or STUTTER knob on the pedal.", note, Justification::topLeft, 3);
-        }
-        else
-        {
-            g.setColour(kInkDim);
-            g.drawFittedText("The numbered panels are in the order the sequenced sound goes through them. The light in an ON "
-                             "button glows while the sequence or stutter plays, which is when that effect acts.", note, Justification::topLeft, 3);
+                             "Turn up the SEQUENCER or STUTTER knob on the pedal.", Rectangle<int>(kSideX + 8, columnBottom() + 10, 440, 30),
+                             Justification::topLeft, 2);
         }
     }
 
@@ -1820,13 +1917,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         if (!advancedRight && distEntries[i].advancedOnly)
             continue;
-        const int cx = labelX(distEntries, i);
-        g.setColour(kInk.withMultipliedAlpha(distAlpha));
-        g.setFont(bold(11.0f));
-        g.drawText(distEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, dist.getY() + 79 }), Justification::centred);
-        g.setColour(kInkDim.withMultipliedAlpha(distAlpha));
-        g.setFont(plain(10.5f));
-        g.drawText(distEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, dist.getY() + 92 }), Justification::centred);
+        pedalstyle::drawControlLabel(g, labelX(distEntries, i), dist.getY() + 72, distEntries[i].name, distEntries[i].value, distAlpha);
     }
 
     // Delay panel labels
@@ -1849,13 +1940,7 @@ void BitVibeEditor::paintContent(Graphics& g)
         {
             if (!advancedRight && delayEntries[i].advancedOnly)
                 continue;
-            const int cx = labelX(delayEntries, i);
-            g.setColour(kInk.withMultipliedAlpha(delayAlpha));
-            g.setFont(bold(11.0f));
-            g.drawText(delayEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, delay.getY() + 78 }), Justification::centred);
-            g.setColour(kInkDim.withMultipliedAlpha(delayAlpha));
-            g.setFont(plain(10.5f));
-            g.drawText(delayEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, delay.getY() + 91 }), Justification::centred);
+            pedalstyle::drawControlLabel(g, labelX(delayEntries, i), delay.getY() + 71, delayEntries[i].name, delayEntries[i].value, delayAlpha);
         }
     }
 
@@ -1874,13 +1959,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         if (!advancedRight && reverbEntries[i].advancedOnly)
             continue;
-        const int cx = labelX(reverbEntries, i);
-        g.setColour(kInk.withMultipliedAlpha(reverbAlpha));
-        g.setFont(bold(11.0f));
-        g.drawText(reverbEntries[i].name, Rectangle<int>(100, 14).withCentre({ cx, reverb.getY() + 78 }), Justification::centred);
-        g.setColour(kInkDim.withMultipliedAlpha(reverbAlpha));
-        g.setFont(plain(10.5f));
-        g.drawText(reverbEntries[i].value, Rectangle<int>(100, 13).withCentre({ cx, reverb.getY() + 91 }), Justification::centred);
+        pedalstyle::drawControlLabel(g, labelX(reverbEntries, i), reverb.getY() + 71, reverbEntries[i].name, reverbEntries[i].value, reverbAlpha);
     }
 }
 
@@ -1999,7 +2078,8 @@ void BitVibeEditor::timerCallback()
         if (sync == tempoEditable) // typing a tempo does nothing while the host tempo is followed
         {
             tempoEditable = !sync;
-            tempoLabel.setEditable(tempoEditable, tempoEditable, false);
+            tempoLabel.setEditable(false, tempoEditable, false);
+            tempoLabel.setMouseCursor(tempoEditable ? MouseCursor::UpDownResizeCursor : MouseCursor::NormalCursor);
         }
         if (!tempoLabel.isBeingEdited())
             tempoLabel.setText(String(proc.getEffectiveBpm(), 1), dontSendNotification);

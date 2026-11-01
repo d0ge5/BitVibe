@@ -158,7 +158,7 @@ int main(int argc, char** argv)
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
     check(plugin->getParameters().size() == 191 && findParam(*plugin, "Program") != nullptr
-              && findParam(*plugin, "Mix") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
+              && findParam(*plugin, "Dry/Wet") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
               && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
               && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr
               && findParam(*plugin, "Beat Output") != nullptr,
@@ -222,7 +222,7 @@ int main(int argc, char** argv)
 
     // 2. Bitcrush + sample-rate + filter, sequencer off
     plugin->reset();
-    setByText(*plugin, "Sequencer Play", "Off");
+    setByText(*plugin, "Sequencer", "Off");
     setNormalised(*plugin, "Sample Rate", 0.55f);
     setNormalised(*plugin, "Bits", 0.22f);
     setNormalised(*plugin, "Filter", 0.62f);
@@ -248,8 +248,8 @@ int main(int argc, char** argv)
     plugin->reset();
     setNormalised(*plugin, "Stutter", 0.0f);
     setByText(*plugin, "Sequencer Type", "Filter");
-    setByText(*plugin, "Sequencer Play", "Continuous");
-    setByText(*plugin, "Sequencer Mult", "x4");
+    setByText(*plugin, "Sequencer", "Continuous");
+    setByText(*plugin, "Seq Mult", "x4");
     setNormalised(*plugin, "Filter", 0.8f);
     setNormalised(*plugin, "Step 1", 0.93f);
     setNormalised(*plugin, "Step 2", 0.15f);
@@ -335,13 +335,13 @@ int main(int argc, char** argv)
         check(plugin->getCurrentProgram() == 2, "slot 3 selected");
         check(near(value("Sample Rate"), 0.62f) && near(value("Filter"), 0.55f) && near(value("Bits"), 0.45f),
               "slot 3 restores its Sample / Filter / Bits knobs");
-        check(text("Sequencer Play") == "Off", "slot 3 turns the sequencer off (" + text("Sequencer Play") + ")");
+        check(text("Sequencer") == "Off", "slot 3 turns the sequencer off (" + text("Sequencer") + ")");
         check(near(value("Input Gain"), 0.75f), "recalling a preset leaves the input gain alone");
         setNormalised(*plugin, "Input Gain", 0.5f); // back to 0 dB
 
         // Slot 1 brings the factory sound back exactly: same knobs and the same audio as at start-up.
         plugin->setCurrentProgram(0);
-        check(text("Sequencer Play") == "Continuous" && text("Sequencer Type") == "Pitch", "slot 1 runs the pitch sequencer");
+        check(text("Sequencer") == "Continuous" && text("Sequencer Type") == "Pitch", "slot 1 runs the pitch sequencer");
         bool stepsOk = near(value("Bits"), 1.0f) && near(value("Filter"), 1.0f);
         const float expectedSteps[6] = { 6.5f / 27, 10.5f / 27, 1.5f / 27, 20.5f / 27, 17.5f / 27, 13.5f / 27 };
         for (int i = 0; i < 6; ++i)
@@ -361,15 +361,15 @@ int main(int argc, char** argv)
             silence.clear();
             render(*plugin, silence);
         };
-        check(text("Mix") == "100% effect" && text("FX Only On Triggers") == "Off",
-              "mix starts at 100% effect with the trigger-only option off (" + text("Mix") + ")");
-        setNormalised(*plugin, "Mix", 0.4f);
+        check(text("Dry/Wet") == "100% effect" && text("FX Only On Triggers") == "Off",
+              "mix starts at 100% effect with the trigger-only option off (" + text("Dry/Wet") + ")");
+        setNormalised(*plugin, "Dry/Wet", 0.4f);
         setNormalised(*plugin, "FX Only On Triggers", 1.0f);
         plugin->setCurrentProgram(2); // Lo-Fi Radio: crush + filter, sequencer and stutter off
-        check(near(value("Mix"), 0.4f) && text("FX Only On Triggers") == "On",
+        check(near(value("Dry/Wet"), 0.4f) && text("FX Only On Triggers") == "On",
               "recalling a preset leaves Mix and the trigger-only option alone");
 
-        setNormalised(*plugin, "Mix", 1.0f);
+        setNormalised(*plugin, "Dry/Wet", 1.0f);
         fresh();
         const auto idleOut = render(*plugin, pluck);
         check(maxDifference(idleOut, pluck) < 1.0e-6,
@@ -380,12 +380,12 @@ int main(int argc, char** argv)
         const auto lofi = render(*plugin, pluck);
         check(maxDifference(lofi, pluck) > 0.02, "trigger-only option off: the Lo-Fi Radio sound is applied");
 
-        setNormalised(*plugin, "Mix", 0.0f);
+        setNormalised(*plugin, "Dry/Wet", 0.0f);
         fresh();
         const double mixZero = maxDifference(render(*plugin, pluck), pluck);
         check(mixZero < 1.0e-6, "Mix at 0% returns the clean input (diff " + String(mixZero, 8) + ")");
 
-        setNormalised(*plugin, "Mix", 0.5f);
+        setNormalised(*plugin, "Dry/Wet", 0.5f);
         fresh();
         const auto half = render(*plugin, pluck);
         check(maxDifference(half, pluck) > 0.005 && maxDifference(half, lofi) > 0.005,
@@ -408,13 +408,13 @@ int main(int argc, char** argv)
         const double ratio = rmsFromClean(half) / jmax(1.0e-12, rmsFromClean(lofi));
         check(ratio > 0.4 && ratio < 0.6, "Mix at 50% adds about half of the effect's deviation (ratio " + String(ratio, 3) + ")");
 
-        setNormalised(*plugin, "Mix", 1.0f);
+        setNormalised(*plugin, "Dry/Wet", 1.0f);
         plugin->setCurrentProgram(0);
         fresh();
 
         // A slot with a stored expression-morph set-up: clean at toe up, crushed + stutter at toe down.
         plugin->setCurrentProgram(10);
-        check(text("Expression Morph") == "On", "slot 11 switches the morph on");
+        check(text("Morph") == "On", "slot 11 switches the morph on");
         plugin->reset();
         const auto toeUp = render(*plugin, pluck);
         check(maxDifference(toeUp, pluck) < 1.0e-3, "expression at toe up leaves the signal clean");
@@ -438,10 +438,10 @@ int main(int argc, char** argv)
         plugin->getStateInformation(saved);
         plugin->setCurrentProgram(0); // wipes the live sound and the stored sets
         setNormalised(*plugin, "Expression", 0.0f);
-        check(text("Expression Morph") == "Off", "slot 1 switches the morph off again");
+        check(text("Morph") == "Off", "slot 1 switches the morph off again");
         plugin->setStateInformation(saved.getData(), (int) saved.getSize());
         check(plugin->getCurrentProgram() == 10, "state restores the selected slot (" + String(plugin->getCurrentProgram()) + ")");
-        check(text("Expression Morph") == "On" && near(value("Expression"), 0.8f), "state restores the morph switch and expression");
+        check(text("Morph") == "On" && near(value("Expression"), 0.8f), "state restores the morph switch and expression");
         plugin->reset();
         const auto restored = render(*plugin, pluck);
         const double stateDiff = maxDifference(restored, morphed);
@@ -450,7 +450,7 @@ int main(int argc, char** argv)
 
         // Back to slot 1 and the shipped state for the remaining checks.
         plugin->setCurrentProgram(0);
-        setByText(*plugin, "Expression Morph", "Off");
+        setByText(*plugin, "Morph", "Off");
         plugin->reset();
     }
 
@@ -473,7 +473,7 @@ int main(int argc, char** argv)
 
         // A sequencer that only runs when something triggers it, and nothing else on.
         plugin->setCurrentProgram(1); // "Clean"
-        setByText(*plugin, "Sequencer Play", "Once");
+        setByText(*plugin, "Sequencer", "Once");
         plugin->reset();
         const auto picked = render(*plugin, pluck);
         check(maxDiff(picked, pluck) > 0.01, "Pick Triggers on: the pluck starts the sequence (diff " + String(maxDiff(picked, pluck), 3) + ")");

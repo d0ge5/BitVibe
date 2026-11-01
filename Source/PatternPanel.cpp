@@ -76,10 +76,10 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
     for (auto* b : { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
         addAndMakeVisible(*b);
 
-    actionBox.setTooltip("PATTERN ACTION: what the pattern does at each lit step: restart the sequence, move it one step, "
+    actionBox.setTooltip("PATTERN ACTION: the beat pattern says when the sequence fires. This is what it does at each lit step: restart the sequence, move it one step, "
                          "fire the stutter, or both. Off = the pattern does nothing.");
     signatureBox.setTooltip("TIME SIGNATURE: the shape of the bar. The grid below follows it: one cell per sixteenth note, grouped into beats. "
-                            "The pattern repeats every bar, at the tempo of the TEMPO knob (or your DAW's, with SYNC on).");
+                            "The pattern repeats every bar, at the tempo on the pedal (or your DAW's, with SYNC on).");
     restartButton.setTooltip("RESTART BAR: start the bar again from its first step right now (the pattern then carries on from there). "
                              "Handy to line the pattern up with what you are playing. Not used while SYNC follows your DAW, which sets the bar itself.");
     clearButton.setTooltip("CLEAR: switch every step of the pattern off.");
@@ -244,9 +244,7 @@ void PatternPanel::paint(Graphics& g)
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(inkDim);
-    g.setFont(bold(10.0f));
-    g.drawText("BEAT PATTERN: WHEN THE SEQUENCE FIRES", 14, 4, 260, 12, Justification::left);
+    drawSectionTitle(g, 14, 3, "BEAT PATTERN");
 
     const auto& ts = timeSignature(pattern.signature);
     const bool active = pattern.action != DrumAction::Off;
