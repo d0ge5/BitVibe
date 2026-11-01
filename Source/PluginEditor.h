@@ -240,13 +240,25 @@ private:
     int own = 0, effective = 0;
 };
 
-// The quick-start guide: what to do first and where the sound goes. Opens by itself the first time, and with the
-// HELP button at the top; a click anywhere closes it.
+// HELP, over the whole window, in two pages: the quick start (what to do first), and WHAT TRIGGERS WHAT, a flow chart of
+// what sets each part off, what it starts, what acts while it plays, and where the sound goes. Opens by itself the
+// first time, and with the HELP button at the top; the tabs switch pages, a click anywhere else closes it.
 class HelpOverlay : public juce::Component
 {
 public:
+    static constexpr int kQuickStart = 0, kTriggers = 1;
+    void showPage(int newPage);
+    int getPage() const { return page; }
+
     void paint(juce::Graphics&) override;
-    void mouseUp(const juce::MouseEvent&) override { setVisible(false); }
+    void mouseUp(const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<int> cardBounds() const;
+    juce::Rectangle<int> tabBounds(int tab) const;
+    void paintQuickStart(juce::Graphics&, juce::Rectangle<int> area);
+    void paintTriggers(juce::Graphics&, juce::Rectangle<int> area);
+    int page = kQuickStart;
 };
 
 class PatternPanel;

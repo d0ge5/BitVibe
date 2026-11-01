@@ -471,10 +471,39 @@ void StepTypeTags::mouseUp(const MouseEvent& e)
     onPick(own == i + 1 ? 0 : i + 1);
 }
 
+void HelpOverlay::showPage(int newPage)
+{
+    page = jlimit(kQuickStart, kTriggers, newPage);
+    repaint();
+}
+
+Rectangle<int> HelpOverlay::cardBounds() const
+{
+    return getLocalBounds().withSizeKeepingCentre(getWidth() - 120, jmin(getHeight() - 40, page == kTriggers ? 700 : 370));
+}
+
+Rectangle<int> HelpOverlay::tabBounds(int tab) const
+{
+    const auto card = cardBounds();
+    const Rectangle<int> triggers(card.getRight() - 28 - 176, card.getY() + 22, 176, 24);
+    return tab == kTriggers ? triggers : Rectangle<int>(triggers.getX() - 6 - 116, triggers.getY(), 116, 24);
+}
+
+void HelpOverlay::mouseUp(const MouseEvent& e)
+{
+    for (const int tab : { kQuickStart, kTriggers })
+        if (tabBounds(tab).contains(e.getPosition()))
+        {
+            showPage(tab);
+            return;
+        }
+    setVisible(false);
+}
+
 void HelpOverlay::paint(Graphics& g)
 {
     g.fillAll(Colours::black.withAlpha(0.84f));
-    const auto card = getLocalBounds().withSizeKeepingCentre(getWidth() - 120, jmin(getHeight() - 40, 600)).toFloat();
+    const auto card = cardBounds().toFloat();
     g.setColour(Colour(0xff17171a));
     g.fillRoundedRectangle(card, 12.0f);
     g.setColour(kAccent);
@@ -483,20 +512,44 @@ void HelpOverlay::paint(Graphics& g)
     auto area = card.reduced(28.0f, 22.0f).toNearestInt();
     g.setColour(kInk);
     g.setFont(bold(20.0f));
-    g.drawText("QUICK START", area.removeFromTop(28), Justification::left);
+    g.drawText(page == kTriggers ? "WHAT TRIGGERS WHAT" : "QUICK START", area.removeFromTop(28), Justification::left);
     g.setColour(kInkDim);
     g.setFont(plain(11.0f));
-    g.drawText("Click anywhere to close. Open it again with the HELP button at the top.", area.removeFromTop(18), Justification::left);
+    g.drawText("The tabs switch pages; click anywhere else to close. Open it again with the HELP button at the top.", area.removeFromTop(18),
+               Justification::left);
     area.removeFromTop(10);
 
+    // the tabs, drawn like the page's own buttons
+    for (const int tab : { kQuickStart, kTriggers })
+    {
+        const auto r = tabBounds(tab).toFloat().reduced(1.0f);
+        const bool lit = tab == page;
+        g.setGradientFill(ColourGradient(lit ? Colour(0xff6a4a12) : Colour(0xff3a3a40), r.getX(), r.getY(),
+                                         lit ? Colour(0xff3d2a08) : Colour(0xff17171a), r.getX(), r.getBottom(), false));
+        g.fillRoundedRectangle(r, 4.0f);
+        g.setColour(Colours::black);
+        g.drawRoundedRectangle(r, 4.0f, 1.2f);
+        g.setColour(lit ? kInk : kInkDim);
+        g.setFont(bold(11.0f));
+        g.drawText(tab == kTriggers ? "WHAT TRIGGERS WHAT" : "QUICK START", r.toNearestInt(), Justification::centred);
+    }
+
+    if (page == kTriggers)
+        paintTriggers(g, area);
+    else
+        paintQuickStart(g, area);
+}
+
+void HelpOverlay::paintQuickStart(Graphics& g, Rectangle<int> area)
+{
     static const char* steps[] = {
         "1.  Play. A picked note starts the STUTTER and the SEQUENCER. TRIGGER sets how hard you must pick; the meter "
-        "next to it shows your playing against that line and lights up when a pick is caught.",
+        "next to it shows your playing against that line and lights up when a pick is caught. Set HEADROOM first.",
         "2.  Turn up SEQUENCER (how many times the six-step sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
-        "the steps change: pitch, filter or sample rate. The coloured bars above TEMPO are the steps: click one to see its knob, "
+        "the steps change: pitch, filter or rate. The coloured bars above TEMPO are the steps: click one to see its knob, "
         "drag across them to loop those steps.",
         "3.  RATE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
-        "signal and sends out only the sequenced sound); OUTPUT sets the level.",
+        "signal and sends out only the sequenced sound); OUTPUT sets the level. Drag the big tempo number to change the tempo.",
         "4.  On the right, the BEAT PATTERN can start the sequence on chosen steps of a bar. Below it, the numbered panels work on "
         "the sequenced sound only, in that order: random sounds, distortion or fuzz, delay, reverb, EQ. Their ON lights glow while they act.",
         "5.  Hover over anything for a short description. Double-click a knob to reset it. SIMPLE / ADVANCED (top right) shows fewer or all "
@@ -506,44 +559,195 @@ void HelpOverlay::paint(Graphics& g)
     for (const auto* text : steps)
     {
         g.setColour(kInk);
-        g.drawFittedText(text, area.removeFromTop(48), Justification::topLeft, 3, 1.0f); // wrap, never squeeze
-        area.removeFromTop(4);
+        g.drawFittedText(text, area.removeFromTop(42), Justification::topLeft, 3, 1.0f); // wrap, never squeeze
+        area.removeFromTop(6);
     }
-
-    // where the sound goes
     area.removeFromTop(8);
-    g.setColour(kInkDim);
-    g.setFont(bold(11.0f));
-    g.drawText("WHERE THE SOUND GOES", area.removeFromTop(18), Justification::left);
-    area.removeFromTop(6);
-    static const char* boxes[] = { "INPUT", "STUTTER +\nSEQUENCE", "CRUSH +\nFILTER", "DISTORTION\n/ FUZZ", "+ REVERB", "DRY/WET", "OUTPUT" };
-    auto row = area.removeFromTop(48);
-    const int n = (int) std::size(boxes);
-    const float w = (float) row.getWidth() / (float) n;
-    for (int i = 0; i < n; ++i)
+    g.setColour(kAccent);
+    g.setFont(bold(12.0f));
+    g.drawText("WHAT TRIGGERS WHAT (the tab at the top) shows when each part acts and where the sound goes.", area.removeFromTop(18),
+               Justification::left);
+}
+
+namespace
+{
+// A box of the flow chart, in the page's own panel style: an orange edge when it acts only while a stutter or sequence
+// plays, a title (with the panel's number badge when it has one) and a few lines of plain text.
+void chartBox(Graphics& g, Rectangle<float> r, const String& title, const String& body, bool lit, int badge = 0)
+{
+    g.setColour(Colour(0xff1d1d21));
+    g.fillRoundedRectangle(r, 8.0f);
+    g.setColour(lit ? kAccent : Colour(0xff3a3a40));
+    g.drawRoundedRectangle(r.reduced(0.5f), 8.0f, lit ? 1.5f : 1.0f);
+    auto inner = r.reduced(10.0f, 7.0f).toNearestInt();
+    if (badge > 0)
+        pedalstyle::drawPanelTitle(g, inner.getX(), inner.getY(), badge, title);
+    else
+        pedalstyle::drawSectionTitle(g, inner.getX(), inner.getY(), title);
+    inner.removeFromTop(18);
+    g.setColour(pedalstyle::inkLabel);
+    g.setFont(plain(11.0f));
+    g.drawFittedText(body, inner, Justification::topLeft, 8, 1.0f);
+}
+
+void chartArrow(Graphics& g, Point<float> from, Point<float> to, const String& label = {})
+{
+    g.setColour(kAccent.withAlpha(0.85f));
+    g.drawArrow({ from, to }, 1.6f, 7.0f, 7.0f);
+    if (label.isNotEmpty()) // above the arrow, centred on it (it may be wider than the arrow)
     {
-        const auto box = Rectangle<float>((float) row.getX() + w * (float) i, (float) row.getY(), w, (float) row.getHeight()).reduced(8.0f, 4.0f);
-        g.setColour(Colour(0xff26262b));
-        g.fillRoundedRectangle(box, 6.0f);
-        g.setColour(i == 0 || i == n - 1 ? kInkDim : kAccent);
-        g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, 1.0f);
-        g.setColour(kInk);
-        g.setFont(bold(10.5f));
-        g.drawFittedText(boxes[i], box.toNearestInt().reduced(3, 2), Justification::centred, 2);
-        if (i + 1 < n)
+        g.setColour(kInkDim);
+        g.setFont(plain(9.5f));
+        g.drawText(label, Rectangle<float>(64.0f, 12.0f).withCentre({ (from.x + to.x) * 0.5f, jmin(from.y, to.y) - 8.0f }).toNearestInt(),
+                   Justification::centred);
+    }
+}
+} // namespace
+
+// The flow chart: the clock across the top; what starts things, what they start and what acts while they play, left
+// to right; and where the sound goes along the bottom, with the effect panels' numbers.
+void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
+{
+    const float ax = (float) area.getX(), w = (float) area.getWidth();
+    float y = (float) area.getY();
+
+    chartBox(g, { ax, y, w, 58.0f }, "THE CLOCK: TEMPO",
+             "The big number on the pedal (drag it, or double-click and type), TAP, or SYNC to follow your DAW. It sets the speed of the "
+             "steps (tempo x SEQ MULT), the stutter's slice (STUTTER LENGTH), the beat pattern's sixteenths and the delay's echoes.", false);
+    y += 58.0f + 20.0f;
+
+    const float c1 = ax, c2 = ax + w * 0.36f, c3 = ax + w * 0.72f, cw = w * 0.28f;
+    g.setColour(kInkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("WHAT STARTS IT", Rectangle<float>(c1, y, cw, 14.0f).toNearestInt(), Justification::left);
+    g.drawText("WHAT IT STARTS", Rectangle<float>(c2, y, cw, 14.0f).toNearestInt(), Justification::left);
+    g.drawText("WHILE ONE PLAYS", Rectangle<float>(c3, y, cw, 14.0f).toNearestInt(), Justification::left);
+    y += 20.0f;
+
+    // what starts it
+    const Rectangle<float> pick(c1, y, cw, 104.0f), pattern(c1, y + 116.0f, cw, 104.0f), continuous(c1, y + 232.0f, cw, 92.0f);
+    chartBox(g, pick, "A PICKED NOTE",
+             "Louder than the TRIGGER line (the meter lights up): restarts the sequence and fires the stutter. With PATTERN LOCK on it "
+             "only fires the stutter.", false);
+    chartBox(g, pattern, "THE BEAT PATTERN",
+             "Each lit sixteenth of the bar does the pattern's ACTION: restart the sequence, move it one step, fire the stutter, or "
+             "restart and stutter. ACTION Off: nothing.", false);
+    chartBox(g, continuous, "CONTINUOUS",
+             "With SEQUENCER on CONTINUOUS the sequence runs on its own; a restart sends it back to step 1.", false);
+
+    // what it starts
+    const Rectangle<float> stutter(c2, y, cw, 96.0f), sequencer(c2, y + 108.0f, cw, 124.0f), sounds(c2, y + 252.0f, cw, 72.0f);
+    chartBox(g, stutter, "STUTTER",
+             "Repeats a slice of what you just played: STUTTER sets 1 to 16 repeats at normal, fast or slow speed, or random. "
+             "STUTTER HOLD freezes it.", true);
+    chartBox(g, sequencer, "SEQUENCER",
+             "Plays the six steps from step 1, SEQUENCER times (once to 8 times, or continuously). Skipped steps are left out and the "
+             "SEQUENCE LOOP repeats its steps. Each step:", true);
+    {
+        // what a step can do, in the colours of the step strip
+        static const char* chips[4] { "PITCH", "FILTER", "RATE", "MUTE" };
+        const float chipW = (cw - 20.0f - 3.0f * 4.0f) / 4.0f;
+        for (int i = 0; i < 4; ++i)
         {
-            g.setColour(kInkDim);
-            const float y = box.getCentreY(), x0 = box.getRight() + 1.0f, x1 = box.getRight() + 15.0f;
-            g.drawArrow(Line<float>(x0, y, x1, y), 1.5f, 6.0f, 6.0f);
+            const Rectangle<float> chip(c2 + 10.0f + (float) i * (chipW + 4.0f), sequencer.getBottom() - 25.0f, chipW, 17.0f);
+            const Colour colour = i < 3 ? pedalstyle::stepTypeColour(i) : kInkDim;
+            g.setColour(colour.withAlpha(0.18f));
+            g.fillRoundedRectangle(chip, 3.0f);
+            g.setColour(colour);
+            g.drawRoundedRectangle(chip.reduced(0.5f), 3.0f, 1.0f);
+            g.setFont(bold(9.5f));
+            g.drawText(chips[i], chip.toNearestInt(), Justification::centred);
         }
     }
-    area.removeFromTop(8);
+    chartBox(g, sounds, "SAMPLE BLEND",
+             "At each step that is not muted, CHANCE decides; then a random sound plays (up to MAX BEATS).", true, 1);
+
+    // while one plays
+    const Rectangle<float> acting(c3, y, cw, 232.0f), between(c3, y + 252.0f, cw, 72.0f);
+    chartBox(g, acting, "THE EFFECTS ACT",
+             "The ON lights glow, and:\n"
+             "- RATE, BITS and FILTER crush the sound (always, or only now with FX ON TRIGGERS)\n"
+             "- 2 DISTORTION distorts it\n"
+             "- 3 DELAY echoes it, and the echoes ring on after\n"
+             "- 4 REVERB adds reverb, and the tail rings on after\n"
+             "- SEQ ONLY lets the sound out\n"
+             "- the random sounds stop when the sequence stops",
+             true);
+    chartBox(g, between, "IN BETWEEN",
+             "Your clean signal, through DRY/WET (none with SEQ ONLY), and the crush unless FX ON TRIGGERS is on.", false);
+
+    // the arrows: every trigger reaches the stutter and the sequencer; both open the effects
+    const float bus1 = c1 + cw + (c2 - c1 - cw) * 0.25f, bus2 = c2 + cw + (c3 - c2 - cw) * 0.45f;
+    g.setColour(kAccent.withAlpha(0.85f));
+    for (const auto& box : { pick, pattern, continuous })
+        g.drawLine(box.getRight(), box.getCentreY(), bus1, box.getCentreY(), 1.6f);
+    g.drawLine(bus1, stutter.getCentreY(), bus1, continuous.getCentreY(), 1.6f);
+    chartArrow(g, { bus1, stutter.getCentreY() }, { c2 - 2.0f, stutter.getCentreY() }, "stutter");
+    chartArrow(g, { bus1, sequencer.getCentreY() }, { c2 - 2.0f, sequencer.getCentreY() }, "restart, step");
+    chartArrow(g, { sequencer.getCentreX(), sequencer.getBottom() + 1.0f }, { sounds.getCentreX(), sounds.getY() - 2.0f });
+    g.setColour(kAccent.withAlpha(0.85f));
+    g.drawLine(stutter.getRight(), stutter.getCentreY(), bus2, stutter.getCentreY(), 1.6f);
+    g.drawLine(sequencer.getRight(), sequencer.getCentreY(), bus2, sequencer.getCentreY(), 1.6f);
+    g.drawLine(bus2, stutter.getCentreY(), bus2, sequencer.getCentreY(), 1.6f);
+    chartArrow(g, { bus2, acting.getCentreY() }, { c3 - 2.0f, acting.getCentreY() });
     g.setColour(kInkDim);
-    g.setFont(plain(11.5f));
-    g.drawFittedText("The random sounds of the SAMPLE BLEND join the sequence before the crush, so they are crushed with it. The reverb hears the "
-                     "sequence before the distortion (tick REVERB TOO to distort the reverb as well). DRY/WET then blends all of it with your "
-                     "clean signal, which never gets distortion or reverb.",
-                     area.removeFromTop(48), Justification::topLeft, 3, 1.0f);
+    g.setFont(plain(10.0f));
+    g.drawText("each step", Rectangle<float>(sequencer.getCentreX() + 6.0f, sequencer.getBottom() + 3.0f, 80.0f, 14.0f).toNearestInt(),
+               Justification::left);
+    y += 324.0f + 24.0f;
+
+    // where the sound goes
+    g.setColour(kInkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("WHERE THE SOUND GOES", Rectangle<float>(ax, y, w, 14.0f).toNearestInt(), Justification::left);
+    y += 20.0f;
+    struct Stage
+    {
+        const char* name;
+        int badge;
+        bool onlyWhilePlaying;
+    };
+    static const Stage stages[] { { "INPUT", 0, false },  { "STUTTER\n+ SOUNDS", 1, true }, { "PITCH", 0, true },  { "RATE, BITS,\nFILTER", 0, false },
+                                  { "DISTORTION", 2, true }, { "DELAY", 3, true },         { "REVERB", 4, true }, { "EQ", 5, false },
+                                  { "DRY/WET", 0, false }, { "OUTPUT", 0, false } };
+    const int n = (int) std::size(stages);
+    const float slot = w / (float) n, gap = 14.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        const Rectangle<float> box(ax + slot * (float) i, y, slot - gap, 48.0f);
+        g.setColour(Colour(0xff1d1d21));
+        g.fillRoundedRectangle(box, 6.0f);
+        g.setColour(stages[i].onlyWhilePlaying ? kAccent : Colour(0xff3a3a40));
+        g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, stages[i].onlyWhilePlaying ? 1.4f : 1.0f);
+        auto text = box.reduced(3.0f, 3.0f);
+        if (stages[i].badge > 0)
+        {
+            const auto badge = Rectangle<float>(13.0f, 13.0f).withCentre({ box.getCentreX(), box.getY() + 10.0f });
+            g.setColour(kAccent.withAlpha(0.85f));
+            g.fillEllipse(badge);
+            g.setColour(Colour(0xff17171a));
+            g.setFont(bold(9.5f));
+            g.drawText(String(stages[i].badge), badge, Justification::centred);
+            text.removeFromTop(14.0f);
+        }
+        g.setColour(kInk);
+        g.setFont(bold(9.5f));
+        g.drawFittedText(stages[i].name, text.toNearestInt(), Justification::centred, 2, 0.8f);
+        if (i + 1 < n)
+            chartArrow(g, { box.getRight() + 1.0f, box.getCentreY() }, { box.getRight() + gap - 1.0f, box.getCentreY() });
+    }
+    y += 48.0f + 10.0f;
+    {
+        const Rectangle<float> key(ax, y + 3.0f, 14.0f, 9.0f);
+        g.setColour(kAccent);
+        g.drawRoundedRectangle(key, 2.0f, 1.4f);
+        g.setColour(kInkDim);
+        g.setFont(plain(10.5f));
+        g.drawFittedText("acts only while a stutter or sequence plays (echoes and tails ring on). The reverb hears the sequence before the "
+                         "distortion (REVERB TOO distorts it as well). Your clean signal never gets distortion, delay or reverb; BYPASS "
+                         "sends it straight out.",
+                         Rectangle<float>(ax + 20.0f, y, w - 20.0f, 30.0f).toNearestInt(), Justification::topLeft, 2, 1.0f);
+    }
 }
 
 void LevelMeter::set(float levelDb, float thresholdDb, bool flash)
@@ -977,7 +1181,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     buildBackground();
 
     // the quick-start guide: on top of everything, opens by itself the first time
-    helpButton.setTooltip("HELP: a one-page quick start, and how the sound travels through BitVibe.");
+    helpButton.setTooltip("HELP: a quick start, and WHAT TRIGGERS WHAT: a chart of what sets each part off, what acts while it plays "
+                          "and where the sound goes.");
     helpButton.onClick = [this]
     {
         helpOverlay.setVisible(true);

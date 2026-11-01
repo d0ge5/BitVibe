@@ -607,7 +607,7 @@ void testSoundBanks()
 // The page's layout: one tempo control (drag or type), SIMPLE hides the stutter and loop settings under the pedal and
 // says when one is on, a shorter window in SIMPLE with BEAT DOG in the right-hand column, and the host sees the
 // parameters in groups, named as on the pedal.
-void testLayout()
+void testLayout(const File& outDir)
 {
     std::puts("layout");
     auto p = makeProcessor();
@@ -676,6 +676,50 @@ void testLayout()
     check(changed > 40, "and a line says when a hidden setting is on (SEQUENCE LOOP: " + String(changed) + " pixels)");
     ed->setRightMode(true);
     check(ed->getHeight() == advancedHeight, "ADVANCED again: the full height");
+
+    // HELP's second page: the chart of what triggers what; its tab switches to it, a click elsewhere closes HELP
+    HelpOverlay* help = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+        if (help == nullptr)
+            help = dynamic_cast<HelpOverlay*>(c);
+    if (help == nullptr)
+    {
+        check(false, "HELP is on the page");
+        return;
+    }
+    help->showPage(HelpOverlay::kQuickStart);
+    help->setVisible(true);
+    help->toFront(false);
+    const auto card = help->getLocalBounds().withSizeKeepingCentre(help->getWidth() - 120, jmin(help->getHeight() - 40, 370)); // the quick start's card
+    auto click = [&](Point<float> at)
+    {
+        const auto now = Time::getCurrentTime();
+        help->mouseUp(MouseEvent(Desktop::getInstance().getMainMouseSource(), at, ModifierKeys(ModifierKeys::leftButtonModifier), 1.0f, 0.0f,
+                                 0.0f, 0.0f, 0.0f, help, help, now, at, now, 1, false));
+    };
+    const auto quickStart = snapshot(*ed, 1.0f);
+    click({ (float) card.getRight() - 28.0f - 88.0f, (float) card.getY() + 34.0f });
+    check(help->isVisible() && help->getPage() == HelpOverlay::kTriggers, "HELP: the WHAT TRIGGERS WHAT tab shows the flow chart");
+    const auto chart = snapshot(*ed, 1.0f);
+    int differ = 0;
+    for (int yy = card.getY() + 80; yy < card.getBottom(); yy += 2)
+        for (int xx = card.getX(); xx < card.getRight(); xx += 2)
+            differ += chart.getPixelAt(xx, yy) != quickStart.getPixelAt(xx, yy) ? 1 : 0;
+    const auto chartCard = help->getLocalBounds().withSizeKeepingCentre(help->getWidth() - 120, jmin(help->getHeight() - 40, 700));
+    check(differ > 5000, "a page of its own (" + String(differ) + " pixels differ from the quick start)");
+    int orange = 0;
+    for (int yy = chartCard.getY() + 80; yy < chartCard.getBottom(); ++yy)
+        for (int xx = chartCard.getX(); xx < chartCard.getRight(); ++xx)
+        {
+            const auto px = chart.getPixelAt(xx, yy);
+            orange += px.getRed() > 200 && px.getGreen() > 120 && px.getGreen() < 190 && px.getBlue() < 80 ? 1 : 0;
+        }
+    check(orange > 1500, "drawn in the page's orange: the arrows and the edges of what acts while a sequence plays (" + String(orange) + " pixels)");
+    save(*ed, outDir.getChildFile("help_triggers.png"));
+    help->showPage(HelpOverlay::kQuickStart);
+    save(*ed, outDir.getChildFile("help_quick_start.png"));
+    click({ 30.0f, 30.0f });
+    check(!help->isVisible(), "a click outside the tabs closes HELP");
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -2386,7 +2430,7 @@ int main(int argc, char** argv)
     testPresetFiles();
     testBeatRouting();
     testEasierStart();
-    testLayout();
+    testLayout(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

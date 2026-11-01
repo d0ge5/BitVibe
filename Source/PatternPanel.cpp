@@ -111,7 +111,7 @@ void PatternPanel::updateDimming()
     const float alpha = isDimmed() ? kOffAlpha : 1.0f;
     for (Component* c : std::initializer_list<Component*> { &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton,
                                                             &restartButton, &lockButton })
-        if (c->getAlpha() != alpha)
+        if (!sameFloat(c->getAlpha(), alpha))
             c->setAlpha(alpha);
 }
 

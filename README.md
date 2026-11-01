@@ -101,12 +101,21 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 ## Using it
 
-Click **? HELP** at the top for a one-page quick start (it opens by itself the first time). Hover over any
+Click **? HELP** at the top for a quick start (it opens by itself the first time) and **WHAT TRIGGERS WHAT**, a
+flow chart of when each part acts (below). Hover over any
 control for a short description, double-click a knob to reset it, and look at the bubble that shows its value
 while you turn it. You can drag the bottom-right corner to resize the window; it remembers the size, and opens
 smaller when that size would not fit on your screen. **SIMPLE / ADVANCED** (top right) shows the controls that matter
 most or all of them, on both sides; what SIMPLE hides keeps working, and the panels say when a hidden setting is on.
 Buttons with a small light on the left switch something on and off; the others do something once.
+
+<p align="center"><img src="artifacts/help_triggers.png" width="640" alt="HELP: WHAT TRIGGERS WHAT, a flow chart of what starts the stutter and the sequence, what acts while they play, and where the sound goes"></p>
+
+**What triggers what:** a picked note (louder than the TRIGGER line) restarts the sequence and fires the stutter
+(only the stutter with PATTERN LOCK on); the beat pattern does its ACTION on each lit sixteenth; a sequencer on
+CONTINUOUS runs by itself. Each step sets its pitch, filter or rate (or mutes) and may bring in a random sound. While
+a stutter or sequence plays, the distortion, delay and reverb act and their ON lights glow; the echoes and tails ring
+on afterwards. The tempo clock sets the speed of all of it.
 
 ### The pedal
 
