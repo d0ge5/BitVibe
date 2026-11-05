@@ -6,7 +6,7 @@
 
 // Editor settings the player leaves behind, remembered between sessions in the same folder as the sample settings
 // (see SampleBank::settingsFolder()): the window size (1.0 is the size the editor is designed at; a window is opened
-// smaller when that would not fit on the screen, without forgetting the size chosen) and whether the
+// smaller when that would not fit on the screen, without forgetting the size chosen), the theme, and whether the
 // quick-start help has been seen (it opens by itself the first time).
 namespace uisettings
 {
@@ -125,6 +125,16 @@ inline void setBeatDogKnobs(float smooth, float sway)
     auto xml = read();
     xml->setAttribute("beatDogSmooth", (double) smooth);
     xml->setAttribute("beatDogSway", (double) sway);
+    write(*xml);
+}
+
+// The theme the page is drawn in, by name (so a theme can be added without changing what was picked).
+inline juce::String themeName() { return read()->getStringAttribute("theme", {}); }
+
+inline void setThemeName(const juce::String& name)
+{
+    auto xml = read();
+    xml->setAttribute("theme", name);
     write(*xml);
 }
 

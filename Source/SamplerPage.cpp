@@ -49,7 +49,7 @@ public:
     void paint(Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-        g.setColour(Colour(0xff0e0e10));
+        g.setColour(theme.well);
         g.fillRoundedRectangle(b, 4.0f);
         const auto total = (int64) page.recL.size();
         if (total == 0 || viewEnd <= viewStart)
@@ -93,7 +93,7 @@ public:
         if (played >= 0.0f)
         {
             const float x = xFor(page.selStart + (int64) ((double) played * page.rate));
-            g.setColour(Colours::white.withAlpha(0.9f));
+            g.setColour(ink.withAlpha(0.9f));
             g.fillRect(x - 0.75f, b.getY(), 1.5f, b.getHeight());
         }
     }
@@ -249,9 +249,6 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     // 4 SAVE
     nameBox.setText("My sample", false);
     nameBox.setFont(bold(13.0f));
-    nameBox.setColour(TextEditor::backgroundColourId, Colour(0xff0e0e10));
-    nameBox.setColour(TextEditor::outlineColourId, panelEdge);
-    nameBox.setColour(TextEditor::textColourId, ink);
     nameBox.setTooltip("NAME: what the sound is called (the file name in Sounds/Sampled; a number is added if the name is taken).");
     addAndMakeVisible(nameBox);
     bankBox.setLookAndFeel(&laf);
@@ -332,7 +329,7 @@ void SamplerPage::resized()
 
 void SamplerPage::paint(Graphics& g)
 {
-    g.fillAll(Colour(0xff111113));
+    g.fillAll(theme.background);
     g.setColour(ink);
     g.setFont(bold(18.0f));
     g.drawText("SAMPLER", 190, 8, 300, 26, Justification::centredLeft);
@@ -363,7 +360,7 @@ void SamplerPage::paint(Graphics& g)
                    Justification::centredLeft);
         // the level of what is coming in
         const Rectangle<float> meter((float) kRecordBox.getX() + 844.0f, (float) kRecordBox.getY() + 36.0f, 68.0f, 10.0f);
-        g.setColour(Colour(0xff0e0e10));
+        g.setColour(theme.well);
         g.fillRoundedRectangle(meter, 2.0f);
         g.setColour(meterLevel > 0.97f ? red : accent);
         g.fillRoundedRectangle(meter.withWidth(meter.getWidth() * jlimit(0.0f, 1.0f, meterLevel)), 2.0f);

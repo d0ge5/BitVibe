@@ -470,7 +470,7 @@ void DrumPage::resized()
 
 void DrumPage::paint(Graphics& g)
 {
-    g.fillAll(Colour(0xff0d0d0f));
+    g.fillAll(theme.background);
     drawPanel(g, kBeatPanel, "BEAT");
     drawPanel(g, kPlayPanel, "PLAYBACK");
     drawPanel(g, kFeedPanel, "LIVE FEED");
@@ -478,9 +478,9 @@ void DrumPage::paint(Graphics& g)
 
     // Drop zone: the beat's name and what is happening.
     const auto zone = kDropZone.toFloat();
-    g.setColour(dragOver ? accent.withAlpha(0.18f) : Colour(0xff0e0e10));
+    g.setColour(dragOver ? accent.withAlpha(0.18f) : theme.well);
     g.fillRoundedRectangle(zone, 6.0f);
-    g.setColour(dragOver ? accent : Colour(0xff3c3c42));
+    g.setColour(dragOver ? accent : theme.outline);
     const float dash[] { 5.0f, 4.0f };
     Path outline;
     outline.addRoundedRectangle(zone.reduced(0.5f), 6.0f);
@@ -554,7 +554,7 @@ void DrumPage::paintFeed(Graphics& g)
 
     // Overview of the whole loop with the visible window.
     const auto ov = kOverview.toFloat();
-    g.setColour(Colour(0xff0e0e10));
+    g.setColour(theme.well);
     g.fillRoundedRectangle(ov, 3.0f);
     if (model.durationSeconds > 0.0)
     {
@@ -586,7 +586,7 @@ void DrumPage::paintFeed(Graphics& g)
         const auto lane = laneBounds(d);
         const auto& s = settings[(size_t) d];
         const Colour colour = kDrumColours[(size_t) d];
-        g.setColour(Colour(d % 2 == 0 ? 0xff121215 : 0xff101012));
+        g.setColour(d % 2 == 0 ? theme.panel : theme.well);
         g.fillRect(lane);
 
         g.setColour(colour);
@@ -710,7 +710,7 @@ void DrumPage::paintRows(Graphics& g)
                 }
             }
 
-        g.setColour(Colour(0xff26262b));
+        g.setColour(theme.cell);
         g.fillRect(24, y + kRowH - 2, 432, 1);
         drawLed(g, { 30.0f, (float) y + 20.0f }, 4.5f, colour, lit);
         g.setColour(colour);

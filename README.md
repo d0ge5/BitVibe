@@ -57,6 +57,7 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need (SIMPLE also makes the window shorter).
+- **Six themes** to switch between with the **THEME** button: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST.
 
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
 distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control,
@@ -108,6 +109,19 @@ while you turn it. You can drag the bottom-right corner to resize the window; it
 smaller when that size would not fit on your screen. **SIMPLE / ADVANCED** (top right) shows the controls that matter
 most or all of them, on both sides; what SIMPLE hides keeps working, and the panels say when a hidden setting is on.
 Buttons with a small light on the left switch something on and off; the others do something once.
+**THEME** (top right) changes the look; each click shows the next theme:
+
+- **NIGHT**: the black pedal with orange lights (the one it starts in).
+- **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
+- **MIDNIGHT**: navy, with cyan lights and a cyan BEAT DOG.
+- **SYNTHWAVE**: deep purple, with hot pink lights and a cyan BEAT DOG.
+- **SURPLUS**: olive drab, with amber lights and an amber BEAT DOG screen.
+- **CONTRAST**: black and white, with yellow lights and strong outlines, the easiest to read.
+
+Only the colours change. Every open BitVibe window follows, and the choice is remembered. Every theme is checked for
+contrast, so its text and lights stay easy to read.
+
+<p align="center"><img src="artifacts/themes.png" width="720" alt="The six themes: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST"></p>
 
 <p align="center"><img src="artifacts/help_triggers.png" width="640" alt="HELP: WHAT TRIGGERS WHAT, a flow chart of what starts the stutter and the sequence, what acts while they play, and where the sound goes"></p>
 

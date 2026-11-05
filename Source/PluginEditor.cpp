@@ -48,10 +48,12 @@ constexpr std::array<int, 3> kColX { 88, 240, 392 };
 constexpr std::array<int, 2> kRowY { 142, 288 };
 constexpr int kKnobSize = 88;
 
-const Colour kInk = pedalstyle::ink;
-const Colour kInkDim = pedalstyle::inkDim;
-const Colour kAccent = pedalstyle::accent;
-const Colour kRed = pedalstyle::red;
+// the theme's colours (they change with the theme, so these are references)
+const Colour& kInk = pedalstyle::ink;
+const Colour& kInkDim = pedalstyle::inkDim;
+const Colour& kAccent = pedalstyle::accent;
+const Colour& kRed = pedalstyle::red;
+const pedalstyle::Theme& kTheme = pedalstyle::theme;
 
 using pedalstyle::bold;
 using pedalstyle::plain;
@@ -85,26 +87,230 @@ String hzText(float hz)
 
 PedalLookAndFeel::PedalLookAndFeel()
 {
-    setColour(ComboBox::backgroundColourId, Colour(0xff1a1a1d));
+    applyTheme();
+}
+
+void PedalLookAndFeel::applyTheme()
+{
+    setColour(ComboBox::backgroundColourId, kTheme.popup);
     setColour(ComboBox::textColourId, kInk);
-    setColour(ComboBox::outlineColourId, Colour(0xff3c3c42));
+    setColour(ComboBox::outlineColourId, kTheme.outline);
     setColour(ComboBox::arrowColourId, kInkDim);
-    setColour(PopupMenu::backgroundColourId, Colour(0xff1a1a1d));
+    setColour(PopupMenu::backgroundColourId, kTheme.popup);
     setColour(PopupMenu::textColourId, kInk);
-    setColour(PopupMenu::highlightedBackgroundColourId, Colour(0xff4a3410));
+    setColour(PopupMenu::highlightedBackgroundColourId, kTheme.selection);
     setColour(PopupMenu::highlightedTextColourId, kInk);
-    setColour(TooltipWindow::backgroundColourId, Colour(0xff26262b));
-    setColour(BubbleComponent::backgroundColourId, Colour(0xff26262b));
-    setColour(BubbleComponent::outlineColourId, Colour(0xff55555d));
+    setColour(TooltipWindow::backgroundColourId, kTheme.tooltip);
+    setColour(BubbleComponent::backgroundColourId, kTheme.tooltip);
+    setColour(BubbleComponent::outlineColourId, kTheme.tooltipEdge);
     setColour(TooltipWindow::textColourId, kInk);
-    setColour(TooltipWindow::outlineColourId, Colour(0xff55555d));
+    setColour(TooltipWindow::outlineColourId, kTheme.tooltipEdge);
     setColour(Label::textColourId, kInk);
     setColour(Label::textWhenEditingColourId, kInk);
-    setColour(Label::backgroundWhenEditingColourId, Colour(0xff0e0e10));
+    setColour(Label::backgroundWhenEditingColourId, kTheme.well);
     setColour(Label::outlineWhenEditingColourId, kAccent);
-    setColour(TextEditor::highlightColourId, Colour(0xff4a3410));
+    setColour(TextEditor::backgroundColourId, kTheme.well);
+    setColour(TextEditor::textColourId, kInk);
+    setColour(TextEditor::outlineColourId, kTheme.panelEdge);
+    setColour(TextEditor::highlightColourId, kTheme.selection);
     setColour(TextEditor::highlightedTextColourId, kInk);
     setColour(CaretComponent::caretColourId, kAccent);
+    setColour(AlertWindow::backgroundColourId, kTheme.panel);
+    setColour(AlertWindow::textColourId, kInk);
+    setColour(AlertWindow::outlineColourId, kTheme.panelEdge);
+    setColour(TextButton::buttonColourId, kTheme.buttonTop);
+    setColour(TextButton::buttonOnColourId, kTheme.litTop);
+    setColour(TextButton::textColourOffId, kInk);
+    setColour(TextButton::textColourOnId, kInk);
+}
+
+// ------------------------------------------------------------------------------------------
+// Themes
+
+namespace
+{
+// A dark theme in another colour: every neutral of the first theme in the given hue and saturation, as bright as it was
+// (times lift), so the page keeps its depth. The knobs take half the colour.
+pedalstyle::Theme tinted(pedalstyle::Theme t, float hue, float saturation, float lift)
+{
+    for (auto* c : { &t.background, &t.faceTop, &t.faceBottom, &t.panel, &t.panelEdge, &t.well, &t.outline, &t.mid, &t.unlit,
+                     &t.buttonTop, &t.buttonBottom, &t.buttonPressed, &t.popup, &t.tooltip, &t.tooltipEdge, &t.cell, &t.cellStrong,
+                     &t.cellPlaying, &t.cellEdge, &t.gridLine, &t.gridMajor })
+        *c = Colour::fromHSV(hue, saturation, jmin(1.0f, c->getBrightness() * lift), c->getFloatAlpha());
+    for (auto* c : { &t.knobLight, &t.knobDark, &t.capTop, &t.capBottom })
+        *c = Colour::fromHSV(hue, saturation * 0.5f, c->getBrightness(), 1.0f);
+    return t;
+}
+
+// The accent, and the colours that go with it: a button that is on, the highlighted menu item.
+void setAccent(pedalstyle::Theme& t, Colour accent)
+{
+    t.accent = accent;
+    t.litTop = accent.withMultipliedBrightness(0.42f);
+    t.litBottom = accent.withMultipliedBrightness(0.24f);
+    t.selection = accent.withMultipliedBrightness(0.29f);
+}
+
+std::vector<pedalstyle::Theme> makeThemes()
+{
+    using pedalstyle::Theme;
+    std::vector<Theme> all;
+    all.push_back(Theme {}); // NIGHT: black powder coat, orange lights
+
+    {
+        // DAYLIGHT: a cream pedal with black knobs, for a bright room
+        Theme t;
+        t.name = "DAYLIGHT";
+        t.ink = Colour(0xff1f1e1b);
+        t.inkDim = Colour(0xff625f57);
+        t.inkLabel = Colour(0xff3b3a35);
+        t.accent = Colour(0xffc4410c);
+        t.onAccent = Colours::white;
+        t.red = Colour(0xffd92b20);
+        t.background = Colour(0xffcdc9bf);
+        t.faceTop = Colour(0xfff6f3ea);
+        t.faceBottom = Colour(0xffd8d2c4);
+        t.flake = Colour(0xff6b5f48);
+        t.rim = Colour(0x66000000);
+        t.panel = Colour(0xfff3f1eb);
+        t.panelEdge = Colour(0xffbfbaae);
+        t.well = Colour(0xffe2ded4);
+        t.outline = Colour(0xffa8a396);
+        t.mid = Colour(0xff86817a);
+        t.unlit = Colour(0xffc4bfb3);
+        t.buttonTop = Colour(0xfffdfcf8);
+        t.buttonBottom = Colour(0xffe0dcd2);
+        t.buttonPressed = Colour(0xffd3cec3);
+        t.buttonEdge = Colour(0xff9c978b);
+        t.litTop = Colour(0xffffd6b5);
+        t.litBottom = Colour(0xfff4a56b);
+        t.selection = Colour(0xffffd6b5);
+        t.popup = Colour(0xfff8f6f1);
+        t.tooltip = Colour(0xfffdfcf8);
+        t.tooltipEdge = Colour(0xff9c978b);
+        t.cell = Colour(0xffe0dcd2);
+        t.cellStrong = Colour(0xffd2cdc1);
+        t.cellPlaying = Colour(0xffb0aa9c);
+        t.cellEdge = Colour(0xffbfbaae);
+        t.gridLine = Colour(0xffd6d2c8);
+        t.gridMajor = Colour(0xffaca698);
+        t.screenEdge = Colour(0xff9c978b);
+        t.steps = { Colour(0xff1a62c4), Colour(0xff0f7a3c), Colour(0xff8a4bd6) };
+        all.push_back(t);
+    }
+    {
+        // MIDNIGHT: navy, with cyan lights and a cyan dog
+        Theme t = tinted({}, 0.61f, 0.42f, 1.15f);
+        t.name = "MIDNIGHT";
+        t.ink = t.pointer = Colour(0xffeef3ff);
+        t.inkDim = Colour(0xff8f9cb8);
+        t.inkLabel = Colour(0xffbdc7dd);
+        setAccent(t, Colour(0xff3fd0ff));
+        t.onAccent = Colour(0xff0a1020);
+        t.screen = Colour(0xff3fd0ff);
+        t.screenEdge = Colour(0xff16384a);
+        t.steps = { Colour(0xffa591ff), Colour(0xff93e36e), Colour(0xffff80b8) };
+        all.push_back(t);
+    }
+    {
+        // SYNTHWAVE: deep purple, hot pink lights, a cyan dog
+        Theme t = tinted({}, 0.76f, 0.55f, 1.2f);
+        t.name = "SYNTHWAVE";
+        t.ink = t.pointer = Colour(0xfffff0fb);
+        t.inkDim = Colour(0xffb593bd);
+        t.inkLabel = Colour(0xffe2c6e8);
+        setAccent(t, Colour(0xffff3d9a));
+        t.onAccent = Colour(0xff1a0a1f);
+        t.faceTop = Colour(0xff3a2152);
+        t.faceBottom = Colour(0xff120a24);
+        t.screen = Colour(0xff35e0ff);
+        t.screenEdge = Colour(0xff2a1f52);
+        t.steps = { Colour(0xff35d4ff), Colour(0xffc6f04a), Colour(0xffffa94d) };
+        all.push_back(t);
+    }
+    {
+        // SURPLUS: olive drab, with amber lights and an amber monitor
+        Theme t = tinted({}, 0.2f, 0.38f, 1.1f);
+        t.name = "SURPLUS";
+        t.ink = t.pointer = Colour(0xfff1ecd6);
+        t.inkDim = Colour(0xffa7a186);
+        t.inkLabel = Colour(0xffd0caaf);
+        setAccent(t, Colour(0xffffb000));
+        t.onAccent = Colour(0xff1a1708);
+        t.screen = Colour(0xffffb000);
+        t.screenEdge = Colour(0xff4a3a10);
+        t.steps = { Colour(0xff72b8ff), Colour(0xff5fe0c0), Colour(0xffd89eff) };
+        all.push_back(t);
+    }
+    {
+        // CONTRAST: black and white, yellow lights, outlines you cannot miss
+        Theme t;
+        t.name = "CONTRAST";
+        t.ink = t.pointer = Colours::white;
+        t.inkDim = Colour(0xffd0d0d0);
+        t.inkLabel = Colour(0xffededed);
+        setAccent(t, Colour(0xffffe000));
+        t.onAccent = Colours::black;
+        t.red = Colour(0xffff4d4d);
+        t.background = Colours::black;
+        t.faceTop = Colour(0xff161616);
+        t.faceBottom = Colours::black;
+        t.rim = Colour(0xffbbbbbb);
+        t.panel = Colours::black;
+        t.panelEdge = Colour(0xffbbbbbb);
+        t.well = Colours::black;
+        t.outline = Colour(0xffa0a0a0);
+        t.mid = Colour(0xffd0d0d0);
+        t.unlit = Colour(0xff5a5a5a);
+        t.buttonTop = Colour(0xff2a2a2a);
+        t.buttonBottom = Colour(0xff141414);
+        t.buttonPressed = Colour(0xff3a3a3a);
+        t.buttonEdge = Colour(0xffbbbbbb);
+        t.popup = Colours::black;
+        t.tooltip = Colours::black;
+        t.tooltipEdge = Colours::white;
+        t.knobLight = Colour(0xff6a6a6a);
+        t.knobDark = Colours::black;
+        t.capTop = Colour(0xff222222);
+        t.capBottom = Colours::black;
+        t.cell = Colour(0xff1a1a1a);
+        t.cellStrong = Colour(0xff2e2e2e);
+        t.cellPlaying = Colour(0xff6a6a6a);
+        t.cellEdge = Colour(0xff8a8a8a);
+        t.gridLine = Colour(0xff333333);
+        t.gridMajor = Colour(0xff8a8a8a);
+        t.screen = Colour(0xffeeeeee);
+        t.screenEdge = Colour(0xffbbbbbb);
+        t.steps = { Colour(0xff6cc0ff), Colour(0xff5cff8a), Colour(0xffe2a8ff) };
+        all.push_back(t);
+    }
+    return all;
+}
+} // namespace
+
+const std::vector<pedalstyle::Theme>& pedalstyle::themes()
+{
+    static const std::vector<Theme> all = makeThemes();
+    return all;
+}
+
+void pedalstyle::setTheme(int index)
+{
+    const int count = (int) themes().size();
+    const int i = ((index % count) + count) % count;
+    if (i == detail::shownIndex)
+        return;
+    detail::shown = themes()[(size_t) i];
+    detail::shownIndex = i;
+    ++detail::serial;
+}
+
+int pedalstyle::findTheme(const String& name)
+{
+    for (size_t i = 0; i < themes().size(); ++i)
+        if (name == themes()[i].name)
+            return (int) i;
+    return 0;
 }
 
 void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, int height, float sliderPos,
@@ -134,23 +340,26 @@ void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, in
     g.setColour(Colours::black.withAlpha(0.55f));
     g.fillEllipse(c.x - R + 1.0f, c.y - R + 3.5f, R * 2.0f, R * 2.0f);
 
-    g.setGradientFill(ColourGradient(Colour(0xff5a5a60), c.x - R * 0.55f, c.y - R * 0.8f, Colour(0xff0e0e10),
+    g.setGradientFill(ColourGradient(kTheme.knobLight, c.x - R * 0.55f, c.y - R * 0.8f, kTheme.knobDark,
                                      c.x + R * 0.6f, c.y + R * 0.9f, false));
     g.fillEllipse(c.x - R, c.y - R, R * 2.0f, R * 2.0f);
     g.setColour(Colours::black.withAlpha(0.85f));
     g.drawEllipse(c.x - R, c.y - R, R * 2.0f, R * 2.0f, 1.6f);
 
     const float Ri = R * 0.80f;
-    g.setGradientFill(ColourGradient(Colour(0xff2a2a2e), c.x, c.y - Ri, Colour(0xff161618), c.x, c.y + Ri, false));
+    g.setGradientFill(ColourGradient(kTheme.capTop, c.x, c.y - Ri, kTheme.capBottom, c.x, c.y + Ri, false));
     g.fillEllipse(c.x - Ri, c.y - Ri, Ri * 2.0f, Ri * 2.0f);
     g.setColour(Colours::white.withAlpha(0.07f));
     g.drawEllipse(c.x - Ri, c.y - Ri, Ri * 2.0f, Ri * 2.0f, 1.0f);
 
-    // pointer
+    // pointer: in the knob's own colour (a step's type, the Alt layer), else in the theme's pointer colour
     const float angle = startAngle + sliderPos * (endAngle - startAngle);
     Path pointer;
     pointer.addRoundedRectangle(-1.8f, -R * 0.86f, 3.6f, R * 0.5f, 1.6f);
-    g.setColour(enabled ? ink : ink.withAlpha(0.3f));
+    Colour pointerColour = props.contains("inkColour") || alt ? ink : kTheme.pointer;
+    if (std::abs(pointerColour.getPerceivedBrightness() - kTheme.capTop.getPerceivedBrightness()) < 0.35f)
+        pointerColour = pointerColour.interpolatedWith(kTheme.pointer, 0.5f); // a colour that would be lost on the knob
+    g.setColour(enabled ? pointerColour : pointerColour.withAlpha(0.3f));
     g.fillPath(pointer, AffineTransform::rotation(angle).translated(c.x, c.y));
 }
 
@@ -165,12 +374,12 @@ void PedalLookAndFeel::drawLinearSlider(Graphics& g, int x, int y, int width, in
     const float pos = jlimit(left, right, sliderPos);
 
     const auto groove = Rectangle<float>(left, cy - 3.0f, right - left, 6.0f);
-    g.setColour(Colour(0xff0a0a0c));
+    g.setColour(kTheme.well);
     g.fillRoundedRectangle(groove, 3.0f);
-    g.setColour(Colour(0xff34343a));
+    g.setColour(kTheme.outline);
     g.drawRoundedRectangle(groove, 3.0f, 1.0f);
 
-    g.setColour(active ? kAccent : Colour(0xff5a5a60));
+    g.setColour(active ? kAccent : kTheme.mid);
     g.fillRoundedRectangle(Rectangle<float>(left, cy - 3.0f, jmax(0.0f, pos - left), 6.0f), 3.0f);
 
     for (int i = 0; i <= 4; ++i)
@@ -197,7 +406,7 @@ void pedalstyle::drawPanelTitle(Graphics& g, int x, int y, int number, const Str
     const Rectangle<float> badge((float) x, (float) y + 0.5f, 13.0f, 13.0f);
     g.setColour(kAccent.withAlpha(0.85f));
     g.fillEllipse(badge);
-    g.setColour(Colour(0xff17171a));
+    g.setColour(kTheme.onAccent);
     g.setFont(bold(9.5f));
     g.drawText(String(number), badge, Justification::centred);
     g.setColour(kInk);
@@ -229,9 +438,9 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
     if ((bool) b.getProperties().getWithDefault(powerProperty, false))
     {
         // a power button: a light and ON / OFF
-        g.setColour(Colour(0xff111113));
+        g.setColour(kTheme.well);
         g.fillRoundedRectangle(r, r.getHeight() * 0.5f);
-        g.setColour(highlighted ? Colour(0xff6a6a72) : Colour(0xff34343a));
+        g.setColour(highlighted ? kTheme.mid : kTheme.outline);
         g.drawRoundedRectangle(r, r.getHeight() * 0.5f, 1.0f);
         const Point<float> c(r.getX() + 10.0f, r.getCentreY());
         if (on && (bool) b.getProperties().getWithDefault(activeProperty, false))
@@ -239,7 +448,7 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
             g.setColour(kAccent.withAlpha(0.3f));
             g.fillEllipse(c.x - 7.0f, c.y - 7.0f, 14.0f, 14.0f);
         }
-        g.setColour(on ? kAccent : Colour(0xff3c3c42));
+        g.setColour(on ? kAccent : kTheme.unlit);
         g.fillEllipse(c.x - 3.5f, c.y - 3.5f, 7.0f, 7.0f);
         g.setColour(on ? kInk : kInkDim);
         g.setFont(bold(10.0f));
@@ -247,10 +456,10 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
         return;
     }
     // a switch: a light on the left, so it reads as on / off rather than as a button that does something once
-    g.setGradientFill(ColourGradient(on ? Colour(0xff6a4a12) : Colour(0xff34343a), r.getX(), r.getY(),
-                                     on ? Colour(0xff3d2a08) : Colour(0xff1a1a1d), r.getX(), r.getBottom(), false));
+    g.setGradientFill(ColourGradient(on ? kTheme.litTop : kTheme.buttonTop, r.getX(), r.getY(),
+                                     on ? kTheme.litBottom : kTheme.buttonBottom, r.getX(), r.getBottom(), false));
     g.fillRoundedRectangle(r, 4.0f);
-    g.setColour(highlighted ? Colour(0xff6a6a72) : Colour(0xff0c0c0e));
+    g.setColour(highlighted ? kTheme.mid : kTheme.buttonEdge);
     g.drawRoundedRectangle(r, 4.0f, 1.2f);
     pedalstyle::drawSwitchLight(g, { r.getX() + 9.0f, r.getCentreY() }, on);
     g.setColour(on ? kInk : kInkDim);
@@ -387,7 +596,7 @@ void StepStrip::mouseUp(const MouseEvent& e)
 void StepStrip::paint(Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
-    g.setColour(Colour(0xff0e0e10).withAlpha(0.8f));
+    g.setColour(kTheme.well.withAlpha(0.8f));
     g.fillRoundedRectangle(b, 3.0f);
     const float slot = b.getWidth() / 6.0f;
     if (loopLo >= 0) // the loop section: a frame around its steps
@@ -417,11 +626,11 @@ void StepStrip::paint(Graphics& g)
         }
         if (lit) // the step playing now
         {
-            g.setColour(Colours::white.withAlpha(0.85f));
+            g.setColour(kInk.withAlpha(0.85f));
             g.drawRoundedRectangle(cell.expanded(1.5f, 2.0f), 2.0f, 1.2f);
         }
     }
-    g.setColour(Colour(0xff3c3c42));
+    g.setColour(kTheme.outline);
     g.drawRoundedRectangle(b.reduced(0.5f), 3.0f, 1.0f);
     if (loopLo >= 0)
     {
@@ -457,7 +666,7 @@ void StepTypeTags::paint(Graphics& g)
         }
         g.setColour(chosen || following ? colour : kInkDim.withAlpha(0.45f));
         g.drawRoundedRectangle(r, 3.0f, following ? 1.4f : 1.0f);
-        g.setColour(chosen ? Colour(0xff111113) : (following ? colour : kInkDim.withAlpha(0.6f)));
+        g.setColour(chosen ? kTheme.onAccent : (following ? colour : kInkDim.withAlpha(0.6f)));
         g.setFont(bold(10.5f));
         g.drawText(letters[i], r, Justification::centred);
     }
@@ -504,7 +713,7 @@ void HelpOverlay::paint(Graphics& g)
 {
     g.fillAll(Colours::black.withAlpha(0.84f));
     const auto card = cardBounds().toFloat();
-    g.setColour(Colour(0xff17171a));
+    g.setColour(kTheme.panel);
     g.fillRoundedRectangle(card, 12.0f);
     g.setColour(kAccent);
     g.drawRoundedRectangle(card.reduced(0.5f), 12.0f, 1.5f);
@@ -524,10 +733,10 @@ void HelpOverlay::paint(Graphics& g)
     {
         const auto r = tabBounds(tab).toFloat().reduced(1.0f);
         const bool lit = tab == page;
-        g.setGradientFill(ColourGradient(lit ? Colour(0xff6a4a12) : Colour(0xff3a3a40), r.getX(), r.getY(),
-                                         lit ? Colour(0xff3d2a08) : Colour(0xff17171a), r.getX(), r.getBottom(), false));
+        g.setGradientFill(ColourGradient(lit ? kTheme.litTop : kTheme.buttonTop, r.getX(), r.getY(),
+                                         lit ? kTheme.litBottom : kTheme.buttonBottom, r.getX(), r.getBottom(), false));
         g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(Colours::black);
+        g.setColour(kTheme.buttonEdge);
         g.drawRoundedRectangle(r, 4.0f, 1.2f);
         g.setColour(lit ? kInk : kInkDim);
         g.setFont(bold(11.0f));
@@ -575,9 +784,9 @@ namespace
 // plays, a title (with the panel's number badge when it has one) and a few lines of plain text.
 void chartBox(Graphics& g, Rectangle<float> r, const String& title, const String& body, bool lit, int badge = 0)
 {
-    g.setColour(Colour(0xff1d1d21));
+    g.setColour(kTheme.cell);
     g.fillRoundedRectangle(r, 8.0f);
-    g.setColour(lit ? kAccent : Colour(0xff3a3a40));
+    g.setColour(lit ? kAccent : kTheme.outline);
     g.drawRoundedRectangle(r.reduced(0.5f), 8.0f, lit ? 1.5f : 1.0f);
     auto inner = r.reduced(10.0f, 7.0f).toNearestInt();
     if (badge > 0)
@@ -715,9 +924,9 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
     for (int i = 0; i < n; ++i)
     {
         const Rectangle<float> box(ax + slot * (float) i, y, slot - gap, 48.0f);
-        g.setColour(Colour(0xff1d1d21));
+        g.setColour(kTheme.cell);
         g.fillRoundedRectangle(box, 6.0f);
-        g.setColour(stages[i].onlyWhilePlaying ? kAccent : Colour(0xff3a3a40));
+        g.setColour(stages[i].onlyWhilePlaying ? kAccent : kTheme.outline);
         g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, stages[i].onlyWhilePlaying ? 1.4f : 1.0f);
         auto text = box.reduced(3.0f, 3.0f);
         if (stages[i].badge > 0)
@@ -725,7 +934,7 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
             const auto badge = Rectangle<float>(13.0f, 13.0f).withCentre({ box.getCentreX(), box.getY() + 10.0f });
             g.setColour(kAccent.withAlpha(0.85f));
             g.fillEllipse(badge);
-            g.setColour(Colour(0xff17171a));
+            g.setColour(kTheme.onAccent);
             g.setFont(bold(9.5f));
             g.drawText(String(stages[i].badge), badge, Justification::centred);
             text.removeFromTop(14.0f);
@@ -765,27 +974,27 @@ void LevelMeter::paint(Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
     auto toY = [&b](float db) { return b.getBottom() - b.getHeight() * jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
-    g.setColour(Colour(0xff0e0e10));
+    g.setColour(kTheme.well);
     g.fillRoundedRectangle(b, 2.0f);
     const float top = toY(level);
     if (top < b.getBottom())
     {
-        g.setColour(lit ? kAccent : (level >= threshold ? kAccent.withAlpha(0.55f) : Colour(0xff6a6a72)));
+        g.setColour(lit ? kAccent : (level >= threshold ? kAccent.withAlpha(0.55f) : kTheme.mid));
         g.fillRect(b.withTop(top).reduced(1.0f, 0.0f));
     }
     g.setColour(kInk);
     g.fillRect(b.getX(), toY(threshold) - 0.75f, b.getWidth(), 1.5f);
-    g.setColour(Colour(0xff3c3c42));
+    g.setColour(kTheme.outline);
     g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 }
 
 void PedalButton::paint(Graphics& g)
 {
     const auto b = getLocalBounds().toFloat().reduced(1.0f);
-    g.setGradientFill(ColourGradient(lit ? Colour(0xff6a4a12) : Colour(pressed ? 0xff26262a : 0xff3a3a40), b.getX(), b.getY(),
-                                     lit ? Colour(0xff3d2a08) : Colour(0xff17171a), b.getX(), b.getBottom(), false));
+    g.setGradientFill(ColourGradient(lit ? kTheme.litTop : (pressed ? kTheme.buttonPressed : kTheme.buttonTop), b.getX(), b.getY(),
+                                     lit ? kTheme.litBottom : kTheme.buttonBottom, b.getX(), b.getBottom(), false));
     g.fillRoundedRectangle(b, 4.0f);
-    g.setColour(Colours::black);
+    g.setColour(kTheme.buttonEdge);
     g.drawRoundedRectangle(b, 4.0f, 1.2f);
     auto textArea = getLocalBounds();
     if (toggle)
@@ -833,6 +1042,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
       typeParam(*p.apvts.getParameter(ids::seqType), [](float) {}),
       tempoParam(*p.apvts.getParameter(ids::tempo), [](float) {})
 {
+    pedalstyle::setTheme(pedalstyle::findTheme(uisettings::themeName()));
+    laf.applyTheme();
+    shownThemeSerial = pedalstyle::themeSerial();
     setLookAndFeel(&laf);
 
     static constexpr const char* frontIds[kKnobs] = { ids::sampleRate, ids::filter, ids::bits,
@@ -1195,6 +1407,21 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
                               "the stutter length and hold, the sequence loop and more.");
     simpleButton.onClick = [this] { setRightMode(false); };
     advancedButton.onClick = [this] { setRightMode(true); };
+    {
+        StringArray names;
+        for (const auto& t : pedalstyle::themes())
+            names.add(t.name);
+        themeButton.setTooltip("THEME: click for the next look (" + names.joinIntoString(", ") + "). Only the colours change; "
+                               "every open BitVibe window follows, and the choice is remembered.");
+    }
+    themeButton.setText(String("THEME: ") + pedalstyle::theme.name);
+    themeButton.onClick = [this]
+    {
+        pedalstyle::setTheme(pedalstyle::themeIndex() + 1);
+        uisettings::setThemeName(pedalstyle::theme.name);
+        applyTheme();
+    };
+    content.addAndMakeVisible(themeButton);
     content.addAndMakeVisible(simpleButton);
     content.addAndMakeVisible(advancedButton);
     applyRightMode();
@@ -1398,6 +1625,15 @@ void BitVibeEditor::importPresetFile()
                                    safe->refreshPresetName();
                                    safe->repaint();
                                });
+}
+
+void BitVibeEditor::applyTheme()
+{
+    shownThemeSerial = pedalstyle::themeSerial();
+    laf.applyTheme();
+    themeButton.setText(String("THEME: ") + pedalstyle::theme.name);
+    buildBackground();
+    sendLookAndFeelChange(); // every control takes the new colours and repaints
 }
 
 void BitVibeEditor::setRightMode(bool advanced)
@@ -1736,24 +1972,24 @@ void BitVibeEditor::buildBackground()
     Graphics g(background);
     g.addTransform(AffineTransform::scale(backgroundScale));
 
-    g.fillAll(Colour(0xff0d0d0f));
+    g.fillAll(kTheme.background);
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     const auto header = kHeader.toFloat();
-    g.setColour(Colour(0xff17171a));
+    g.setColour(kTheme.panel);
     g.fillRoundedRectangle(header, 10.0f);
-    g.setColour(Colour(0xff2c2c31));
+    g.setColour(kTheme.panelEdge);
     g.drawRoundedRectangle(header.reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(Colour(0xff0e0e10));
+    g.setColour(kTheme.well);
     g.fillRoundedRectangle(kNameBox.toFloat(), 4.0f);
-    g.setColour(Colour(0xff3c3c42));
+    g.setColour(kTheme.outline);
     g.drawRoundedRectangle(kNameBox.toFloat().reduced(0.5f), 4.0f, 1.0f);
 
     g.addTransform(AffineTransform::translation(0.0f, (float) kFaceDy));
 
-    // Enclosure: black powder coat with a fine metal flake.
+    // Enclosure: powder coat (black in the first theme) with a fine metal flake.
     const auto face = kFace.toFloat();
-    g.setGradientFill(ColourGradient(Colour(0xff2a2a2e), face.getX(), face.getY(), Colour(0xff121214), face.getRight(),
+    g.setGradientFill(ColourGradient(kTheme.faceTop, face.getX(), face.getY(), kTheme.faceBottom, face.getRight(),
                                      face.getBottom(), false));
     g.fillRoundedRectangle(face, 16.0f);
 
@@ -1766,13 +2002,13 @@ void BitVibeEditor::buildBackground()
         for (int i = 0; i < 5200; ++i)
         {
             const float b = rng.nextFloat();
-            g.setColour(Colours::white.withAlpha(0.015f + 0.13f * b * b * b));
+            g.setColour(kTheme.flake.withAlpha(0.015f + 0.13f * b * b * b));
             g.fillRect(face.getX() + rng.nextFloat() * face.getWidth(), face.getY() + rng.nextFloat() * face.getHeight(), 1.0f, 1.0f);
         }
     }
     g.setColour(Colours::white.withAlpha(0.10f));
     g.drawRoundedRectangle(face.reduced(0.5f), 16.0f, 1.0f);
-    g.setColour(Colours::black.withAlpha(0.8f));
+    g.setColour(kTheme.rim);
     g.drawRoundedRectangle(face.expanded(0.5f), 16.0f, 1.5f);
 }
 
@@ -1893,6 +2129,7 @@ void BitVibeEditor::resized()
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
     helpButton.setBounds(12, 8, 70, 24);
+    themeButton.setBounds(kSideX + 148, 8, 144, 24);
     simpleButton.setBounds(kSideX + 300, 8, 76, 24);
     advancedButton.setBounds(kSideX + 380, 8, 76, 24);
     helpOverlay.setBounds(0, 0, baseWidth, baseHeight);
@@ -1967,7 +2204,7 @@ void BitVibeEditor::paintContent(Graphics& g)
         }
         if (altLayer && flashStep == i && Time::getMillisecondCounterHiRes() < flashStepUntil) // the step the strip pointed at
         {
-            g.setColour(Colours::white.withAlpha(0.8f));
+            g.setColour(kInk.withAlpha(0.8f));
             g.drawEllipse(c.x - 53.0f, c.y - 53.0f, 106.0f, 106.0f, 2.5f);
         }
     }
@@ -2102,9 +2339,9 @@ void BitVibeEditor::paintContent(Graphics& g)
     const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
     for (const auto& area : { dist, delay, reverb })
     {
-        g.setColour(Colour(0xff17171a));
+        g.setColour(pedalstyle::panel);
         g.fillRoundedRectangle(area.toFloat(), 10.0f);
-        g.setColour(Colour(0xff2c2c31));
+        g.setColour(pedalstyle::panelEdge);
         g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 10.0f, 1.0f);
     }
     const float distAlpha = rawValue(ids::distOn) > 0.5f ? 1.0f : kOffAlpha;
@@ -2232,6 +2469,9 @@ void BitVibeEditor::updateLiveState()
 
 void BitVibeEditor::timerCallback()
 {
+    if (pedalstyle::themeSerial() != shownThemeSerial) // another window changed the theme
+        applyTheme();
+
     // Holding the tap switch freezes the stutter buffer (manual, section 4).
     if (tapDown && !holdFromTap && Time::getMillisecondCounterHiRes() - tapPressMs > 300.0)
     {

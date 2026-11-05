@@ -14,7 +14,6 @@ using namespace pedalstyle;
 
 namespace
 {
-const Colour kGreen(0xff19ff3a);
 
 struct V3
 {
@@ -468,11 +467,11 @@ void BeatDog::drawLiveFrame(const Motion& motion)
     }
     Graphics g(liveImage);
     g.fillAll(Colours::black);
-    g.setColour(kGreen.withAlpha(0.13f));
+    g.setColour(theme.screen.withAlpha(0.13f));
     g.fillPath(wide);
-    g.setColour(kGreen.withAlpha(0.35f));
+    g.setColour(theme.screen.withAlpha(0.35f));
     g.fillPath(mid);
-    g.setColour(kGreen.interpolatedWith(Colours::white, 0.25f));
+    g.setColour(theme.screen.interpolatedWith(Colours::white, 0.25f));
     g.fillPath(core);
 }
 
@@ -514,6 +513,31 @@ String BeatDog::getTooltip()
            "buttons; SWAY floats it from side to side between them.";
 }
 
+// The frames are drawn in green, whiter where the lines are brightest; for another screen colour each pixel keeps its
+// brightness and its whiteness.
+const Image& BeatDog::framesForTheme()
+{
+    static const Colour green(0xff19ff3a);
+    if (theme.screen == green || !sheet.isValid())
+        return sheet;
+    if (!tintedSheet.isValid() || tintedFor != theme.screen)
+    {
+        tintedFor = theme.screen;
+        tintedSheet = Image(Image::RGB, sheet.getWidth(), sheet.getHeight(), false, SoftwareImageType());
+        const Image::BitmapData from(sheet, Image::BitmapData::readOnly);
+        Image::BitmapData to(tintedSheet, Image::BitmapData::writeOnly);
+        for (int y = 0; y < sheet.getHeight(); ++y)
+            for (int x = 0; x < sheet.getWidth(); ++x)
+            {
+                const Colour p = from.getPixelColour(x, y);
+                const float level = p.getFloatGreen();
+                const float white = jlimit(0.0f, 1.0f, (jmin(p.getFloatRed(), p.getFloatBlue()) / jmax(level, 0.02f) - 0.1f) / 0.9f);
+                to.setPixelColour(x, y, tintedFor.interpolatedWith(Colours::white, white).withMultipliedBrightness(level));
+            }
+    }
+    return tintedSheet;
+}
+
 void BeatDog::buildScanlines()
 {
     const auto area = screenArea();
@@ -533,7 +557,7 @@ void BeatDog::buildScanlines()
 void BeatDog::paint(Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
-    g.fillAll(Colour(0xff111113)); // what is behind the rounded corners
+    g.fillAll(theme.background); // what is behind the rounded corners
     g.setColour(panel);
     g.fillRoundedRectangle(bounds, 10.0f);
     g.setColour(panelEdge);
@@ -557,11 +581,11 @@ void BeatDog::paint(Graphics& g)
         g.addTransform(AffineTransform::rotation(kSwayLean * sway * shown.side, (float) screen.getCentreX(), (float) screen.getBottom())
                            .translated(kSwaySlide * sway * shown.side * w, -kSwayLift * sway * shown.lift * w));
         const int sx = (frame % kColumns) * kTile, sy = (frame / kColumns) * kTile;
-        g.drawImage(sheet, screen.getX(), screen.getY(), screen.getWidth(), screen.getHeight(), sx, sy, kTile, kTile);
+        g.drawImage(framesForTheme(), screen.getX(), screen.getY(), screen.getWidth(), screen.getHeight(), sx, sy, kTile, kTile);
     }
     if (scanlines.isValid())
         g.drawImageAt(scanlines, screen.getX(), screen.getY());
-    g.setColour(Colour(0xff1f3a26));
+    g.setColour(theme.screenEdge);
     g.drawRoundedRectangle(screen.toFloat().expanded(3.0f), 6.0f, 1.5f);
 
     // the beat of the bar (the tempo is on the pedal)
@@ -598,11 +622,11 @@ void BeatDog::paint(Graphics& g)
     {
         const auto r = beatButton(b).toFloat();
         const bool picked = ((beatMask >> b) & 1) != 0, playing = b == beat;
-        g.setColour(playing ? (picked ? accent : Colour(0xff3a3a40)) : Colour(0xff111113));
+        g.setColour(playing ? (picked ? accent : theme.buttonTop) : theme.well);
         g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(picked ? accent.withAlpha(playing ? 1.0f : 0.8f) : Colour(0xff34343a));
+        g.setColour(picked ? accent.withAlpha(playing ? 1.0f : 0.8f) : theme.outline);
         g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.2f);
-        g.setColour(playing && picked ? Colours::black : (picked ? accent : Colour(0xff5a5a62)));
+        g.setColour(playing && picked ? theme.onAccent : (picked ? accent : theme.mid));
         g.setFont(mono(12.0f));
         g.drawText(String(b + 1), r, Justification::centred);
     }

@@ -722,6 +722,161 @@ void testLayout(const File& outDir)
     check(!help->isVisible(), "a click outside the tabs closes HELP");
 }
 
+// WCAG's contrast ratio between two colours (1 to 21): 4.5 is enough for small text, 3 for large text and graphics.
+double contrastRatio(Colour a, Colour b)
+{
+    auto luminance = [](Colour c)
+    {
+        auto channel = [](float v) { return v <= 0.03928f ? (double) v / 12.92 : std::pow(((double) v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * channel(c.getFloatRed()) + 0.7152 * channel(c.getFloatGreen()) + 0.0722 * channel(c.getFloatBlue());
+    };
+    const double la = luminance(a), lb = luminance(b);
+    return (jmax(la, lb) + 0.05) / (jmin(la, lb) + 0.05);
+}
+
+// The themes: each one keeps its text readable, the THEME button goes through them all and back, the choice is
+// remembered for the next window, and a contact sheet of every theme is saved.
+void testThemes(const File& outDir)
+{
+    std::puts("themes");
+    const auto& all = pedalstyle::themes();
+    StringArray names;
+    for (const auto& t : all)
+        names.addIfNotAlreadyThere(t.name);
+    check(all.size() >= 6 && names.size() == (int) all.size() && names[0] == "NIGHT",
+          String((int) all.size()) + " themes with names of their own, NIGHT first (" + names.joinIntoString(", ") + ")");
+    for (const auto& t : all)
+    {
+        struct Pair
+        {
+            const char* what;
+            Colour a, b;
+            double needed;
+        };
+        const Pair pairs[] = {
+            { "text on a panel", t.ink, t.panel, 7.0 },
+            { "a control's name", t.inkLabel, t.panel, 4.5 },
+            { "a value", t.inkDim, t.panel, 4.5 },
+            { "text on the pedal (top)", t.ink, t.faceTop, 4.5 },
+            { "text on the pedal (bottom)", t.ink, t.faceBottom, 4.5 },
+            { "text in a read-out", t.ink, t.well, 7.0 },
+            { "an unlit button's text", t.inkDim, t.buttonTop, 3.0 },
+            { "a lit button's text", t.ink, t.litBottom, 4.5 },
+            { "text on the accent", t.onAccent, t.accent, 4.5 },
+            { "the accent on a panel", t.accent, t.panel, 3.0 },
+            { "a knob's pointer", t.pointer, t.capTop, 4.5 },
+            { "a menu's text", t.ink, t.popup, 7.0 },
+            { "a tip's text", t.ink, t.tooltip, 7.0 },
+            { "pitch on the pedal", t.steps[0], t.faceBottom, 3.0 },
+            { "filter on the pedal", t.steps[1], t.faceBottom, 3.0 },
+            { "rate on the pedal", t.steps[2], t.faceBottom, 3.0 },
+        };
+        String low;
+        for (const auto& p : pairs)
+            if (contrastRatio(p.a, p.b) < p.needed)
+                low << " " << p.what << " " << String(contrastRatio(p.a, p.b), 1) << ":1";
+        check(low.isEmpty(), String(t.name) + ": text and lights stand out from what they are on" + (low.isEmpty() ? String() : " (too faint:" + low + ")"));
+    }
+
+    auto p = makeProcessor();
+    uisettings::setAdvancedRight(true);
+    pedalstyle::setTheme(0);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    PedalButton* button = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+        if (auto* b = dynamic_cast<PedalButton*>(c); b != nullptr && b->getText().startsWith("THEME"))
+            button = b;
+    if (button == nullptr || !button->isVisible())
+    {
+        check(false, "a THEME button on the page");
+        return;
+    }
+    check(button->getText() == "THEME: NIGHT" && pedalstyle::themeIndex() == 0, "the THEME button names the theme showing (NIGHT)");
+
+    // every theme in turn, into a contact sheet (three across)
+    constexpr float kThumb = 0.5f;
+    const int thumbW = roundToInt((float) ed->getWidth() * kThumb), thumbH = roundToInt((float) ed->getHeight() * kThumb);
+    constexpr int kAcross = 3, kGap = 16, kCaption = 26;
+    const int rows = ((int) all.size() + kAcross - 1) / kAcross;
+    Image sheet(Image::RGB, kAcross * thumbW + (kAcross + 1) * kGap, rows * (thumbH + kCaption + kGap) + kGap, true, SoftwareImageType());
+    Graphics sg(sheet);
+    sg.fillAll(Colour(0xff202024));
+    const auto night = snapshot(*ed, 1.0f);
+    bool allDiffer = true, namesShown = true;
+    for (int i = 0; i < (int) all.size(); ++i)
+    {
+        if (i > 0)
+        {
+            button->onClick();
+            namesShown = namesShown && button->getText() == "THEME: " + String(all[(size_t) i].name);
+            const auto shot = snapshot(*ed, 1.0f);
+            int differ = 0;
+            for (int yy = 0; yy < shot.getHeight(); yy += 4)
+                for (int xx = 0; xx < shot.getWidth(); xx += 4)
+                    differ += shot.getPixelAt(xx, yy) != night.getPixelAt(xx, yy) ? 1 : 0;
+            allDiffer = allDiffer && differ > shot.getWidth() * shot.getHeight() / 16 / 2; // most of the page
+        }
+        const int x = kGap + (i % kAcross) * (thumbW + kGap), y = kGap + (i / kAcross) * (thumbH + kCaption + kGap);
+        sg.setColour(Colour(0xffe8e8e8));
+        sg.setFont(pedalstyle::bold(15.0f));
+        sg.drawText(all[(size_t) i].name, x, y, thumbW, kCaption - 6, Justification::left);
+        sg.drawImageAt(snapshot(*ed, kThumb), x, y + kCaption);
+        // each one at full size too, out of the way in the temp folder (to look a theme over)
+        const File full = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_test_themes")
+                              .getChildFile(String(all[(size_t) i].name).toLowerCase() + ".png");
+        full.getParentDirectory().createDirectory();
+        full.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(full.createOutputStream()))
+            PNGImageFormat().writeImageToStream(snapshot(*ed, 1.0f), *out);
+    }
+    check(namesShown && pedalstyle::themeIndex() == (int) all.size() - 1, "each click shows the next theme, and the button names it");
+    check(allDiffer, "and each theme repaints most of the page");
+    check(uisettings::themeName() == String(all.back().name), "the theme picked is remembered (" + uisettings::themeName() + ")");
+    {
+        pedalstyle::setTheme(0); // as a new session would start, before it reads the settings
+        std::unique_ptr<BitVibeEditor> next(static_cast<BitVibeEditor*>(p->createEditor()));
+        check(pedalstyle::themeIndex() == (int) all.size() - 1, "a window opened later opens in it");
+    }
+    {
+        // BEAT DOG's screen in the theme's colour: no green left in its pre-rendered frames
+        BeatDog* dog = nullptr;
+        for (auto* c : ed->getContent().getChildren())
+            if (dog == nullptr)
+                dog = dynamic_cast<BeatDog*>(c);
+        if (dog != nullptr)
+        {
+            pedalstyle::setTheme(pedalstyle::findTheme("SURPLUS"));
+            const auto shot = snapshot(*dog, 1.0f);
+            const int side = dog->getHeight() - 30; // the screen (BeatDog::screenArea)
+            const Rectangle<int> screen((dog->getWidth() - side) / 2, 22, side, side);
+            int green = 0, amber = 0;
+            for (int yy = screen.getY(); yy < screen.getBottom(); ++yy)
+                for (int xx = screen.getX(); xx < screen.getRight(); ++xx)
+                {
+                    const auto px = shot.getPixelAt(xx, yy);
+                    green += px.getGreen() > 120 && px.getRed() < px.getGreen() / 2 ? 1 : 0;
+                    amber += px.getRed() > 150 && px.getBlue() < px.getRed() / 3 ? 1 : 0;
+                }
+            check(green < 20 && amber > 300, "SURPLUS: BEAT DOG on an amber screen (" + String(amber) + " amber pixels, " + String(green) + " green)");
+        }
+        else
+            check(false, "BEAT DOG is on the page");
+    }
+    pedalstyle::setTheme((int) all.size() - 1);
+    button->onClick(); // past the last theme: back to the first
+    check(pedalstyle::themeIndex() == 0 && button->getText() == "THEME: NIGHT", "past the last theme, the button goes back to the first");
+    pedalstyle::setTheme(0);
+    uisettings::setThemeName("NIGHT");
+    ed.reset();
+
+    const File file = outDir.getChildFile("themes.png");
+    file.deleteFile();
+    PNGImageFormat png;
+    if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+        png.writeImageToStream(sheet, *out);
+    std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+}
+
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
 // looks off while it is off, and the sample blend says when there are no sounds to blend.
 void testEasierStart()
@@ -1662,7 +1817,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 74 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 74 and 0)");
+    check(controls == 75 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 75 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2431,6 +2586,7 @@ int main(int argc, char** argv)
     testBeatRouting();
     testEasierStart();
     testLayout(outDir);
+    testThemes(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

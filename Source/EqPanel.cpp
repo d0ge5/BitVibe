@@ -442,19 +442,19 @@ void EqPanel::paint(Graphics& g)
 
     // the graph: dB lines every 6 dB, frequency lines at 1-2-5 steps
     const auto area = graphArea();
-    g.setColour(Colour(0xff0e0e10));
+    g.setColour(theme.well);
     g.fillRoundedRectangle(area, 4.0f);
     g.setFont(plain(9.0f));
     for (float db : { -12.0f, -6.0f, 0.0f, 6.0f, 12.0f })
     {
-        g.setColour(Colour(db == 0.0f ? 0xff3a3a40 : 0xff222226));
+        g.setColour(sameFloat(db, 0.0f) ? theme.gridMajor : theme.gridLine);
         g.drawHorizontalLine(roundToInt(yForDb(db)), area.getX(), area.getRight());
         g.setColour(inkDim.withAlpha(0.6f));
         g.drawText(String((int) db), roundToInt(area.getX()) + 2, roundToInt(yForDb(db)) - 10, 22, 10, Justification::left);
     }
     for (float hz : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
     {
-        g.setColour(Colour(0xff222226));
+        g.setColour(theme.gridLine);
         g.drawVerticalLine(roundToInt(xForHz(hz)), area.getY(), area.getBottom());
         if (hz == 100.0f || hz == 1000.0f || hz == 10000.0f)
         {
@@ -513,14 +513,14 @@ void EqPanel::paint(Graphics& g)
         const auto& band = bands[(size_t) b];
         const auto p = bandPoint(band);
         const float r = 7.0f;
-        g.setColour(band.on ? (on ? accent : accent.withAlpha(0.5f)) : Colour(0xff3a3a40));
+        g.setColour(band.on ? (on ? accent : accent.withAlpha(0.5f)) : theme.unlit);
         g.fillEllipse(p.x - r, p.y - r, r * 2.0f, r * 2.0f);
         if (b == selected)
         {
             g.setColour(ink);
             g.drawEllipse(p.x - r - 2.0f, p.y - r - 2.0f, (r + 2.0f) * 2.0f, (r + 2.0f) * 2.0f, 1.5f);
         }
-        g.setColour(band.on ? Colour(0xff17171a) : inkDim);
+        g.setColour(band.on ? theme.onAccent : inkDim);
         g.setFont(bold(9.5f));
         g.drawText(String(b + 1), Rectangle<float>(p.x - r, p.y - r, r * 2.0f, r * 2.0f), Justification::centred);
     }

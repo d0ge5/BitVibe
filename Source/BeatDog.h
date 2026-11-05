@@ -87,7 +87,10 @@ private:
     const float* earsFor(float gap);
 
     PedalLookAndFeel& laf;
-    juce::Image sheet;      // the 32 frames, decoded once
+    juce::Image sheet;      // the 32 frames, decoded once (in green)
+    juce::Image tintedSheet; // the frames in the theme's screen colour, when that is not green
+    juce::Colour tintedFor;
+    const juce::Image& framesForTheme();
     juce::Image scanlines;  // a faint CRT look over the screen, drawn once per size
     juce::Image liveImage;  // the last live frame
     int frame = 0, beat = 0, barSteps = 16;

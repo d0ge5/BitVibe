@@ -9,13 +9,60 @@ class DrumPage;
 // Colours and fonts shared by the pedal page and the DRUMS page.
 namespace pedalstyle
 {
-inline const juce::Colour ink { 0xfff2f0e6 };    // engraved text
-inline const juce::Colour inkDim { 0xff9a988f };
-inline const juce::Colour inkLabel { 0xffc4c2b9 }; // a control's name: quieter than a panel's title, louder than its value
-inline const juce::Colour accent { 0xffffa31a }; // Alt layer / lit LEDs
-inline const juce::Colour red { 0xffff3b30 };
-inline const juce::Colour panel { 0xff17171a };
-inline const juce::Colour panelEdge { 0xff2c2c31 };
+// Every colour the page is drawn in. The values here are the first theme (NIGHT); the others are in themes().
+// The chrome of the footswitches and the expression thumb is the same in every theme.
+struct Theme
+{
+    const char* name = "NIGHT";
+    juce::Colour ink { 0xfff2f0e6 };    // engraved text
+    juce::Colour inkDim { 0xff9a988f };
+    juce::Colour inkLabel { 0xffc4c2b9 }; // a control's name: quieter than a panel's title, louder than its value
+    juce::Colour accent { 0xffffa31a };   // Alt layer / lit LEDs
+    juce::Colour onAccent { 0xff17171a }; // text on the accent (or on a step's colour)
+    juce::Colour red { 0xffff3b30 };
+    juce::Colour background { 0xff0d0d0f }; // behind everything
+    juce::Colour faceTop { 0xff2a2a2e }, faceBottom { 0xff121214 }; // the pedal's enclosure
+    juce::Colour flake { 0xffffffff };      // the metal flake in its paint
+    juce::Colour rim { 0xcc000000 };        // the line around it
+    juce::Colour panel { 0xff17171a }, panelEdge { 0xff2c2c31 };
+    juce::Colour well { 0xff0e0e10 };       // sunk into a panel: read-outs, meters, graphs, text boxes
+    juce::Colour outline { 0xff3c3c42 };    // around a box, a groove or an unlit button
+    juce::Colour mid { 0xff6a6a72 };        // the mouse over an outline; a meter's unlit bars
+    juce::Colour unlit { 0xff3c3c42 };      // a light that is off
+    juce::Colour buttonTop { 0xff3a3a40 }, buttonBottom { 0xff17171a }, buttonPressed { 0xff26262a }, buttonEdge { 0xff000000 };
+    juce::Colour litTop { 0xff6a4a12 }, litBottom { 0xff3d2a08 }; // a button that is on
+    juce::Colour selection { 0xff4a3410 };  // the highlighted menu item and selected text
+    juce::Colour popup { 0xff1a1a1d }, tooltip { 0xff26262b }, tooltipEdge { 0xff55555d };
+    juce::Colour knobLight { 0xff5a5a60 }, knobDark { 0xff0e0e10 }, capTop { 0xff2a2a2e }, capBottom { 0xff161618 };
+    juce::Colour pointer { 0xfff2f0e6 };    // a knob's pointer (on the knob, so it can differ from the ink)
+    juce::Colour cell { 0xff1d1d21 }, cellStrong { 0xff28282d }, cellPlaying { 0xff4a4a52 }, cellEdge { 0xff0a0a0c }; // grids
+    juce::Colour gridLine { 0xff222226 }, gridMajor { 0xff3a3a40 };
+    juce::Colour screen { 0xff19ff3a }, screenEdge { 0xff1f3a26 }; // BEAT DOG's screen
+    std::array<juce::Colour, 3> steps { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) }; // pitch, filter, rate
+};
+
+// The themes the THEME button goes through, the first one being the default.
+const std::vector<Theme>& themes();
+namespace detail
+{
+inline Theme shown;
+inline int shownIndex = 0, serial = 0;
+} // namespace detail
+// The theme every editor paints in. It is one for the whole computer (kept with the window settings), so changing it
+// changes every open window: an editor checks serial (which goes up with each change) and repaints.
+inline const Theme& theme = detail::shown;
+void setTheme(int index); // wraps around, so themeIndex() + 1 is always the next one
+inline int themeIndex() { return detail::shownIndex; }
+int findTheme(const juce::String& name); // its index, or 0 (the default) for a name that is not a theme
+inline int themeSerial() { return detail::serial; }
+
+inline const juce::Colour& ink = detail::shown.ink;
+inline const juce::Colour& inkDim = detail::shown.inkDim;
+inline const juce::Colour& inkLabel = detail::shown.inkLabel;
+inline const juce::Colour& accent = detail::shown.accent;
+inline const juce::Colour& red = detail::shown.red;
+inline const juce::Colour& panel = detail::shown.panel;
+inline const juce::Colour& panelEdge = detail::shown.panelEdge;
 inline juce::Font bold(float h) { return juce::Font(juce::FontOptions(h, juce::Font::bold)); }
 inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(h, juce::Font::plain)); }
 
@@ -45,9 +92,9 @@ inline constexpr float kOffAlpha = 0.4f; // a switched-off panel's controls
 // The light on a switch (centre c): orange when on, dark when off.
 inline void drawSwitchLight(juce::Graphics& g, juce::Point<float> c, bool on)
 {
-    g.setColour(on ? accent : juce::Colour(0xff111113));
+    g.setColour(on ? accent : theme.well);
     g.fillEllipse(c.x - 3.0f, c.y - 3.0f, 6.0f, 6.0f);
-    g.setColour(on ? accent.brighter(0.4f) : juce::Colour(0xff4a4a50));
+    g.setColour(on ? accent.brighter(0.4f) : theme.outline);
     g.drawEllipse(c.x - 3.0f, c.y - 3.0f, 6.0f, 6.0f, 0.8f);
 }
 // Switching an effect on with its mix all the way down would change nothing you can hear, so the player's click also
@@ -65,8 +112,7 @@ inline void raiseMixIfSilent(juce::AudioProcessorValueTreeState& apvts, const ju
 // What a sequencer step controls, in one colour each: pitch, filter, sample rate.
 inline juce::Colour stepTypeColour(int type)
 {
-    static const juce::Colour colours[3] { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) };
-    return colours[juce::jlimit(0, 2, type)];
+    return theme.steps[(size_t) juce::jlimit(0, 2, type)];
 }
 } // namespace pedalstyle
 
@@ -75,6 +121,7 @@ class PedalLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     PedalLookAndFeel();
+    void applyTheme(); // takes the colours of the theme now showing (menus, tooltips, text boxes)
 
     void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height, float sliderPos,
                           float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
@@ -362,6 +409,10 @@ private:
     void importPresetFile();
     PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
     bool advancedRight = false;
+    // THEME: each click shows the next theme (remembered, and shown in every open window)
+    PedalButton themeButton { "" };
+    int shownThemeSerial = -1;
+    void applyTheme(); // repaints in the theme now showing
     HelpOverlay helpOverlay;
     float meterDb = -100.0f;
     int seenAttacks = 0;

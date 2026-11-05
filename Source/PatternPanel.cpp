@@ -312,12 +312,12 @@ void PatternPanel::paint(Graphics& g)
             const auto c = cells[(size_t) step];
             const bool on = ((pattern.steps >> step) & 1u) != 0u;
             const bool current = step == playing;
-            Colour fill = on ? (active ? accent : accent.withAlpha(0.35f)) : (s == 0 ? Colour(0xff28282d) : Colour(0xff1d1d21));
+            Colour fill = on ? (active ? accent : accent.withAlpha(0.35f)) : (s == 0 ? theme.cellStrong : theme.cell);
             if (current)
-                fill = on ? fill.brighter(0.5f) : Colour(0xff4a4a52);
+                fill = on ? fill.brighter(0.5f) : theme.cellPlaying;
             g.setColour(fill);
             g.fillRoundedRectangle(c, 4.0f);
-            g.setColour(Colour(0xff0a0a0c));
+            g.setColour(theme.cellEdge);
             g.drawRoundedRectangle(c.reduced(0.5f), 4.0f, 1.0f);
             if (current)
             {
@@ -338,7 +338,7 @@ void PatternPanel::paint(Graphics& g)
     {
         const auto r = beatLabels[(size_t) b];
         const bool included = ((pattern.randomBeats >> b) & 1u) != 0u;
-        g.setColour(included ? accent.withAlpha(0.22f) : Colour(0xff1d1d21));
+        g.setColour(included ? accent.withAlpha(0.22f) : theme.cell);
         g.fillRoundedRectangle(r.reduced(0.0f, 0.5f), 4.0f);
         g.setColour(included ? ink : inkDim);
         g.setFont(bold(10.5f));
