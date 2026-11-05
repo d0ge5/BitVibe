@@ -7,6 +7,7 @@
 #include "BeatDog.h"
 #include "EqPanel.h"
 #include "TremoloPanel.h"
+#include "EffectGraphs.h"
 #include "UiSettings.h"
 
 #include <functional>
@@ -966,31 +967,47 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
     }
 }
 
-void LevelMeter::set(float levelDb, float thresholdDb, bool flash)
+void LevelMeter::push(float peakDb, float thresholdDb, bool picked)
 {
-    if (std::abs(levelDb - level) > 0.2f || std::abs(thresholdDb - threshold) > 0.05f || flash != lit)
-    {
-        level = levelDb;
-        threshold = thresholdDb;
-        lit = flash;
-        repaint();
-    }
+    newest = (newest + 1) % kColumns;
+    history[(size_t) newest] = { peakDb, picked };
+    threshold = thresholdDb;
+    repaint();
+}
+
+int LevelMeter::countPicks() const
+{
+    return (int) std::count_if(history.begin(), history.end(), [](const Column& c) { return c.picked; });
 }
 
 void LevelMeter::paint(Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
-    auto toY = [&b](float db) { return b.getBottom() - b.getHeight() * jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
+    const auto bars = b.reduced(2.0f, 1.0f).withTrimmedTop(6.0f); // room on top for the pick marks
+    auto toY = [&bars](float db) { return bars.getBottom() - bars.getHeight() * jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
     g.setColour(kTheme.well);
     g.fillRoundedRectangle(b, 2.0f);
-    const float top = toY(level);
-    if (top < b.getBottom())
+    const float width = bars.getWidth() / (float) kColumns;
+    for (int age = 0; age < kColumns; ++age)
     {
-        g.setColour(lit ? kAccent : (level >= threshold ? kAccent.withAlpha(0.55f) : kTheme.mid));
-        g.fillRect(b.withTop(top).reduced(1.0f, 0.0f));
+        const auto& c = history[(size_t) ((newest - age + kColumns) % kColumns)];
+        const float x = bars.getRight() - (float) (age + 1) * width;
+        const float top = toY(c.db);
+        if (top < bars.getBottom())
+        {
+            g.setColour(c.picked ? kAccent : (c.db >= threshold ? kAccent.withAlpha(0.45f) : kTheme.mid));
+            g.fillRect(x, top, jmax(1.0f, width - 0.2f), bars.getBottom() - top);
+        }
+        if (c.picked)
+        {
+            Path mark; // a small arrow on top, so a pick stands out even when it is quiet
+            mark.addTriangle(x + width * 0.5f - 3.0f, b.getY() + 1.0f, x + width * 0.5f + 3.0f, b.getY() + 1.0f, x + width * 0.5f, b.getY() + 6.0f);
+            g.setColour(kAccent);
+            g.fillPath(mark);
+        }
     }
     g.setColour(kInk);
-    g.fillRect(b.getX(), toY(threshold) - 0.75f, b.getWidth(), 1.5f);
+    g.fillRect(bars.getX(), toY(threshold) - 0.75f, bars.getWidth(), 1.5f);
     g.setColour(kTheme.outline);
     g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 }
@@ -1139,8 +1156,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         addKnobHelpers(s, id);
         content.addAndMakeVisible(s);
     };
-    triggerMeter.setTooltip("INPUT METER: how hard you are playing (after INPUT). The white line is how hard a pick has to be to start the "
-                            "stutter and sequencer (set with TRIGGER); the bar lights orange when a pick is caught.");
+    triggerMeter.setTooltip("INPUT METER: the last few seconds of your playing (after INPUT), newest on the right. The white line is TRIGGER: "
+                            "a pick that crosses it is caught, lit orange with a mark on top, and starts the stutter and sequencer.");
     content.addAndMakeVisible(triggerMeter);
     outputMeter.setTooltip("OUTPUT METER: how loud the sound coming out is. The white line is 0 dB, the most the output can take; the "
                            "light on top turns red when it goes over (click the light to put it out). If it does, turn OUTPUT down.");
@@ -1168,6 +1185,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         const auto& engine = proc.getEngine();
         return BeatDog::Position { engine.getBeatInBarPhase(), engine.getBeatInBar(), engine.getBarSteps() };
     };
+    beatDog->scopeFeed = &proc.getEngine().getScope();
+    beatDog->stepColour = [this](int step) { return pedalstyle::stepTypeColour((int) stepType(step)); };
     content.addAndMakeVisible(*beatDog);
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
@@ -1240,6 +1259,14 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     content.addAndMakeVisible(*eqPanel);
     tremoloPanel = std::make_unique<TremoloPanel>(proc, laf);
     content.addAndMakeVisible(*tremoloPanel);
+    distGraph = std::make_unique<DistortionGraph>(proc);
+    delayGraph = std::make_unique<DelayGraph>(proc);
+    reverbGraph = std::make_unique<ReverbGraph>(proc);
+    for (EffectGraph* graph : std::initializer_list<EffectGraph*> { distGraph.get(), delayGraph.get(), reverbGraph.get() })
+    {
+        graph->refresh();
+        content.addAndMakeVisible(*graph);
+    }
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     content.addAndMakeVisible(*patternPanel);
 
@@ -1419,7 +1446,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
@@ -2287,9 +2314,9 @@ void BitVibeEditor::resized()
     // under the pedal: your signal in (input, trigger and its meter, headroom) on the left, what comes out (dry/wet,
     // output, SEQ ONLY, FX ON TRIGGERS) on the right, then in ADVANCED the stutter and the sequence loop
     const int gy = globalTop();
-    inSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 62, gy + 46 })));
-    trigSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 150, gy + 46 })));
-    triggerMeter.setBounds(face({ 192, gy + 20, 14, 80 }));
+    inSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 50, gy + 46 })));
+    trigSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 112, gy + 46 })));
+    triggerMeter.setBounds(face({ 146, gy + 16, 82, 86 }));
     mixSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 300, gy + 46 })));
     outSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 390, gy + 46 })));
     outputMeter.setBounds(face({ 434, gy + 12, 14, 88 }));
@@ -2325,7 +2352,7 @@ void BitVibeEditor::resized()
         for (const auto& k : row)
             if (advancedRight || !k.second)
             {
-                const int cx = kSideX + (int) std::lround(456.0 * ((double) index++ + 0.5) / (double) shown);
+                const int cx = kSideX + kKnobsX + (int) std::lround((456.0 - kKnobsX) * ((double) index++ + 0.5) / (double) shown);
                 k.first->setBounds(Rectangle<int>(size, size).withCentre({ cx, y }).translated(0, kFaceDy));
             }
     };
@@ -2338,6 +2365,9 @@ void BitVibeEditor::resized()
     samplePanel->setBounds(face({ kSideX, samplesTop(), SamplePanel::kWidth, samplePanel->currentHeight() }));
     eqPanel->setBounds(face({ kSideX, eqTop(), EqPanel::kWidth, EqPanel::kHeight }));
     tremoloPanel->setBounds(face(tremoloArea()));
+    distGraph->setBounds(face({ kSideX + kGraphX, dist.getY() + 26, kGraphW, 68 }));
+    delayGraph->setBounds(face({ kSideX + kGraphX, delay.getY() + 26, kGraphW, 68 }));
+    reverbGraph->setBounds(face({ kSideX + kGraphX, reverb.getY() + 26, kGraphW, 68 }));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
@@ -2467,8 +2497,8 @@ void BitVibeEditor::paintContent(Graphics& g)
         pedalstyle::drawSectionTitle(g, 26, gy + 6, "YOUR SIGNAL IN");
         pedalstyle::drawSectionTitle(g, 252, gy + 6, "WHAT COMES OUT");
         const bool seqOnly = rawValue(ids::seqOnly) > 0.5f;
-        pedalstyle::drawControlLabel(g, 62, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
-        pedalstyle::drawControlLabel(g, 150, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");
+        pedalstyle::drawControlLabel(g, 50, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
+        pedalstyle::drawControlLabel(g, 112, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");
         pedalstyle::drawControlLabel(g, 300, gy + 76, "DRY/WET", seqOnly ? String("SEQ ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet");
         pedalstyle::drawControlLabel(g, 390, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
         g.setColour(kInkDim);
@@ -2519,7 +2549,7 @@ void BitVibeEditor::paintContent(Graphics& g)
                     ++index;
                 ++shown;
             }
-        return kSideX + (int) std::lround(456.0 * ((double) index + 0.5) / (double) jmax(1, shown));
+        return kSideX + kKnobsX + (int) std::lround((456.0 - kKnobsX) * ((double) index + 0.5) / (double) jmax(1, shown));
     };
     // The effect panels follow each other down the column in the order the sequenced sound goes through them:
     // an arrow in each gap.
@@ -2610,8 +2640,8 @@ void BitVibeEditor::paintContent(Graphics& g)
         { "TONE", String(roundToInt(rawValue(ids::reverbTone) * 100.0f)) + "%", true },
         { "MIX", String(roundToInt(rawValue(ids::reverbMix) * 100.0f)) + "%" },
         { "LEVEL", String(rawValue(ids::reverbLevel), 1) + " dB", true },
-        { "LOW CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut), true },
-        { "HIGH CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut), true },
+        { "LO CUT", lowCut <= 20.5f ? String("OFF") : hzText(lowCut), true },
+        { "HI CUT", highCut >= 19950.0f ? String("OFF") : hzText(highCut), true },
     }};
     for (size_t i = 0; i < reverbEntries.size(); ++i)
     {
@@ -2680,6 +2710,12 @@ void BitVibeEditor::updateLiveState()
         for (Component* c : std::initializer_list<Component*> { &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider,
                                                                  &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &reverbReverseButton })
             c->setAlpha(offAlphaFor(*c, reverbOn));
+        distGraph->setAlpha(offAlphaFor(*distGraph, distOn));
+        delayGraph->setAlpha(offAlphaFor(*delayGraph, delayOn));
+        reverbGraph->setAlpha(offAlphaFor(*reverbGraph, reverbOn));
+        for (EffectGraph* graph : std::initializer_list<EffectGraph*> { distGraph.get(), delayGraph.get(), reverbGraph.get() })
+            if (graph->isShowing())
+                graph->refresh();
     }
 }
 
@@ -2718,18 +2754,12 @@ void BitVibeEditor::timerCallback()
             reverbReverseButton.setToggleState(ticked, dontSendNotification);
     }
     {
-        // the input meter: falls back slowly so a pick can be read, and lights up when a pick is caught
+        // the input history: this frame's loudest moment, and whether a pick was caught in it
         const float peak = proc.getEngine().takeInputPeak();
-        const float db = peak > 1.0e-5f ? 20.0f * std::log10(peak) : -100.0f;
-        meterDb = jmax(db, meterDb - 1.5f);
         const int attacks = proc.getEngine().getAttackCount();
-        const double nowMs = Time::getMillisecondCounterHiRes();
-        if (attacks != seenAttacks)
-        {
-            seenAttacks = attacks;
-            meterFlashUntil = nowMs + 180.0;
-        }
-        triggerMeter.set(meterDb, bitvibe::AttackDetector::floorDb(rawValue(ids::sensitivity)), nowMs < meterFlashUntil);
+        triggerMeter.push(peak > 1.0e-5f ? 20.0f * std::log10(peak) : -100.0f, bitvibe::AttackDetector::floorDb(rawValue(ids::sensitivity)),
+                          attacks != seenAttacks);
+        seenAttacks = attacks;
         const float outPeak = proc.takeOutputPeak();
         outputDb = jmax(outPeak > 1.0e-5f ? 20.0f * std::log10(outPeak) : -100.0f, outputDb - 1.5f);
         outputMeter.set(outputDb, outPeak > 1.0f);

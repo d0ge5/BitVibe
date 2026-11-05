@@ -5,6 +5,7 @@
 #include "PluginEditor.h"
 #include "UiSettings.h"
 #include "dsp/Mapping.h"
+#include "dsp/Scope.h"
 
 #include <array>
 #include <cmath>
@@ -132,6 +133,14 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     button->onClick = [this] { setLive(!live); };
     addAndMakeVisible(*button);
 
+    scopeButton = std::make_unique<PedalButton>("SCOPE");
+    scopeButton->toggle = true;
+    scopeButton->setTooltip("SCOPE: the screen shows the last two beats of sound instead of the dog: your clean input on top (IN), "
+                            "what comes out below (OUT), the beats as lines and a strip in the colour of each step as it played. "
+                            "See the stutter repeat, the steps mute, the crush and the tremolo cut.");
+    scopeButton->onClick = [this] { setScope(!scope); };
+    addAndMakeVisible(*scopeButton);
+
     fpsBox.addItem("60 FPS", 60);
     fpsBox.addItem("30 FPS", 30);
     fpsBox.addItem("15 FPS", 15);
@@ -161,6 +170,7 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     swayKnob.setValue(sway, dontSendNotification);
     shown = liveShown = motionAt(0.0f, 0, barSteps);
     live = uisettings::beatDogLive();
+    scope = uisettings::beatDogScope();
     setLive(live);
 }
 
@@ -179,11 +189,27 @@ void BeatDog::setLive(bool on)
         uisettings::setBeatDogLive(on);
     live = on;
     updateControls();
-    if (live)
-        startTimerHz(fps);
+    updateTimer();
+    repaint();
+}
+
+void BeatDog::setScope(bool on)
+{
+    if (on != uisettings::beatDogScope())
+        uisettings::setBeatDogScope(on);
+    scope = on;
+    updateControls();
+    updateTimer();
+    repaint();
+}
+
+// The timer redraws the live dog or the scope; the pre-rendered dog follows the editor's own updates.
+void BeatDog::updateTimer()
+{
+    if (live || scope)
+        startTimerHz(scope ? jmin(fps, 30) : fps);
     else
         stopTimer();
-    repaint();
 }
 
 void BeatDog::setFrameRate(int newFps)
@@ -193,8 +219,7 @@ void BeatDog::setFrameRate(int newFps)
         uisettings::setBeatDogFps(newFps);
     fps = newFps;
     updateControls();
-    if (live)
-        startTimerHz(fps);
+    updateTimer();
 }
 
 void BeatDog::setBeatMask(int mask)
@@ -247,9 +272,15 @@ void BeatDog::updateControls()
         button->lit = live;
         button->repaint();
     }
+    if (scopeButton->lit != scope)
+    {
+        scopeButton->lit = scope;
+        scopeButton->repaint();
+    }
     fpsBox.setSelectedId(fps, dontSendNotification);
-    fpsBox.setEnabled(live);
-    fpsBox.setAlpha(live ? 1.0f : 0.4f);
+    fpsBox.setEnabled(live && !scope);
+    fpsBox.setAlpha(live && !scope ? 1.0f : 0.4f);
+    liveButton->setAlpha(scope ? 0.55f : 1.0f); // the dog is not on the screen
 }
 
 int BeatDog::beatsInBar() const { return jlimit(1, kMaxBeats, (barSteps + 3) / 4); }
@@ -379,6 +410,12 @@ void BeatDog::setBeat(float phase, int beatInBar, float bpm, int steps)
 
 void BeatDog::timerCallback()
 {
+    if (scope)
+    {
+        if (isShowing())
+            repaint(screenArea());
+        return;
+    }
     if (!isShowing() || !beatSource)
         return;
     const auto position = beatSource();
@@ -475,6 +512,70 @@ void BeatDog::drawLiveFrame(const Motion& motion)
     g.fillPath(core);
 }
 
+// The scope: the last kScopeBeats beats, right up to now at the right edge. IN on top, OUT below, each bucket drawn
+// from its lowest to its highest sample (on a square-root scale, so a quiet guitar still shows), the beats as lines,
+// and under OUT a strip in the colour of the step that was playing.
+void BeatDog::paintScope(Graphics& g, Rectangle<int> screen) const
+{
+    using bitvibe::ScopeFeed;
+    const auto area = screen.toFloat();
+    const Colour colour = theme.screen;
+    g.setColour(Colours::black);
+    g.fillRect(area);
+    const float stripH = 5.0f;
+    const auto inLane = area.withHeight((area.getHeight() - stripH) * 0.5f).reduced(0.0f, 3.0f);
+    const auto outLane = area.withTrimmedTop((area.getHeight() - stripH) * 0.5f).withTrimmedBottom(stripH).reduced(0.0f, 3.0f);
+    const auto strip = area.withTop(area.getBottom() - stripH);
+
+    const int buckets = kScopeBeats * ScopeFeed::kBucketsPerBeat;
+    const auto newest = scopeFeed != nullptr ? scopeFeed->newest() : (std::int64_t) -1;
+    const float step = area.getWidth() / (float) buckets;
+    auto shape = [](float v) { return (v < 0.0f ? -1.0f : 1.0f) * std::sqrt(std::min(1.0f, std::abs(v))); };
+
+    // the beats
+    g.setColour(colour.withAlpha(0.18f));
+    if (newest >= 0)
+        for (int i = 0; i < buckets; ++i)
+        {
+            const auto index = newest - (buckets - 1) + i;
+            if (index % ScopeFeed::kBucketsPerBeat == 0)
+                g.fillRect(area.getX() + (float) i * step, area.getY(), 1.0f, area.getHeight());
+        }
+    g.setColour(colour.withAlpha(0.12f));
+    g.fillRect(area.getX(), inLane.getCentreY(), area.getWidth(), 1.0f);
+    g.fillRect(area.getX(), outLane.getCentreY(), area.getWidth(), 1.0f);
+
+    if (newest >= 0)
+        for (int i = 0; i < buckets; ++i)
+        {
+            const auto index = newest - (buckets - 1) + i;
+            if (!scopeFeed->has(index))
+                continue;
+            const auto b = scopeFeed->get(index);
+            const float x = area.getX() + (float) i * step, w = std::max(1.0f, step);
+            auto column = [&](Rectangle<float> lane, float lo, float hi)
+            {
+                const float half = lane.getHeight() * 0.5f;
+                const float top = lane.getCentreY() - shape(hi) * half, bottom = lane.getCentreY() - shape(lo) * half;
+                g.fillRect(x, top, w, std::max(1.0f, bottom - top));
+            };
+            g.setColour(colour.withAlpha(0.45f));
+            column(inLane, b.inLo, b.inHi);
+            g.setColour(colour.interpolatedWith(Colours::white, 0.2f));
+            column(outLane, b.outLo, b.outHi);
+            if (b.step != ScopeFeed::kNoStep && stepColour)
+            {
+                g.setColour(stepColour(b.step));
+                g.fillRect(x, strip.getY() + 1.0f, w, strip.getHeight() - 1.0f);
+            }
+        }
+
+    g.setColour(colour.withAlpha(0.7f));
+    g.setFont(bold(9.0f));
+    g.drawText("IN", area.withHeight(14.0f).reduced(4.0f, 0.0f).toNearestInt(), Justification::topLeft);
+    g.drawText("OUT", outLane.withHeight(14.0f).reduced(4.0f, 0.0f).toNearestInt(), Justification::topLeft);
+}
+
 Rectangle<int> BeatDog::screenArea() const
 {
     const int side = getHeight() - 30;
@@ -487,6 +588,7 @@ void BeatDog::resized()
 {
     buildScanlines();
     const auto screen = screenArea();
+    scopeButton->setBounds(screen.getRight() + 12, 74, 92, 22);
     liveButton->setBounds(screen.getRight() + 12, 104, 92, 22);
     fpsBox.setBounds(screen.getRight() + 12, 130, 92, 22);
     smoothKnob.setBounds(30, 90, 32, 32);
@@ -569,7 +671,9 @@ void BeatDog::paint(Graphics& g)
     g.setColour(Colours::black);
     g.fillRoundedRectangle(screen.toFloat().expanded(3.0f), 6.0f);
     g.setImageResamplingQuality(Graphics::mediumResamplingQuality);
-    if (live && liveImage.isValid())
+    if (scope)
+        paintScope(g, screen);
+    else if (live && liveImage.isValid())
     {
         g.drawImage(liveImage, screen.toFloat());
     }

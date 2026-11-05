@@ -13,6 +13,7 @@
 #include "SamplerPage.h"
 #include "BeatDog.h"
 #include "TremoloPanel.h"
+#include "EffectGraphs.h"
 #include "BeatDogMesh.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
@@ -1177,6 +1178,158 @@ void testTremoloPanel(const File& outDir)
     if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
         PNGImageFormat().writeImageToStream(image, *out);
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+}
+
+// The pictures of the sound: the input history beside TRIGGER, the SCOPE on BEAT DOG's screen and the graphs of the
+// distortion, the delay and the reverb.
+void testVisuals(const File& outDir)
+{
+    std::puts("visuals");
+    auto p = makeProcessor();
+    uisettings::setAdvancedRight(true);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    LevelMeter* history = nullptr;
+    BeatDog* dog = nullptr;
+    DistortionGraph* distGraph = nullptr;
+    DelayGraph* delayGraph = nullptr;
+    ReverbGraph* reverbGraph = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+    {
+        history = history != nullptr ? history : dynamic_cast<LevelMeter*>(c);
+        dog = dog != nullptr ? dog : dynamic_cast<BeatDog*>(c);
+        distGraph = distGraph != nullptr ? distGraph : dynamic_cast<DistortionGraph*>(c);
+        delayGraph = delayGraph != nullptr ? delayGraph : dynamic_cast<DelayGraph*>(c);
+        reverbGraph = reverbGraph != nullptr ? reverbGraph : dynamic_cast<ReverbGraph*>(c);
+    }
+    if (history == nullptr || dog == nullptr || distGraph == nullptr || delayGraph == nullptr || reverbGraph == nullptr)
+    {
+        check(false, "the input history, BEAT DOG and the three effect graphs are on the page");
+        return;
+    }
+
+    // the input history: a frame a column, picks marked
+    int pushedPicks = 0;
+    for (int i = 0; i < LevelMeter::kColumns + 10; ++i)
+    {
+        const bool pick = i % 15 == 0;
+        history->push(pick ? -6.0f : -40.0f, -30.0f, pick);
+        pushedPicks += pick && i >= 10 ? 1 : 0; // the first ten have scrolled out
+    }
+    check(history->countPicks() == pushedPicks,
+          "the input history keeps the last " + String(LevelMeter::kColumns) + " frames and their picks (" + String(history->countPicks()) + ")");
+    {
+        const auto shot = snapshot(*history, 1.0f);
+        int lit = 0;
+        for (int y = 0; y < shot.getHeight(); ++y)
+            for (int x = 0; x < shot.getWidth(); ++x)
+            {
+                const auto px = shot.getPixelAt(x, y);
+                lit += px.getRed() > 200 && px.getGreen() > 120 && px.getBlue() < 90 ? 1 : 0;
+            }
+        check(lit > 40 && history->getWidth() > 60,
+              "and draws them lit, in a strip " + String(history->getWidth()) + " px wide (" + String(lit) + " lit pixels)");
+    }
+
+    // the scope: the engine keeps the input and the output on the beat clock, the screen draws it
+    run(*p, makeInput(48000 * 2));
+    const auto& feed = p->getEngine().getScope();
+    {
+        const auto newest = feed.newest();
+        int buckets = 0, withSound = 0, withStep = 0, differ = 0;
+        for (auto i = newest - 127; i <= newest; ++i) // two beats
+            if (feed.has(i))
+            {
+                const auto b = feed.get(i);
+                ++buckets;
+                withSound += b.inHi - b.inLo > 0.01f ? 1 : 0;
+                withStep += b.step >= 0 ? 1 : 0;
+                differ += std::abs((b.outHi - b.outLo) - (b.inHi - b.inLo)) > 0.01f ? 1 : 0;
+            }
+        check(newest > 128 && buckets == 128 && withSound > 60 && withStep > 30 && differ > 10,
+              "the scope feed holds the last beats bucket by bucket (" + String(buckets) + " buckets, " + String(withSound) + " with sound, "
+                  + String(withStep) + " with a step playing, " + String(differ) + " where the output differs)");
+    }
+    dog->setScope(true);
+    check(dog->isScope() && dog->isTimerRunning() && uisettings::beatDogScope(), "SCOPE on: the screen redraws by itself, and it is remembered");
+    {
+        const auto shot = snapshot(*dog, 2.0f);
+        const int side = dog->getHeight() - 30;
+        const Rectangle<int> screen(((dog->getWidth() - side) / 2) * 2, 22 * 2, side * 2, side * 2);
+        int bright = 0;
+        for (int y = screen.getY(); y < screen.getBottom(); ++y)
+            for (int x = screen.getX(); x < screen.getRight(); ++x)
+                bright += shot.getPixelAt(x, y).getBrightness() > 0.35f ? 1 : 0;
+        check(bright > 2000, "and draws the two beats in and out (" + String(bright) + " bright pixels)");
+        const File file = outDir.getChildFile("scope.png");
+        file.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+            PNGImageFormat().writeImageToStream(shot, *out);
+        std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+    }
+    dog->setScope(false);
+    check(!dog->isScope() && !dog->isTimerRunning() && !uisettings::beatDogScope(), "SCOPE off: the dog again, and the timer stops");
+
+    // the distortion graph: more drive, a squarer wave (its peak nearer its average level)
+    {
+        auto crest = [&](float drive, float type)
+        {
+            setValue(*p, ids::distType, type);
+            setValue(*p, ids::distDrive, drive);
+            setValue(*p, ids::distLevel, 0.8f);
+            Thread::sleep(100); // past the graph's limit of ten updates a second
+            distGraph->refresh();
+            const auto& out = distGraph->getOutput();
+            double peak = 0.0, sum = 0.0;
+            for (float v : out)
+            {
+                peak = jmax(peak, (double) std::abs(v));
+                sum += (double) v * v;
+            }
+            return peak / jmax(1.0e-9, std::sqrt(sum / (double) jmax<size_t>(1, out.size())));
+        };
+        const double clean = crest(0.0f, 0.0f), driven = crest(1.0f, 0.0f), fuzz = crest(1.0f, 1.0f);
+        check(driven < clean - 0.1 && std::abs(fuzz - driven) > 0.05, "the distortion graph runs the effect: more DRIVE, a squarer wave, the fuzz its own (crest " + String(clean, 2)
+                                                         + " clean, " + String(driven, 2) + " driven, " + String(fuzz, 2) + " fuzz)");
+    }
+
+    // the delay graph: the echoes where and as loud as the delay plays them
+    {
+        setValue(*p, ids::delayTime, 8.0f); // 1/4: one beat
+        setValue(*p, ids::delayRepeats, 4.0f);
+        setValue(*p, ids::delayMix, 0.5f);
+        setValue(*p, ids::delayDecay, 0.5f);
+        Thread::sleep(100);
+        delayGraph->refresh();
+        const auto& e = delayGraph->getEchoes();
+        const float g = bitvibe::Delay::decayGain(0.5f);
+        check(e.size() == 4 && std::abs(e[0].beats - 1.0) < 1.0e-9 && std::abs(e[3].beats - 4.0) < 1.0e-9 && std::abs(e[0].level - 0.5f) < 1.0e-4f
+                  && std::abs(e[1].level - 0.5f * g) < 1.0e-4f,
+              "the delay graph: 4 REPEATS at 1/4 are 4 echoes a beat apart, each DECAY quieter");
+        setValue(*p, ids::delayRepeats, (float) bitvibe::kDelayForever);
+        Thread::sleep(100);
+        delayGraph->refresh();
+        check(delayGraph->getEchoes().size() > 4, "FOREVER: echoes until they fade (" + String((int) delayGraph->getEchoes().size()) + ")");
+    }
+
+    // the reverb graph: the tail of the reverb itself
+    {
+        auto tail = [&](int type, float decay, bool reverse)
+        {
+            setValue(*p, ids::reverbType, (float) type);
+            setValue(*p, ids::reverbDecay, decay);
+            setValue(*p, ids::reverbReverseHall, reverse ? 1.0f : 0.0f);
+            Thread::sleep(100);
+            reverbGraph->refresh();
+            const auto& env = reverbGraph->getEnvelope();
+            const auto loudest = std::max_element(env.begin(), env.end()) - env.begin();
+            return std::make_pair(reverbGraph->getTailSeconds(), (double) loudest / (double) jmax<size_t>(1, env.size()));
+        };
+        const auto room = tail(0, 0.0f, false), hall = tail(1, 1.0f, false), reversed = tail(1, 0.5f, true);
+        check(hall.first > 2.0 * room.first && room.second < 0.2,
+              "the reverb graph: a long Hall rings longer than a short Room (" + String(hall.first, 1) + " s, " + String(room.first, 1)
+                  + " s), loudest at the start");
+        check(reversed.second > 0.3, "REVERSE swells up: it is loudest " + String(roundToInt(reversed.second * 100.0)) + "% of the way along");
+    }
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -2892,6 +3045,7 @@ int main(int argc, char** argv)
     testThemes(outDir);
     testPageTools();
     testTremoloPanel(outDir);
+    testVisuals(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

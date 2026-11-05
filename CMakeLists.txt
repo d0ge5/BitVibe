@@ -84,6 +84,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/SamplePanel.cpp
         Source/EqPanel.cpp
         Source/TremoloPanel.cpp
+        Source/EffectGraphs.cpp
         Source/SampleBank.cpp
         Source/AppAudioCapture.cpp
         Source/SamplerPage.cpp
@@ -144,6 +145,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/SamplePanel.cpp
         Source/EqPanel.cpp
         Source/TremoloPanel.cpp
+        Source/EffectGraphs.cpp
         Source/SampleBank.cpp
         Source/AppAudioCapture.cpp
         Source/SamplerPage.cpp

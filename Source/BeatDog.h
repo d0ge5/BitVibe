@@ -7,6 +7,10 @@
 
 class PedalLookAndFeel;
 class PedalButton;
+namespace bitvibe
+{
+class ScopeFeed;
+}
 
 // BEAT DOG: the green wireframe husky headbanging in time, in the pane under the pedal. Two ways to show it:
 //  - the pre-rendered animation (the default): one beat rendered ahead of time in Blender (Tools/beatdog) as a sprite
@@ -17,7 +21,8 @@ class PedalButton;
 // The head nods forward on the beats picked with the numbered buttons (all of them to start with) and pulls back smoothly
 // before the next. SMOOTH sets how much quicker the nod is: all the way left a sudden headbang, all the way right an
 // even bob. SWAY floats the head from side to side, landing on one side at a picked beat and on the other at the next.
-// All of it is remembered.
+// SCOPE turns the screen into an oscilloscope of the last two beats: your clean input on top, the sound coming out
+// below, with the beats marked and a strip under it in the colour of each step as it played. All of it is remembered.
 class BeatDog : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
@@ -40,6 +45,11 @@ public:
 
     void setLive(bool live);  // remembered for next time
     bool isLive() const { return live; }
+    void setScope(bool on);   // the scope on the screen instead of the dog; remembered
+    bool isScope() const { return scope; }
+    static constexpr int kScopeBeats = 2;
+    const bitvibe::ScopeFeed* scopeFeed = nullptr;   // where the scope reads from (the engine's feed)
+    std::function<juce::Colour(int step)> stepColour; // the colour of what a step controls
     void setFrameRate(int fps); // 60, 30 or 15; remembered for next time
     int getFrameRate() const { return fps; }
     using juce::Timer::isTimerRunning;   // for tests: the live version's clock
@@ -84,6 +94,8 @@ private:
     void buildScanlines();
     void updateControls();
     void drawLiveFrame(const Motion&);
+    void paintScope(juce::Graphics&, juce::Rectangle<int> screen) const;
+    void updateTimer();
     const float* earsFor(float gap);
 
     PedalLookAndFeel& laf;
@@ -95,7 +107,7 @@ private:
     juce::Image liveImage;  // the last live frame
     int frame = 0, beat = 0, barSteps = 16;
     int tempoTenths = 1200; // the tempo shown, in tenths of a BPM
-    bool live = false;
+    bool live = false, scope = false;
     int fps = 60;
     int beatMask = (1 << kMaxBeats) - 1;
     float smoothness = 0.0f, sway = 0.5f;
@@ -107,7 +119,7 @@ private:
     std::array<float, kEarSteps> ears {}; // the ears' flop through one headbang, for this gap and SMOOTH
     float earsGap = -1.0f, earsSmooth = -1.0f;
 
-    std::unique_ptr<PedalButton> liveButton;
+    std::unique_ptr<PedalButton> liveButton, scopeButton;
     juce::ComboBox fpsBox;
     juce::Slider smoothKnob, swayKnob;
 };

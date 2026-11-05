@@ -19,6 +19,7 @@
 #include "Mapping.h"
 #include "Reverb.h"
 #include "Samples.h"
+#include "Scope.h"
 #include "Tremolo.h"
 
 #include <array>
@@ -535,10 +536,23 @@ public:
             }
 
             eqReference.endSample(beforeEqSum / (float) nCh, afterEqSum / (float) nCh);
+            {
+                float inSum = 0.0f, outSum = 0.0f;
+                for (int c = 0; c < nCh; ++c)
+                {
+                    inSum += dry[(size_t) c];
+                    outSum += io[c][n];
+                }
+                scope.add((double) beatsDone + beatPhase, inSum / (float) nCh, outSum / (float) nCh,
+                          seqRunning ? active[(size_t) seqIdx] : ScopeFeed::kNoStep);
+            }
 
             beatPhase += 1.0 / beatSamples;
             if (beatPhase >= 1.0)
+            {
+                beatsDone += std::floor(beatPhase);
                 beatPhase -= std::floor(beatPhase);
+            }
         }
 
         while (nextEvent < numEvents)
@@ -562,6 +576,9 @@ public:
         effectsActiveOut.store(reverbSend > 0.05f, std::memory_order_relaxed);
         tremRampOut.store(tremWasActive ? tremolo.rampPosition(blk.trem, beatSamples) : -1.0f, std::memory_order_relaxed);
     }
+
+    // The clean input and the sound coming out, bucket by bucket on the beat clock, for the SCOPE.
+    const ScopeFeed& getScope() const { return scope; }
 
     // How far along its rate curve the tremolo is (0..1, 1 = the end rate), or -1 while nothing plays; for the curve's
     // playhead.
@@ -1048,6 +1065,8 @@ private:
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
     Tremolo tremolo;
     bool tremWasActive = false;
+    ScopeFeed scope;
+    double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on
     std::atomic<float> tremRampOut { -1.0f };
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 

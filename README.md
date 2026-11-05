@@ -171,7 +171,8 @@ on afterwards. The tempo clock sets the speed of all of it.
 - **BYPASS** switches the effect off.
 
 Under the pedal, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the stutter and
-sequencer) with a meter of your playing against the trigger line, which lights up when a pick is caught, and
+sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that crosses it is
+caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over the line; and
 **HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an output meter
 (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it out),
 **SEQ ONLY** and, in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, **STUTTER HOLD** (freezes the stutter until you
@@ -202,6 +203,13 @@ headbang). **SMOOTH** sets how much quicker the nod forward is: all the way left
 an even bob, forward and back alike. **SWAY** floats the head from side to side, landing on one side at a picked beat
 and the other at the next. All of it is remembered.
 
+**SCOPE** turns BEAT DOG's screen into an oscilloscope of the last two beats: your clean input on top (**IN**), what
+comes out below (**OUT**), a line on each beat and, along the bottom, a strip in the colour of the step that was
+playing. Side by side you can see what the sequence does to your playing: the stutter repeating a slice, a muted
+step going flat, the crush, the tremolo cutting, the echoes trailing on.
+
+<p align="center"><img src="artifacts/scope.png" width="456" alt="BEAT DOG's screen as a scope: the clean input on top, the processed sound below, the beats as lines and the steps as a coloured strip"></p>
+
 ### The right-hand side
 
 At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
@@ -209,6 +217,10 @@ stacked in the order the sequenced sound goes through them: **1** sample blend, 
 **4** delay, **5** reverb, **6** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
 light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
+The distortion, delay and reverb panels each have a small graph on the left of what the effect does, worked out by
+running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and
+what comes out; the delay shows a note and its echoes on the beat lines, with the time in ms; the reverb shows the
+tail after a short note, loud at the top and quiet at the bottom, and how long it rings.
 These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
 them).
 

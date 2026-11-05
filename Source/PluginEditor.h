@@ -342,17 +342,26 @@ private:
     juce::Point<float> dragAt, lastAt; // where the drag has got to (slowed by Shift), and the mouse's last position
 };
 
-// The input level next to the TRIGGER knob: the bar is how hard you are playing, the line is how hard a pick has to
-// be to count, and the bar lights up when a pick is caught.
+// The last few seconds of your playing, next to the TRIGGER knob, newest on the right: a bar for each frame of the
+// editor (how loud it was), the line across it is how hard a pick has to be to count, and a pick that was caught is
+// lit, with a mark on top. Setting TRIGGER comes down to seeing which notes cross the line.
 class LevelMeter : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    void set(float levelDb, float thresholdDb, bool flash);
+    static constexpr int kColumns = 84; // about 2.8 seconds at the editor's 30 frames a second
+    void push(float peakDb, float thresholdDb, bool picked); // once a frame
     void paint(juce::Graphics&) override;
+    int countPicks() const; // for tests: the picks in the history
 
 private:
-    float level = -100.0f, threshold = -30.0f;
-    bool lit = false;
+    struct Column
+    {
+        float db = -100.0f;
+        bool picked = false;
+    };
+    std::array<Column, kColumns> history {};
+    int newest = 0;
+    float threshold = -30.0f;
 };
 
 // A small picture of the six sequencer steps on the front of the pedal, and the quickest way to set the sequence up:
@@ -428,6 +437,9 @@ class PatternPanel;
 class EqPanel;
 class SamplePanel;
 class TremoloPanel;
+class DistortionGraph;
+class DelayGraph;
+class ReverbGraph;
 class SamplerPage;
 class BeatDog;
 
@@ -554,9 +566,7 @@ private:
     int shownThemeSerial = -1;
     void applyTheme(); // repaints in the theme now showing
     HelpOverlay helpOverlay;
-    float meterDb = -100.0f;
     int seenAttacks = 0;
-    double meterFlashUntil = 0.0;
     juce::ComponentBoundsConstrainer constrainer;
     int baseWidth = 0, baseHeight = 0;     // the size the page that is showing is designed at
     float scale = 1.0f;                    // the window size as a multiple of that
@@ -619,6 +629,11 @@ private:
     std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open
     std::unique_ptr<EqPanel> eqPanel;
     std::unique_ptr<TremoloPanel> tremoloPanel; // between the distortion and the delay
+    // what the distortion, the delay and the reverb do, drawn in the left of their panels (the knobs share the rest)
+    std::unique_ptr<DistortionGraph> distGraph;
+    std::unique_ptr<DelayGraph> delayGraph;
+    std::unique_ptr<ReverbGraph> reverbGraph;
+    static constexpr int kGraphX = 10, kGraphW = 120, kKnobsX = 136; // in a panel
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 

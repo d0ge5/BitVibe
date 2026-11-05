@@ -98,6 +98,16 @@ inline void setBeatDogLive(bool live)
     write(*xml);
 }
 
+// BEAT DOG's screen showing the scope instead of the dog.
+inline bool beatDogScope() { return read()->getBoolAttribute("beatDogScope", false); }
+
+inline void setBeatDogScope(bool on)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogScope", on);
+    write(*xml);
+}
+
 // BEAT DOG shown, or hidden from the VIEW menu.
 inline bool beatDogShown() { return read()->getBoolAttribute("beatDogShown", true); }
 
