@@ -8,6 +8,7 @@
 #include "AppAudioCapture.h"
 #include "SampleBank.h"
 #include "dsp/SampleRender.h"
+#include "ParamUndo.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -201,6 +202,9 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     bitvibe::Engine& getEngine() { return engine; }
 
+    // Undo and redo for the changes made on the page (not for the stutter hold, which is held down and let go).
+    ParamUndo& getUndo() { return undo; }
+
     // The drum beat of the DRUMS tab (its hits can trigger the sequencer and the stutter).
     DrumBeat& getDrumBeat() { return drumBeat; }
 
@@ -222,10 +226,15 @@ public:
     // block; for the DRUMS tab's readout.
     bitvibe::BeatRoute getBeatRoute() const { return (bitvibe::BeatRoute) beatRoute.load(std::memory_order_relaxed); }
 
+    // The loudest output sample since the last call (the output meter under WHAT COMES OUT). Message thread.
+    float takeOutputPeak() { return outputPeak.exchange(0.0f, std::memory_order_relaxed); }
+
     // Tempo actually in use (the host's when sync is on); for display only.
     float getEffectiveBpm() const { return effectiveBpm.load(std::memory_order_relaxed); }
 
 private:
+    ParamUndo undo { *this, juce::StringArray { ids::hold } };
+
     // Everything a preset slot remembers: the normalised value of each preset parameter (in the order
     // of presetParams) and the two morph sets.
     struct PresetSlot
@@ -382,6 +391,7 @@ private:
     std::atomic<int> currentProgram { 0 };
 
     std::atomic<float> effectiveBpm { 120.0f };
+    std::atomic<float> outputPeak { 0.0f };
     std::atomic<int> beatRoute { (int) bitvibe::BeatRoute::Main };
 
     double lastTapMs = 0.0;

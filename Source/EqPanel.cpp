@@ -314,11 +314,11 @@ void EqPanel::refresh()
     setPowerActive(onButton, referenceTools && proc.getEngine().isEffectSideActive());
     {
         // switched off: the band settings dim (the reference clip still works, to hear the sound without the EQ)
-        const float alpha = rawValue(onId) > 0.5f ? 1.0f : kOffAlpha;
+        const bool on = rawValue(onId) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &bandOnButton, &typeBox, &freqSlider, &gainSlider, &qSlider, &outputSlider })
-            c->setAlpha(alpha);
+            c->setAlpha(offAlphaFor(*c, on));
         for (auto& b : bandButtons)
-            b->setAlpha(alpha);
+            b->setAlpha(offAlphaFor(*b, on));
     }
     if (referenceTools) // the sampler's copy has no reference clip
         updateClipButtons();

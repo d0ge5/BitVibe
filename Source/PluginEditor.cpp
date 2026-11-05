@@ -14,6 +14,8 @@ using namespace juce;
 using pedalstyle::activeProperty;
 using pedalstyle::drawPanelTitle;
 using pedalstyle::kOffAlpha;
+using pedalstyle::kOffTextAlpha;
+using pedalstyle::offAlphaFor;
 using pedalstyle::kPanelTitleX;
 using pedalstyle::makePowerButton;
 using pedalstyle::powerProperty;
@@ -410,19 +412,20 @@ void pedalstyle::drawPanelTitle(Graphics& g, int x, int y, int number, const Str
     g.setFont(bold(9.5f));
     g.drawText(String(number), badge, Justification::centred);
     g.setColour(kInk);
-    g.setFont(bold(11.5f));
-    g.drawText(title, x + 18, y, 300, 14, Justification::left);
+    g.setFont(bold(12.5f));
+    g.drawText(title, x + 18, y - 1, 300, 16, Justification::left);
 }
 
 void pedalstyle::drawSectionTitle(Graphics& g, int x, int y, const String& title)
 {
     g.setColour(kInk);
-    g.setFont(bold(11.5f));
-    g.drawText(title, x, y, 300, 14, Justification::left);
+    g.setFont(bold(12.5f));
+    g.drawText(title, x, y - 1, 300, 16, Justification::left);
 }
 
 void pedalstyle::drawControlLabel(Graphics& g, int cx, int y, const String& name, const String& value, float alpha)
 {
+    alpha = jmax(alpha, kOffTextAlpha); // readable on a switched-off panel
     g.setColour(pedalstyle::inkLabel.withMultipliedAlpha(alpha));
     g.setFont(bold(10.5f));
     g.drawText(name, Rectangle<int>(100, 14).withCentre({ cx, y + 7 }), Justification::centred);
@@ -803,12 +806,14 @@ void chartArrow(Graphics& g, Point<float> from, Point<float> to, const String& l
 {
     g.setColour(kAccent.withAlpha(0.85f));
     g.drawArrow({ from, to }, 1.6f, 7.0f, 7.0f);
-    if (label.isNotEmpty()) // above the arrow, centred on it (it may be wider than the arrow)
+    if (label.isNotEmpty()) // above the arrow, ending at its head (a line of its own for each line of the label)
     {
+        const int lines = StringArray::fromLines(label).size();
+        const float h = 14.0f * (float) lines;
         g.setColour(kInkDim);
-        g.setFont(plain(9.5f));
-        g.drawText(label, Rectangle<float>(64.0f, 12.0f).withCentre({ (from.x + to.x) * 0.5f, jmin(from.y, to.y) - 8.0f }).toNearestInt(),
-                   Justification::centred);
+        g.setFont(plain(11.0f));
+        g.drawFittedText(label, Rectangle<float>(to.x - 64.0f, jmin(from.y, to.y) - 2.0f - h, 62.0f, h).toNearestInt(),
+                         Justification::bottomRight, lines);
     }
 }
 } // namespace
@@ -892,7 +897,7 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
         g.drawLine(box.getRight(), box.getCentreY(), bus1, box.getCentreY(), 1.6f);
     g.drawLine(bus1, stutter.getCentreY(), bus1, continuous.getCentreY(), 1.6f);
     chartArrow(g, { bus1, stutter.getCentreY() }, { c2 - 2.0f, stutter.getCentreY() }, "stutter");
-    chartArrow(g, { bus1, sequencer.getCentreY() }, { c2 - 2.0f, sequencer.getCentreY() }, "restart, step");
+    chartArrow(g, { bus1, sequencer.getCentreY() }, { c2 - 2.0f, sequencer.getCentreY() }, "restart,\nstep");
     chartArrow(g, { sequencer.getCentreX(), sequencer.getBottom() + 1.0f }, { sounds.getCentreX(), sounds.getY() - 2.0f });
     g.setColour(kAccent.withAlpha(0.85f));
     g.drawLine(stutter.getRight(), stutter.getCentreY(), bus2, stutter.getCentreY(), 1.6f);
@@ -986,6 +991,58 @@ void LevelMeter::paint(Graphics& g)
     g.fillRect(b.getX(), toY(threshold) - 0.75f, b.getWidth(), 1.5f);
     g.setColour(kTheme.outline);
     g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+}
+
+void OutputMeter::set(float levelDb, bool overFullScale)
+{
+    const double now = Time::getMillisecondCounterHiRes();
+    if (overFullScale)
+        clipUntil = now + kClipHoldMs;
+    const bool clip = now < clipUntil;
+    if (std::abs(levelDb - level) > 0.2f || clip != shownClip)
+    {
+        level = levelDb;
+        shownClip = clip;
+        repaint();
+    }
+}
+
+bool OutputMeter::isClipLit() const { return Time::getMillisecondCounterHiRes() < clipUntil; }
+
+void OutputMeter::mouseUp(const MouseEvent&)
+{
+    clipUntil = 0.0;
+    shownClip = false;
+    repaint();
+}
+
+void OutputMeter::paint(Graphics& g)
+{
+    // the clip light, then the bar: -48 dB at the bottom, +6 dB at the top, with a line at 0 dB
+    const auto b = getLocalBounds().toFloat();
+    const Point<float> light(b.getCentreX(), 5.0f);
+    if (shownClip)
+    {
+        g.setColour(kRed.withAlpha(0.3f));
+        g.fillEllipse(light.x - 7.0f, light.y - 7.0f, 14.0f, 14.0f);
+    }
+    g.setColour(shownClip ? kRed : kTheme.unlit);
+    g.fillEllipse(light.x - 4.0f, light.y - 4.0f, 8.0f, 8.0f);
+
+    const auto bar = b.withTrimmedTop(14.0f);
+    auto toY = [&bar](float db) { return bar.getBottom() - bar.getHeight() * jlimit(0.0f, 1.0f, (db + 48.0f) / 54.0f); };
+    g.setColour(kTheme.well);
+    g.fillRoundedRectangle(bar, 2.0f);
+    const float top = toY(level);
+    if (top < bar.getBottom())
+    {
+        g.setColour(level > 0.0f ? kRed : (level > -6.0f ? kAccent : kTheme.mid));
+        g.fillRect(bar.withTop(top).reduced(1.0f, 0.0f));
+    }
+    g.setColour(kInk);
+    g.fillRect(bar.getX(), toY(0.0f) - 0.75f, bar.getWidth(), 1.5f);
+    g.setColour(kTheme.outline);
+    g.drawRoundedRectangle(bar.reduced(0.5f), 2.0f, 1.0f);
 }
 
 void PedalButton::paint(Graphics& g)
@@ -1083,6 +1140,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     triggerMeter.setTooltip("INPUT METER: how hard you are playing (after INPUT). The white line is how hard a pick has to be to start the "
                             "stutter and sequencer (set with TRIGGER); the bar lights orange when a pick is caught.");
     content.addAndMakeVisible(triggerMeter);
+    outputMeter.setTooltip("OUTPUT METER: how loud the sound coming out is. The white line is 0 dB, the most the output can take; the "
+                           "light on top turns red when it goes over (click the light to put it out). If it does, turn OUTPUT down.");
+    content.addAndMakeVisible(outputMeter);
     stepStrip.setTooltip("THE SEQUENCE: one bar per step, coloured by what it controls (blue = pitch, green = filter, purple = rate; "
                          "a dash = skipped, a cross = muted). Click a step to show its knob. Drag across steps to loop them. Right-click a step for more.");
     stepStrip.onStepClick = [this](int step)
@@ -1271,7 +1331,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         content.addChildComponent(tags);
     }
 
-    // preset bar: previous / next slot, the name (double-click to rename) and SAVE
+    // preset bar: previous / next slot, the name (a click opens the preset menu) and SAVE
     // the tempo read-out in the middle of the pedal: drag it up or down, or double-click it and type a BPM (Enter to set,
     // Esc to cancel). It is the one tempo control on the page (with TAP and SYNC).
     tempoLabel.setLookAndFeel(&laf);
@@ -1310,7 +1370,9 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     presetLabel.setLookAndFeel(&laf);
     presetLabel.setFont(bold(13.5f));
     presetLabel.setJustificationType(Justification::centred);
-    presetLabel.setEditable(false, true, false);
+    presetLabel.setEditable(false, false, false); // a click opens the preset menu, which can rename it
+    presetLabel.setMouseCursor(MouseCursor::PointingHandCursor);
+    presetLabel.onClick = [this] { showPresetMenu(); };
     presetLabel.onTextChange = [this]
     {
         proc.changeProgramName(proc.getCurrentProgram(), presetLabel.getText());
@@ -1350,10 +1412,11 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     content.addAndMakeVisible(morphButton);
     refreshPresetName();
     setTooltips();
+    nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
     {
@@ -1381,6 +1444,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     addAndMakeVisible(content);
     content.toBack();
     advancedRight = uisettings::advancedRight();
+    beatDogShown = uisettings::beatDogShown();
+    beatDog->setVisible(beatDogShown);
     samplePanel->setAdvanced(advancedRight); // its height sets where the column ends
     baseWidth = kPedalWidth;
     baseHeight = pedalPageHeight();
@@ -1407,21 +1472,19 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
                               "the stutter length and hold, the sequence loop and more.");
     simpleButton.onClick = [this] { setRightMode(false); };
     advancedButton.onClick = [this] { setRightMode(true); };
+    viewButton.setTooltip("VIEW: the theme (the colours of the page), the window size, and whether BEAT DOG is shown. "
+                          "All remembered; every open BitVibe window follows the theme.");
+    viewButton.arrow = true;
+    viewButton.onClick = [this]
     {
-        StringArray names;
-        for (const auto& t : pedalstyle::themes())
-            names.add(t.name);
-        themeButton.setTooltip("THEME: click for the next look (" + names.joinIntoString(", ") + "). Only the colours change; "
-                               "every open BitVibe window follows, and the choice is remembered.");
-    }
-    themeButton.setText(String("THEME: ") + pedalstyle::theme.name);
-    themeButton.onClick = [this]
-    {
-        pedalstyle::setTheme(pedalstyle::themeIndex() + 1);
-        uisettings::setThemeName(pedalstyle::theme.name);
-        applyTheme();
+        Component::SafePointer<BitVibeEditor> safe(this);
+        viewMenu().showMenuAsync(PopupMenu::Options().withTargetComponent(&viewButton).withMinimumWidth(180), [safe](int result)
+        {
+            if (safe != nullptr)
+                safe->viewMenuChosen(result);
+        });
     };
-    content.addAndMakeVisible(themeButton);
+    content.addAndMakeVisible(viewButton);
     content.addAndMakeVisible(simpleButton);
     content.addAndMakeVisible(advancedButton);
     applyRightMode();
@@ -1549,28 +1612,97 @@ void BitVibeEditor::showDrums(bool on)
 }
 
 // The arrow in the preset name box: what can be done with the preset that is showing.
-void BitVibeEditor::showPresetMenu()
+// The preset menu: every slot to jump to, then undo and redo, save and rename, export and import.
+PopupMenu BitVibeEditor::presetMenu()
 {
     PopupMenu menu;
-    menu.addItem(1, "Save to slot " + String(proc.getCurrentProgram() + 1).paddedLeft('0', 2));
-    menu.addItem(2, "Rename...");
-    menu.addSeparator();
-    menu.addItem(3, "Export to a file...");
-    menu.addItem(4, "Import from a file...");
-    Component::SafePointer<BitVibeEditor> safe(this);
-    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&presetMenuButton).withMinimumWidth(180), [safe](int result)
+    const int current = proc.getCurrentProgram();
+    menu.addSectionHeader("PRESETS");
+    for (int i = 0; i < proc.getNumPrograms(); ++i)
     {
-        if (safe == nullptr)
-            return;
-        if (result == 1)
-            safe->saveButton.onClick();
-        else if (result == 2)
-            safe->presetLabel.showEditor();
-        else if (result == 3)
-            safe->exportPresetFile();
-        else if (result == 4)
-            safe->importPresetFile();
+        if (i == bitvibe::kNumFactoryPresets)
+            menu.addSeparator(); // the factory sounds, then the blank slots
+        menu.addItem(kMenuSlot + i, String(i + 1).paddedLeft('0', 2) + "   " + proc.getProgramName(i), true, i == current);
+    }
+    menu.addSeparator();
+    auto& undo = proc.getUndo();
+    menu.addItem(PopupMenu::Item("Undo").setID(kMenuUndo).setEnabled(undo.canUndo()));
+    menu.addItem(PopupMenu::Item("Redo").setID(kMenuRedo).setEnabled(undo.canRedo()));
+    menu.addSeparator();
+    menu.addItem(kMenuSave, "Save to slot " + String(current + 1).paddedLeft('0', 2));
+    menu.addItem(kMenuRename, "Rename...");
+    menu.addSeparator();
+    menu.addItem(kMenuExport, "Export to a file...");
+    menu.addItem(kMenuImport, "Import from a file...");
+    return menu;
+}
+
+void BitVibeEditor::presetMenuChosen(int result)
+{
+    if (result >= kMenuSlot && result < kMenuSlot + proc.getNumPrograms())
+    {
+        if (result - kMenuSlot != proc.getCurrentProgram())
+        {
+            proc.getUndo().remember();
+            proc.setCurrentProgram(result - kMenuSlot);
+            refreshPresetName();
+        }
+    }
+    else if (result == kMenuUndo)
+        undoOrRedo(true);
+    else if (result == kMenuRedo)
+        undoOrRedo(false);
+    else if (result == kMenuSave)
+        saveButton.onClick();
+    else if (result == kMenuRename)
+        presetLabel.showEditor();
+    else if (result == kMenuExport)
+        exportPresetFile();
+    else if (result == kMenuImport)
+        importPresetFile();
+}
+
+void BitVibeEditor::showPresetMenu()
+{
+    Component::SafePointer<BitVibeEditor> safe(this);
+    presetMenu().showMenuAsync(PopupMenu::Options().withTargetComponent(&presetLabel).withMinimumWidth(260), [safe](int result)
+    {
+        if (safe != nullptr)
+            safe->presetMenuChosen(result);
     });
+}
+
+void BitVibeEditor::undoOrRedo(bool undo)
+{
+    auto& history = proc.getUndo();
+    if (undo)
+        history.undo();
+    else
+        history.redo();
+    refreshPresetName();
+    repaint();
+}
+
+bool BitVibeEditor::keyPressed(const KeyPress& key)
+{
+    if (key == KeyPress('z', ModifierKeys::commandModifier, 0))
+    {
+        undoOrRedo(true);
+        return true;
+    }
+    if (key == KeyPress('z', ModifierKeys::commandModifier | ModifierKeys::shiftModifier, 0) || key == KeyPress('y', ModifierKeys::commandModifier, 0))
+    {
+        undoOrRedo(false);
+        return true;
+    }
+    return false; // the host's own keys (play, stop) go on to the host
+}
+
+void BitVibeEditor::mouseDown(const MouseEvent&)
+{
+    // a click anywhere on the page lets it hear Ctrl+Z (unless a control that takes keys, like a text box, has them)
+    if (isShowing() && !hasKeyboardFocus(true))
+        grabKeyboardFocus();
 }
 
 void BitVibeEditor::exportPresetFile()
@@ -1616,6 +1748,7 @@ void BitVibeEditor::importPresetFile()
                                        return;
                                    String message;
                                    bool ok = false;
+                                   safe->proc.getUndo().remember();
                                    if (auto xml = XmlDocument::parse(file))
                                        ok = safe->proc.importPreset(*xml, message);
                                    else
@@ -1627,11 +1760,61 @@ void BitVibeEditor::importPresetFile()
                                });
 }
 
+PopupMenu BitVibeEditor::viewMenu()
+{
+    PopupMenu menu;
+    menu.addSectionHeader("THEME");
+    const auto& all = pedalstyle::themes();
+    for (int i = 0; i < (int) all.size(); ++i)
+        menu.addItem(kViewTheme + i, all[(size_t) i].name, true, i == pedalstyle::themeIndex());
+    menu.addSectionHeader("WINDOW SIZE");
+    for (const int percent : { 75, 100, 125, 150 })
+    {
+        const float wanted = (float) percent / 100.0f;
+        const bool fits = uisettings::fittingScale(wanted, baseWidth, baseHeight, uisettings::screenArea()) >= wanted - 0.005f;
+        menu.addItem(kViewSize + percent, String(percent) + "%" + (fits ? String() : String("  (bigger than the screen)")), fits,
+                     std::abs(scale - wanted) < 0.005f);
+    }
+    menu.addSeparator();
+    menu.addItem(kViewDog, "Show BEAT DOG", true, beatDogShown);
+    return menu;
+}
+
+void BitVibeEditor::viewMenuChosen(int result)
+{
+    if (result >= kViewTheme && result < kViewTheme + (int) pedalstyle::themes().size())
+        setThemeFromPage(result - kViewTheme);
+    else if (result > kViewSize && result < kViewDog)
+        setWindowScale((float) (result - kViewSize) / 100.0f);
+    else if (result == kViewDog)
+        setBeatDogShown(!beatDogShown);
+}
+
+void BitVibeEditor::setThemeFromPage(int index)
+{
+    pedalstyle::setTheme(index);
+    uisettings::setThemeName(pedalstyle::theme.name);
+    applyTheme();
+}
+
+void BitVibeEditor::setWindowScale(float newScale)
+{
+    scale = savedScale = jlimit(uisettings::kMinScale, uisettings::kMaxScale, newScale);
+    uisettings::saveWindowScale(scale);
+    applySize();
+}
+
+void BitVibeEditor::setBeatDogShown(bool shown)
+{
+    beatDogShown = shown;
+    uisettings::setBeatDogShown(shown);
+    applyRightMode(); // the layout and the window's height change with it
+}
+
 void BitVibeEditor::applyTheme()
 {
     shownThemeSerial = pedalstyle::themeSerial();
     laf.applyTheme();
-    themeButton.setText(String("THEME: ") + pedalstyle::theme.name);
     buildBackground();
     sendLookAndFeelChange(); // every control takes the new colours and repaints
 }
@@ -1661,7 +1844,8 @@ void BitVibeEditor::applyRightMode()
     advancedButton.lit = advancedRight;
     simpleButton.repaint();
     advancedButton.repaint();
-    if (!drumsShown && pedalPageHeight() != baseHeight) // SIMPLE has a shorter window
+    beatDog->setVisible(beatDogShown && !drumsShown);
+    if (!drumsShown && pedalPageHeight() != baseHeight) // SIMPLE has a shorter window, and so has a page without BEAT DOG
     {
         baseHeight = pedalPageHeight();
         constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
@@ -1679,8 +1863,11 @@ Rectangle<int> BitVibeEditor::distArea() const { return { kSideX, samplesTop() +
 Rectangle<int> BitVibeEditor::delayArea() const { return distArea().translated(0, 100 + kPanelGap); }
 Rectangle<int> BitVibeEditor::reverbArea() const { return delayArea().translated(0, 100 + kPanelGap); }
 int BitVibeEditor::eqTop() const { return reverbArea().getBottom() + kPanelGap; }
-int BitVibeEditor::columnBottom() const { return advancedRight ? eqTop() + EqPanel::kHeight : beatDogArea().getBottom(); }
-int BitVibeEditor::globalTop() const { return advancedRight ? kBeatDog.getBottom() + kPanelGap : kBeatDog.getY(); }
+int BitVibeEditor::columnBottom() const
+{
+    return advancedRight ? eqTop() + EqPanel::kHeight : (beatDogShown ? beatDogArea().getBottom() : reverbArea().getBottom());
+}
+int BitVibeEditor::globalTop() const { return advancedRight && beatDogShown ? kBeatDog.getBottom() + kPanelGap : kBeatDog.getY(); }
 int BitVibeEditor::globalHeight() const { return advancedRight ? 216 : 162; }
 Rectangle<int> BitVibeEditor::beatDogArea() const
 {
@@ -1694,6 +1881,7 @@ int BitVibeEditor::pedalPageHeight() const
 
 void BitVibeEditor::stepProgram(int direction)
 {
+    proc.getUndo().remember();
     const int count = proc.getNumPrograms();
     proc.setCurrentProgram((proc.getCurrentProgram() + direction + count) % count);
     refreshPresetName();
@@ -1870,7 +2058,8 @@ void BitVibeEditor::setTooltips()
     saveButton.setTooltip("SAVE: store the current sound in this preset slot.");
     tempoLabel.setTooltip("TEMPO: the speed of the sequencer and stutter, 23.4 to 240 BPM. Drag the number up or down, double-click it "
                           "to type one, tap the TAP switch, or turn on SYNC to follow your DAW (the number then shows the host tempo).");
-    presetLabel.setTooltip("The preset name. Double-click to rename it. An orange dot means the sound has unsaved changes.");
+    presetLabel.setTooltip("The preset name: click it (or the arrow) for the list of presets, undo and redo (Ctrl+Z, Ctrl+Shift+Z), save, "
+                           "rename, export and import. An orange dot means the sound has unsaved changes.");
     presetMenuButton.setTooltip("PRESET MENU: save to this slot, rename, export the sound as a file to give to other players, or import "
                                 "a file someone gave you (it replaces the slot that is showing).");
     setUpButton.setTooltip("STORE A: keep the knobs as they are now as sound A, the 'toe up' end (expression slider fully left).");
@@ -1881,6 +2070,26 @@ void BitVibeEditor::setTooltips()
 
 // The step knobs' descriptions follow what each step controls. tooltipSeqType remembers the types they were written
 // for (one base-3 digit per step).
+void BitVibeEditor::nameControls()
+{
+    // The knobs and boxes have their names painted beside them, so a screen reader would only hear "slider" or
+    // "combo box": each takes the name its tooltip starts with ("TRIGGER: how easily ..." gives TRIGGER).
+    std::function<void(Component&)> name = [&name](Component& parent)
+    {
+        for (auto* c : parent.getChildren())
+        {
+            if (dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<LevelMeter*>(c) != nullptr
+                || dynamic_cast<OutputMeter*>(c) != nullptr || dynamic_cast<FootSwitch*>(c) != nullptr)
+                if (auto* tip = dynamic_cast<TooltipClient*>(c))
+                    if (const auto text = tip->getTooltip(); text.containsChar(':'))
+                        c->setTitle(text.upToFirstOccurrenceOf(":", false, false).trim());
+            name(*c);
+        }
+    };
+    name(content);
+    presetMenuButton.setTitle("PRESET MENU");
+}
+
 void BitVibeEditor::updateStepTooltips()
 {
     int types = 0;
@@ -2077,7 +2286,8 @@ void BitVibeEditor::resized()
     trigSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 150, gy + 46 })));
     triggerMeter.setBounds(face({ 192, gy + 20, 14, 80 }));
     mixSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 300, gy + 46 })));
-    outSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 404, gy + 46 })));
+    outSlider.setBounds(face(Rectangle<int>(52, 52).withCentre({ 390, gy + 46 })));
+    outputMeter.setBounds(face({ 434, gy + 12, 14, 88 }));
     headroomBox.setBounds(face({ 98, gy + 110, 128, 24 }));
     seqOnlyButton.setBounds(face({ 252, gy + 110, 84, 24 }));
     fxTrigButton.setBounds(face({ 340, gy + 110, 116, 24 }));
@@ -2129,7 +2339,7 @@ void BitVibeEditor::resized()
         c->setTopLeftPosition(c->getX(), c->getY() + kTabsH);
 
     helpButton.setBounds(12, 8, 70, 24);
-    themeButton.setBounds(kSideX + 148, 8, 144, 24);
+    viewButton.setBounds(kSideX + 212, 8, 80, 24);
     simpleButton.setBounds(kSideX + 300, 8, 76, 24);
     advancedButton.setBounds(kSideX + 380, 8, 76, 24);
     helpOverlay.setBounds(0, 0, baseWidth, baseHeight);
@@ -2254,7 +2464,7 @@ void BitVibeEditor::paintContent(Graphics& g)
         pedalstyle::drawControlLabel(g, 62, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
         pedalstyle::drawControlLabel(g, 150, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");
         pedalstyle::drawControlLabel(g, 300, gy + 76, "DRY/WET", seqOnly ? String("SEQ ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet");
-        pedalstyle::drawControlLabel(g, 404, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
+        pedalstyle::drawControlLabel(g, 390, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
         g.setColour(kInkDim);
         g.setFont(bold(9.5f));
         g.drawText("HEADROOM", Rectangle<int>(24, gy + 110, 72, 24), Justification::centredLeft);
@@ -2366,7 +2576,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         const float delayAlpha = rawValue(ids::delayOn) > 0.5f ? 1.0f : kOffAlpha;
         drawPanelTitle(g, kSideX + kPanelTitleX, delay.getY() + 4, 3, "DELAY");
-        g.setColour(kInkDim.withMultipliedAlpha(delayAlpha));
+        g.setColour(kInkDim.withMultipliedAlpha(jmax(delayAlpha, kOffTextAlpha)));
         g.setFont(bold(9.5f));
         g.drawText("TIME", Rectangle<int>(kSideX + 300, delay.getY() + 4, 40, 18), Justification::centredRight);
         const int repeats = roundToInt(rawValue(ids::delayRepeats));
@@ -2453,17 +2663,17 @@ void BitVibeEditor::updateLiveState()
         setPowerActive(distOnButton, live);
         setPowerActive(reverbOnButton, live);
         setPowerActive(delayOnButton, live);
-        const float delayAlpha = rawValue(ids::delayOn) > 0.5f ? 1.0f : kOffAlpha;
+        const bool delayOn = rawValue(ids::delayOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider,
                                                                  &delayHighSlider, &delayTimeBox })
-            c->setAlpha(delayAlpha);
-        const float distAlpha = rawValue(ids::distOn) > 0.5f ? 1.0f : kOffAlpha;
+            c->setAlpha(offAlphaFor(*c, delayOn));
+        const bool distOn = rawValue(ids::distOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &distDriveSlider, &distToneSlider, &distLevelSlider, &distTypeBox, &distReverbButton })
-            c->setAlpha(distAlpha);
-        const float reverbAlpha = rawValue(ids::reverbOn) > 0.5f ? 1.0f : kOffAlpha;
+            c->setAlpha(offAlphaFor(*c, distOn));
+        const bool reverbOn = rawValue(ids::reverbOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider,
                                                                  &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &reverbReverseButton })
-            c->setAlpha(reverbAlpha);
+            c->setAlpha(offAlphaFor(*c, reverbOn));
     }
 }
 
@@ -2514,6 +2724,9 @@ void BitVibeEditor::timerCallback()
             meterFlashUntil = nowMs + 180.0;
         }
         triggerMeter.set(meterDb, bitvibe::AttackDetector::floorDb(rawValue(ids::sensitivity)), nowMs < meterFlashUntil);
+        const float outPeak = proc.takeOutputPeak();
+        outputDb = jmax(outPeak > 1.0e-5f ? 20.0f * std::log10(outPeak) : -100.0f, outputDb - 1.5f);
+        outputMeter.set(outputDb, outPeak > 1.0f);
     }
     updateLiveState();
     refreshPresetName();

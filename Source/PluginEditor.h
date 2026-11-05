@@ -41,7 +41,7 @@ struct Theme
     std::array<juce::Colour, 3> steps { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) }; // pitch, filter, rate
 };
 
-// The themes the THEME button goes through, the first one being the default.
+// The themes in the VIEW menu, the first one being the default.
 const std::vector<Theme>& themes();
 namespace detail
 {
@@ -63,8 +63,11 @@ inline const juce::Colour& accent = detail::shown.accent;
 inline const juce::Colour& red = detail::shown.red;
 inline const juce::Colour& panel = detail::shown.panel;
 inline const juce::Colour& panelEdge = detail::shown.panelEdge;
-inline juce::Font bold(float h) { return juce::Font(juce::FontOptions(h, juce::Font::bold)); }
-inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(h, juce::Font::plain)); }
+// No text is drawn smaller than kMinText: the window often opens smaller than it is designed at (to fit the screen),
+// and the small print has to stay readable there.
+inline constexpr float kMinText = 11.0f;
+inline juce::Font bold(float h) { return juce::Font(juce::FontOptions(juce::jmax(h, kMinText), juce::Font::bold)); }
+inline juce::Font plain(float h) { return juce::Font(juce::FontOptions(juce::jmax(h, kMinText), juce::Font::plain)); }
 
 // The right-hand column's effect panels are numbered in the order the sequenced sound goes through them. Draws the
 // number in a small badge at (x, y) and the title after it (y is the top of the title row).
@@ -88,7 +91,13 @@ inline void setPowerActive(juce::ToggleButton& b, bool active)
         b.repaint();
     }
 }
-inline constexpr float kOffAlpha = 0.4f; // a switched-off panel's controls
+// A switched-off panel dims its knobs to kOffAlpha, but its text (the names and values, buttons and boxes) only to
+// kOffTextAlpha, so it can still be read and set up before the panel is switched on.
+inline constexpr float kOffAlpha = 0.4f, kOffTextAlpha = 0.7f;
+inline float offAlphaFor(const juce::Component& c, bool on)
+{
+    return on ? 1.0f : (dynamic_cast<const juce::Slider*>(&c) != nullptr ? kOffAlpha : kOffTextAlpha);
+}
 // The light on a switch (centre c): orange when on, dark when off.
 inline void drawSwitchLight(juce::Graphics& g, juce::Point<float> c, bool on)
 {
@@ -135,11 +144,56 @@ public:
 };
 
 // Round metal footswitch with separate press / release callbacks (the tap switch needs both).
+// What a screen reader is told about a control drawn by hand: its role, a press action, its name (the component's
+// title, or one worked out when it is asked for), its help (the tooltip) and, for a switch, whether it is on.
+class PressableAccessibility : public juce::AccessibilityHandler
+{
+public:
+    PressableAccessibility(juce::Component& c, juce::AccessibilityRole role, std::function<void()> press,
+                           std::function<bool()> isOn = {}, std::function<juce::String()> title = {})
+        : AccessibilityHandler(c, role, juce::AccessibilityActions().addAction(juce::AccessibilityActionType::press, std::move(press))),
+          on(std::move(isOn)), name(std::move(title))
+    {
+    }
+    juce::String getTitle() const override { return name ? name() : AccessibilityHandler::getTitle(); }
+    juce::String getHelp() const override
+    {
+        if (auto* tip = dynamic_cast<juce::TooltipClient*>(const_cast<juce::Component*>(&getComponent()))) // getTooltip() is not const
+            return tip->getTooltip();
+        return {};
+    }
+    juce::AccessibleState getCurrentState() const override
+    {
+        auto state = AccessibilityHandler::getCurrentState();
+        if (on)
+        {
+            state = state.withCheckable();
+            if (on())
+                state = state.withChecked();
+        }
+        return state;
+    }
+
+private:
+    std::function<bool()> on;
+    std::function<juce::String()> name;
+};
+
 class FootSwitch : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     std::function<void()> onPress, onRelease;
     bool isDown() const { return down; }
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<PressableAccessibility>(*this, juce::AccessibilityRole::button, [this]
+        {
+            if (onPress)
+                onPress();
+            if (onRelease)
+                onRelease();
+        });
+    }
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -165,6 +219,14 @@ public:
         repaint();
     }
     const juce::String& getText() const { return text; }
+    // a screen reader reads the text on it (or the title, for one without text) and can press it
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<PressableAccessibility>(
+            *this, toggle ? juce::AccessibilityRole::toggleButton : juce::AccessibilityRole::button, [this] { if (onClick) onClick(); },
+            toggle ? std::function<bool()>([this] { return lit; }) : std::function<bool()>(),
+            [this] { return text.isNotEmpty() ? text : getTitle(); });
+    }
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -173,6 +235,41 @@ public:
 private:
     juce::String text;
     bool pressed = false;
+};
+
+// The output level beside the OUTPUT knob, with a clip light on top: it lights when the output goes over 0 dB (full
+// scale) and stays lit for a few seconds, or until it is clicked.
+class OutputMeter : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    static constexpr double kClipHoldMs = 3000.0;
+    void set(float levelDb, bool overFullScale);
+    bool isClipLit() const;
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+
+private:
+    float level = -100.0f;
+    double clipUntil = 0.0;
+    bool shownClip = false;
+};
+
+// The preset name: a click opens the preset menu (the slots, undo and redo, save, rename, export and import).
+class PresetName : public juce::Label
+{
+public:
+    std::function<void()> onClick;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<PressableAccessibility>(*this, juce::AccessibilityRole::button, [this] { if (onClick) onClick(); },
+                                                        std::function<bool()>(), [this] { return "PRESET: " + getText(); });
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        juce::Label::mouseUp(e);
+        if (e.mouseWasClicked() && !isBeingEdited() && onClick)
+            onClick();
+    }
 };
 
 // The big tempo read-out: drag it up or down to change the tempo, double-click it to type one.
@@ -186,9 +283,14 @@ public:
     {
         juce::Label::mouseDown(e);
         dragging = false;
+        pixelsUp = 0.0f;
+        lastY = e.position.y;
     }
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        // Shift turns it five times slower, for fine settings (and can be pressed or let go during the drag)
+        pixelsUp -= (e.position.y - lastY) * (e.mods.isShiftDown() ? kFineSpeed : 1.0f);
+        lastY = e.position.y;
         if (!dragging && std::abs(e.getDistanceFromDragStartY()) > 2)
         {
             dragging = true;
@@ -196,8 +298,9 @@ public:
                 onDragStart();
         }
         if (dragging && onDrag)
-            onDrag((float) -e.getDistanceFromDragStartY());
+            onDrag(pixelsUp);
     }
+    static constexpr float kFineSpeed = 0.2f;
     void mouseUp(const juce::MouseEvent& e) override
     {
         juce::Label::mouseUp(e);
@@ -208,22 +311,35 @@ public:
 
 private:
     bool dragging = false;
+    float pixelsUp = 0.0f, lastY = 0.0f;
 };
 
 // A rotary knob that repaints when it is grabbed or let go, so the look-and-feel can draw it bigger while it is held.
+// Holding Shift while dragging turns it five times slower, for fine settings (Shift can be pressed or let go mid-drag).
 class KnobSlider : public juce::Slider
 {
 public:
+    static constexpr float kFineSpeed = 0.2f;
     void mouseDown(const juce::MouseEvent& e) override
     {
+        dragAt = lastAt = e.position;
         juce::Slider::mouseDown(e);
         repaint();
     }
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        dragAt += (e.position - lastAt) * (e.mods.isShiftDown() ? kFineSpeed : 1.0f);
+        lastAt = e.position;
+        juce::Slider::mouseDrag(e.withNewPosition(dragAt));
+    }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        juce::Slider::mouseUp(e);
+        juce::Slider::mouseUp(e.withNewPosition(dragAt));
         repaint();
     }
+
+private:
+    juce::Point<float> dragAt, lastAt; // where the drag has got to (slowed by Shift), and the mouse's last position
 };
 
 // The input level next to the TRIGGER knob: the bar is how hard you are playing, the line is how hard a pick has to
@@ -321,6 +437,8 @@ public:
     ~BitVibeEditor() override;
 
     void resized() override;
+    bool keyPressed(const juce::KeyPress&) override; // Ctrl+Z undoes, Ctrl+Shift+Z (or Ctrl+Y) redoes; Cmd on a Mac
+    void mouseDown(const juce::MouseEvent&) override;
 
     // Everything the editor shows lives in this pane, which is drawn at its designed size and scaled to the window,
     // so the window can be resized freely (the shape stays fixed).
@@ -340,6 +458,22 @@ public:
     // shorter in SIMPLE (BEAT DOG moves into the room left at the bottom of the right-hand column). Remembered.
     void setRightMode(bool advanced);
     bool isAdvancedRight() const { return advancedRight; }
+
+    // The VIEW menu (top right): the theme, the window size and whether BEAT DOG is shown. All remembered; the theme
+    // is shown in every open window.
+    juce::PopupMenu viewMenu();
+    void viewMenuChosen(int result);
+    static constexpr int kViewTheme = 100, kViewSize = 200, kViewDog = 600; // + the theme's index, + the size in percent
+    void setThemeFromPage(int index);
+    void setWindowScale(float newScale); // 1.0 = the size the page is designed at
+    void setBeatDogShown(bool shown);    // hidden, ADVANCED gets shorter (the panel under the pedal moves up)
+    bool isBeatDogShown() const { return beatDogShown; }
+
+    // The preset menu (a click on the preset name or its arrow): every slot, undo and redo, save, rename, export, import.
+    juce::PopupMenu presetMenu();
+    void presetMenuChosen(int result);
+    static constexpr int kMenuSave = 1, kMenuRename = 2, kMenuExport = 3, kMenuImport = 4, kMenuUndo = 5, kMenuRedo = 6,
+                         kMenuSlot = 100; // + the slot's index
 
 private:
     static constexpr int kKnobs = 6;
@@ -386,6 +520,7 @@ private:
     void updateLiveState();
     void buildBackground();
     void setTooltips();        // plain-language hover text for every control
+    void nameControls();       // a name for a screen reader on every knob and box (the first words of its tooltip)
     void updateStepTooltips(); // the text of the step knobs depends on the sequencer type
     void stepProgram(int direction);
     void refreshPresetName();
@@ -399,18 +534,21 @@ private:
 
     Content content { *this };
     LevelMeter triggerMeter;
+    OutputMeter outputMeter;
+    float outputDb = -100.0f;
     StepStrip stepStrip;
     std::unique_ptr<BeatDog> beatDog; // the headbanging husky under the pedal
     PedalButton helpButton { "? HELP" };
     PedalButton presetMenuButton { "" }; // the arrow in the preset name box: save, rename, export, import
     std::unique_ptr<juce::FileChooser> presetChooser;
     void showPresetMenu();
+    void undoOrRedo(bool undo);
     void exportPresetFile();
     void importPresetFile();
     PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
     bool advancedRight = false;
-    // THEME: each click shows the next theme (remembered, and shown in every open window)
-    PedalButton themeButton { "" };
+    PedalButton viewButton { "VIEW" };
+    bool beatDogShown = true;
     int shownThemeSerial = -1;
     void applyTheme(); // repaints in the theme now showing
     HelpOverlay helpOverlay;
@@ -488,7 +626,7 @@ private:
     void showSeqType();
 
     // preset bar and expression morph strip (the panel above the pedal face)
-    juce::Label presetLabel;
+    PresetName presetLabel;
     PedalButton prevButton { "<" }, nextButton { ">" }, saveButton { "SAVE" };
     PedalButton setUpButton { "STORE A" }, setDownButton { "STORE B" }; // the two sounds the morph goes between
     juce::Slider expressionSlider;

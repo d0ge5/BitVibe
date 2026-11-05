@@ -721,6 +721,12 @@ void BitVibeProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&)
     }
     drumBeat.endBlock(numSamples);
     mixSamplerPreview(mainOut, numChannels, numSamples);
+
+    float peak = 0.0f; // for the output meter
+    for (int c = 0; c < numChannels; ++c)
+        peak = std::max(peak, mainOut.getMagnitude(c, 0, numSamples));
+    if (peak > outputPeak.load(std::memory_order_relaxed))
+        outputPeak.store(peak, std::memory_order_relaxed);
 }
 
 void BitVibeProcessor::switchSequencerType(int newType)

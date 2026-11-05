@@ -784,14 +784,9 @@ void testThemes(const File& outDir)
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     PedalButton* button = nullptr;
     for (auto* c : ed->getContent().getChildren())
-        if (auto* b = dynamic_cast<PedalButton*>(c); b != nullptr && b->getText().startsWith("THEME"))
+        if (auto* b = dynamic_cast<PedalButton*>(c); b != nullptr && b->getText() == "VIEW")
             button = b;
-    if (button == nullptr || !button->isVisible())
-    {
-        check(false, "a THEME button on the page");
-        return;
-    }
-    check(button->getText() == "THEME: NIGHT" && pedalstyle::themeIndex() == 0, "the THEME button names the theme showing (NIGHT)");
+    check(button != nullptr && button->isVisible() && pedalstyle::themeIndex() == 0, "a VIEW button on the page, which starts in NIGHT");
 
     // every theme in turn, into a contact sheet (three across)
     constexpr float kThumb = 0.5f;
@@ -807,8 +802,15 @@ void testThemes(const File& outDir)
     {
         if (i > 0)
         {
-            button->onClick();
-            namesShown = namesShown && button->getText() == "THEME: " + String(all[(size_t) i].name);
+            ed->viewMenuChosen(BitVibeEditor::kViewTheme + i);
+            int ticked = -1;
+            const auto menu = ed->viewMenu();
+            PopupMenu::MenuItemIterator item(menu);
+            while (item.next())
+                if (item.getItem().isTicked && item.getItem().itemID >= BitVibeEditor::kViewTheme
+                    && item.getItem().itemID < BitVibeEditor::kViewSize)
+                    ticked = item.getItem().itemID - BitVibeEditor::kViewTheme;
+            namesShown = namesShown && pedalstyle::themeIndex() == i && ticked == i;
             const auto shot = snapshot(*ed, 1.0f);
             int differ = 0;
             for (int yy = 0; yy < shot.getHeight(); yy += 4)
@@ -829,7 +831,7 @@ void testThemes(const File& outDir)
         if (auto out = std::unique_ptr<FileOutputStream>(full.createOutputStream()))
             PNGImageFormat().writeImageToStream(snapshot(*ed, 1.0f), *out);
     }
-    check(namesShown && pedalstyle::themeIndex() == (int) all.size() - 1, "each click shows the next theme, and the button names it");
+    check(namesShown && pedalstyle::themeIndex() == (int) all.size() - 1, "each theme picked from VIEW shows, ticked in the menu");
     check(allDiffer, "and each theme repaints most of the page");
     check(uisettings::themeName() == String(all.back().name), "the theme picked is remembered (" + uisettings::themeName() + ")");
     {
@@ -862,10 +864,8 @@ void testThemes(const File& outDir)
         else
             check(false, "BEAT DOG is on the page");
     }
-    pedalstyle::setTheme((int) all.size() - 1);
-    button->onClick(); // past the last theme: back to the first
-    check(pedalstyle::themeIndex() == 0 && button->getText() == "THEME: NIGHT", "past the last theme, the button goes back to the first");
-    pedalstyle::setTheme(0);
+    ed->setThemeFromPage(0);
+    check(pedalstyle::themeIndex() == 0 && uisettings::themeName() == "NIGHT", "and back to NIGHT");
     uisettings::setThemeName("NIGHT");
     ed.reset();
 
@@ -875,6 +875,231 @@ void testThemes(const File& outDir)
     if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
         png.writeImageToStream(sheet, *out);
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+}
+
+// The VIEW menu (window size, BEAT DOG), the preset list, undo and redo, Shift for fine settings, the output meter, and
+// the names a screen reader hears.
+void testPageTools()
+{
+    std::puts("page tools");
+    auto p = makeProcessor();
+    uisettings::setAdvancedRight(true);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    struct Item
+    {
+        int id;
+        String text;
+        bool ticked;
+    };
+    auto items = [](const PopupMenu& menu)
+    {
+        std::vector<Item> v;
+        PopupMenu::MenuItemIterator it(menu);
+        while (it.next())
+            if (it.getItem().itemID != 0)
+                v.push_back({ it.getItem().itemID, it.getItem().text, it.getItem().isTicked });
+        return v;
+    };
+    auto find = [&ed](const String& tipStart) -> Component*
+    {
+        for (auto* c : ed->getContent().getChildren())
+            if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith(tipStart))
+                return c;
+        return nullptr;
+    };
+
+    // VIEW
+    {
+        int themes = 0, ticked = 0;
+        bool hundred = false, dog = false;
+        for (const auto& i : items(ed->viewMenu()))
+        {
+            if (i.id >= BitVibeEditor::kViewTheme && i.id < BitVibeEditor::kViewSize)
+            {
+                ++themes;
+                ticked += i.ticked ? 1 : 0;
+            }
+            hundred = hundred || (i.text == "100%" && i.ticked);
+            dog = dog || (i.id == BitVibeEditor::kViewDog && i.ticked);
+        }
+        check(themes == (int) pedalstyle::themes().size() && ticked == 1 && hundred && dog,
+              "VIEW lists the themes (the one showing ticked), the window sizes (100% ticked) and Show BEAT DOG (ticked)");
+    }
+    ed->viewMenuChosen(BitVibeEditor::kViewSize + 125);
+    check(ed->getWidth() == roundToInt(948.0f * 1.25f) && std::abs(uisettings::loadWindowScale() - 1.25f) < 0.01f,
+          "VIEW > 125%: the window is a quarter bigger (" + String(ed->getWidth()) + " wide), and remembered");
+    ed->setWindowScale(1.0f);
+    auto* dog = dynamic_cast<BeatDog*>(find("BEAT DOG"));
+    auto* input = find("INPUT:");
+    if (dog == nullptr || input == nullptr)
+    {
+        check(false, "BEAT DOG and the INPUT knob are on the page");
+        return;
+    }
+    const int fullHeight = ed->getHeight(), inputY = input->getY();
+    ed->viewMenuChosen(BitVibeEditor::kViewDog);
+    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() < fullHeight - 60 && input->getY() < inputY,
+          "VIEW > Show BEAT DOG off: it is hidden (remembered), the panel under the pedal moves up and the window is "
+              + String(fullHeight - ed->getHeight()) + " px shorter");
+    ed->setBeatDogShown(true);
+    check(dog->isVisible() && ed->getHeight() == fullHeight && input->getY() == inputY, "and on again: as it was");
+
+    // the preset list
+    {
+        int slots = 0;
+        bool currentTicked = false;
+        for (const auto& i : items(ed->presetMenu()))
+            if (i.id >= BitVibeEditor::kMenuSlot && i.id < BitVibeEditor::kMenuSlot + 16)
+            {
+                ++slots;
+                currentTicked = currentTicked || (i.ticked && i.id == BitVibeEditor::kMenuSlot + p->getCurrentProgram());
+            }
+        check(slots == 16 && currentTicked, "the preset menu lists all 16 slots, the one showing ticked");
+    }
+
+    // undo and redo
+    auto& undo = p->getUndo();
+    setValue(*p, ids::mix, 0.9f); // as host automation does it: no gesture
+    undo.endStep();
+    check(!undo.canUndo(), "host automation is not recorded for undo");
+    auto turn = [&](const char* id, float plain)
+    {
+        auto* prm = p->apvts.getParameter(id);
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost(prm->convertTo0to1(plain * 0.5f));
+        prm->setValueNotifyingHost(prm->convertTo0to1(plain)); // a drag: several values, one step
+        prm->endChangeGesture();
+        undo.endStep();
+    };
+    turn(ids::mix, 0.3f);
+    turn(ids::outputGain, -6.0f);
+    const bool keyUndo = ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0));
+    check(keyUndo && std::abs(getValue(*p, ids::outputGain)) < 0.05f && std::abs(getValue(*p, ids::mix) - 0.3f) < 0.01f,
+          "Ctrl+Z undoes the last change (OUTPUT back to 0 dB, DRY/WET left at 30%)");
+    ed->presetMenuChosen(BitVibeEditor::kMenuUndo);
+    check(std::abs(getValue(*p, ids::mix) - 0.9f) < 0.01f, "Undo in the preset menu undoes the one before (DRY/WET back to 90%)");
+    ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier | ModifierKeys::shiftModifier, 0));
+    ed->keyPressed(KeyPress('y', ModifierKeys::commandModifier, 0));
+    check(std::abs(getValue(*p, ids::mix) - 0.3f) < 0.01f && std::abs(getValue(*p, ids::outputGain) + 6.0f) < 0.05f,
+          "Ctrl+Shift+Z and Ctrl+Y redo both");
+    const auto beforePreset = allValues(*p);
+    const int program = p->getCurrentProgram();
+    ed->presetMenuChosen(BitVibeEditor::kMenuSlot + (program + 4) % 16);
+    undo.endStep();
+    auto sameValues = [](const std::vector<float>& a, const std::vector<float>& b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (size_t i = 0; i < a.size(); ++i)
+            if (!bitvibe::sameFloat(a[i], b[i]))
+                return false;
+        return true;
+    };
+    check(p->getCurrentProgram() == (program + 4) % 16 && !sameValues(allValues(*p), beforePreset), "picking a slot from the preset menu recalls it");
+    ed->presetMenuChosen(BitVibeEditor::kMenuUndo);
+    check(sameValues(allValues(*p), beforePreset), "and one undo brings back the sound from before it");
+    ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0));
+    ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0));
+    ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0)); // more than there is: nothing happens
+    check(!undo.canUndo() && undo.canRedo() && std::abs(getValue(*p, ids::mix) - 0.9f) < 0.01f,
+          "undoing everything stops at the start, with redo still there");
+    check(!ed->keyPressed(KeyPress(KeyPress::spaceKey)), "other keys go on to the host (space still starts and stops it)");
+
+    // Shift for fine settings: the same drag turns the knob a fifth as far
+    if (auto* knob = dynamic_cast<KnobSlider*>(find("TRIGGER")))
+    {
+        auto drag = [&](bool shift)
+        {
+            setValue(*p, ids::sensitivity, 0.5f);
+            const double before = knob->getValue();
+            const Point<float> start(knob->getWidth() * 0.5f, knob->getHeight() * 0.5f);
+            const auto mods = ModifierKeys(ModifierKeys::leftButtonModifier | (shift ? ModifierKeys::shiftModifier : 0));
+            auto event = [&](Point<float> at)
+            {
+                const auto now = Time::getCurrentTime();
+                return MouseEvent(Desktop::getInstance().getMainMouseSource(), at, mods, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, knob, knob, now,
+                                  start, now, 1, false);
+            };
+            knob->mouseDown(event(start));
+            for (int i = 1; i <= 10; ++i)
+                knob->mouseDrag(event(start.translated(0.0f, -4.0f * (float) i)));
+            knob->mouseUp(event(start.translated(0.0f, -40.0f)));
+            return knob->getValue() - before;
+        };
+        const double normal = drag(false), fine = drag(true);
+        check(normal > 0.05 && std::abs(fine - normal * 0.2) < 0.02,
+              "Shift-drag turns a knob a fifth as far (" + String(normal, 3) + " without Shift, " + String(fine, 3) + " with)");
+    }
+    else
+        check(false, "the TRIGGER knob is on the page");
+
+    // the output meter and its clip light
+    {
+        setValue(*p, ids::outputGain, 12.0f);
+        run(*p, makeInput(24000));
+        const float peak = p->takeOutputPeak();
+        check(peak > 1.0f && p->takeOutputPeak() < 1.0e-6f, "the processor reports the output's peak (" + String(peak, 2) + " at +12 dB), once");
+        setValue(*p, ids::outputGain, 0.0f);
+        auto* meter = dynamic_cast<OutputMeter*>(find("OUTPUT METER"));
+        if (meter != nullptr)
+        {
+            meter->set(3.0f, true);
+            const bool lit = meter->isClipLit();
+            const auto now = Time::getCurrentTime();
+            meter->mouseUp(MouseEvent(Desktop::getInstance().getMainMouseSource(), {}, ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, meter,
+                                      meter, now, {}, now, 1, false));
+            check(lit && !meter->isClipLit(), "over 0 dB the clip light comes on; a click puts it out");
+        }
+        else
+            check(false, "the output meter is beside OUTPUT");
+    }
+
+    // what a screen reader hears: every knob, box, button and footswitch has a name
+    {
+        StringArray unnamed;
+        int named = 0;
+        std::function<void(Component&)> walk = [&](Component& parent)
+        {
+            for (auto* c : parent.getChildren())
+            {
+                if (c->isVisible())
+                {
+                    String name;
+                    bool control = true;
+                    if (auto* b = dynamic_cast<PedalButton*>(c))
+                        name = b->getText().isNotEmpty() ? b->getText() : b->getTitle();
+                    else if (auto* tb = dynamic_cast<Button*>(c))
+                        name = tb->getTitle().isNotEmpty() ? tb->getTitle() : tb->getButtonText();
+                    else if (dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<FootSwitch*>(c) != nullptr)
+                        name = c->getTitle();
+                    else
+                        control = false;
+                    if (control)
+                    {
+                        named += name.isNotEmpty() ? 1 : 0;
+                        if (name.isEmpty())
+                            unnamed.add(String(typeid(*c).name()) + " in " + typeid(parent).name());
+                    }
+                    walk(*c); // what is hidden (the DRUMS page) is not read out
+                }
+            }
+        };
+        walk(ed->getContent());
+        check(unnamed.isEmpty() && named > 60, String(named) + " controls have a name a screen reader can read"
+                                                  + (unnamed.isEmpty() ? String() : " (no name: " + unnamed.joinIntoString(", ") + ")"));
+        PedalButton* view = nullptr;
+        for (auto* c : ed->getContent().getChildren())
+            if (auto* b = dynamic_cast<PedalButton*>(c); b != nullptr && b->getText() == "VIEW")
+                view = b;
+        if (view != nullptr)
+        {
+            const auto handler = view->createAccessibilityHandler();
+            check(handler != nullptr && handler->getTitle() == "VIEW" && handler->getRole() == AccessibilityRole::button
+                      && handler->getActions().contains(AccessibilityActionType::press) && handler->getHelp().startsWith("VIEW:"),
+                  "a hand-drawn button tells a screen reader its name, that it is a button, how to press it and its tooltip");
+        }
+    }
+    uisettings::setBeatDogShown(true);
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -953,7 +1178,7 @@ void testEasierStart()
                 all = all && test(c->getAlpha());
         return all;
     };
-    check(pattern->isDimmed() && allButtons([](float a) { return a < 0.5f; }),
+    check(pattern->isDimmed() && allButtons([](float a) { return a < 0.99f; }),
           "the beat pattern starts with its ACTION at Off, its grid and buttons dimmed like a switched-off panel");
     auto beatPattern = p->getDrumBeat().getPattern();
     beatPattern.action = bitvibe::DrumAction::RestartSequence;
@@ -1804,7 +2029,8 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         const bool interactive = dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr
                                  || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<Label*>(c) != nullptr
                                  || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr
-                                 || dynamic_cast<StepTypeTags*>(c) != nullptr || dynamic_cast<StepStrip*>(c) != nullptr;
+                                 || dynamic_cast<StepTypeTags*>(c) != nullptr || dynamic_cast<StepStrip*>(c) != nullptr
+                                 || dynamic_cast<OutputMeter*>(c) != nullptr;
         if (!interactive)
             continue;
         ++controls;
@@ -1817,7 +2043,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 75 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 75 and 0)");
+    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2587,6 +2813,7 @@ int main(int argc, char** argv)
     testEasierStart();
     testLayout(outDir);
     testThemes(outDir);
+    testPageTools();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

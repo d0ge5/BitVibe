@@ -57,7 +57,9 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need (SIMPLE also makes the window shorter).
-- **Six themes** to switch between with the **THEME** button: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST.
+- **Six themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST.
+- **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z, Cmd on a Mac), **Shift-drag** for fine settings, and an **output meter**
+  with a clip light.
 
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
 distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control,
@@ -104,12 +106,18 @@ To uninstall, delete `/Library/Audio/Plug-Ins/VST3/BitVibe.vst3`,
 
 Click **? HELP** at the top for a quick start (it opens by itself the first time) and **WHAT TRIGGERS WHAT**, a
 flow chart of when each part acts (below). Hover over any
-control for a short description, double-click a knob to reset it, and look at the bubble that shows its value
-while you turn it. You can drag the bottom-right corner to resize the window; it remembers the size, and opens
-smaller when that size would not fit on your screen. **SIMPLE / ADVANCED** (top right) shows the controls that matter
-most or all of them, on both sides; what SIMPLE hides keeps working, and the panels say when a hidden setting is on.
-Buttons with a small light on the left switch something on and off; the others do something once.
-**THEME** (top right) changes the look; each click shows the next theme:
+control for a short description, double-click a knob to reset it, hold **Shift** while dragging to turn it five
+times slower for fine settings, and look at the bubble that shows its value while you turn it. **Ctrl+Z** undoes a
+change and **Ctrl+Shift+Z** (or Ctrl+Y) redoes it (Cmd on a Mac); a preset you recalled counts as one change, and so
+does a knob turned from grabbing it to letting go. You can drag the bottom-right corner to resize the window; it
+remembers the size, and opens smaller when that size would not fit on your screen. **SIMPLE / ADVANCED** (top right)
+shows the controls that matter most or all of them, on both sides; what SIMPLE hides keeps working, and the panels
+say when a hidden setting is on. A switched-off panel dims its knobs but keeps its names and values readable, so it
+can be set up before you switch it on. Buttons with a small light on the left switch something on and off; the
+others do something once.
+
+**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the ADVANCED window gets
+about 100 pixels shorter, handy on a laptop) and the theme:
 
 - **NIGHT**: the black pedal with orange lights (the one it starts in).
 - **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
@@ -162,8 +170,9 @@ on afterwards. The tempo clock sets the speed of all of it.
 
 Under the pedal, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the stutter and
 sequencer) with a meter of your playing against the trigger line, which lights up when a pick is caught, and
-**HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT**, **SEQ ONLY** and,
-in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, **STUTTER HOLD** (freezes the stutter until you
+**HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an output meter
+(its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it out),
+**SEQ ONLY** and, in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, **STUTTER HOLD** (freezes the stutter until you
 switch it off) and the sequence loop:
 
 - **SEQUENCE LOOP** repeats part of the sequence. Choose its first and last step and how often it
@@ -214,8 +223,8 @@ them).
   and **MAX** volumes, **CHANCE** is how often a step gets a sound, **MAX BEATS** is the longest a sound may play
   (a quarter beat up to 8 beats of the tempo, or the whole sound) before it fades out, which tames long sounds, and
   **PREVIEW** plays one so you can set the volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
-  picks and banks are remembered between sessions. While **LOOP** is on (see the pedal above), **MAIN** and **LOOP**
-  buttons appear: LOOP sets up the loop section's steps. Its bank list starts on **Same as MAIN**; pick a bank or
+  picks and banks are remembered between sessions. While **SEQUENCE LOOP** is on (see the pedal above), **OTHER STEPS** and
+  **LOOP STEPS** buttons appear: LOOP STEPS sets up the loop section's steps. Its bank list starts on **Same as the other steps**; pick a bank or
   choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own SAMPLE
   MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
@@ -263,9 +272,10 @@ Only record what you have the right to use.
 ### Presets and morph
 
 - The bar at the top holds **16 preset slots** (they also appear as programs in your DAW). `<` and `>` step
-  through them and double-clicking the name renames one. Slots 1 to 12 are factory sounds, 13 to 16 are blank.
-  Changes are written into a slot only when you press **SAVE**.
-- The **arrow in the name box** opens the preset menu: save, rename, **Export to a file** and **Import from a file**.
+  through them. Slots 1 to 12 are factory sounds, 13 to 16 are blank. Changes are written into a slot only when
+  you press **SAVE**.
+- **Click the name** (or the arrow beside it) for the preset menu: every slot to jump straight to, **Undo** and
+  **Redo**, save, rename, **Export to a file** and **Import from a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot

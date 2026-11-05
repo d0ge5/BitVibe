@@ -10,6 +10,7 @@
 namespace bitvibe
 {
 inline constexpr int kNumPresets = 16;
+inline constexpr int kNumFactoryPresets = 12; // slots 1 to 12 hold factory sounds, the rest start blank
 
 struct FactoryPreset
 {

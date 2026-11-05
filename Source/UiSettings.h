@@ -98,6 +98,16 @@ inline void setBeatDogLive(bool live)
     write(*xml);
 }
 
+// BEAT DOG shown, or hidden from the VIEW menu.
+inline bool beatDogShown() { return read()->getBoolAttribute("beatDogShown", true); }
+
+inline void setBeatDogShown(bool shown)
+{
+    auto xml = read();
+    xml->setAttribute("beatDogShown", shown);
+    write(*xml);
+}
+
 inline int beatDogFps() { return read()->getIntAttribute("beatDogFps", 60); }
 
 inline void setBeatDogFps(int fps)

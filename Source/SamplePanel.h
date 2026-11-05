@@ -68,7 +68,7 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> lengthAtt;
     std::unique_ptr<APVTS::SliderAttachment> mixAtt, chanceAtt, baseAtt, maxAtt;
     PedalButton previewButton { "PREVIEW" };
-    PedalButton mainButton { "MAIN" }, loopButton { "LOOP" };
+    PedalButton mainButton { "OTHER STEPS" }, loopButton { "LOOP STEPS" };
     PedalButton samplerButton { "SAMPLER" };
     juce::ToggleButton ownLevelsButton { "OWN LEVELS FOR THE LOOP" };
     std::unique_ptr<APVTS::ButtonAttachment> ownLevelsAtt;

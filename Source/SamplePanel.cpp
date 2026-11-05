@@ -54,7 +54,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         if (updatingControls)
             return;
         if (editingLoop() && bankBox.getSelectedId() == 1)
-            bank.setLoopOwnSounds(false); // "Same as MAIN"
+            bank.setLoopOwnSounds(false); // "Same as the other steps"
         else if (const auto name = bankBox.getText(); name.isNotEmpty())
             bank.loadBank(name, section);
         refresh();
@@ -63,9 +63,9 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     // which steps the panel sets up, while the sequence has a loop section
     mainButton.onClick = [this] { showSection(SampleBank::kMain); };
     loopButton.onClick = [this] { showSection(SampleBank::kLoop); };
-    mainButton.setTooltip("MAIN: set up the sounds of the steps outside the loop section.");
-    loopButton.setTooltip("LOOP: set up the sounds of the loop section's steps (the LOOP steps in the global panel). They can "
-                          "have a sound bank of their own, and with OWN LEVELS their own volumes and chance.");
+    mainButton.setTooltip("OTHER STEPS: set up the sounds of the steps outside the loop section.");
+    loopButton.setTooltip("LOOP STEPS: set up the sounds of the loop section's steps (the steps SEQUENCE LOOP repeats, under the pedal). "
+                          "They can have a sound bank of their own, and with OWN LEVELS their own volumes and chance.");
     addChildComponent(mainButton);
     addChildComponent(loopButton);
     samplerButton.onClick = [this] { if (onOpenSampler) onOpenSampler(); };
@@ -212,8 +212,8 @@ void SamplePanel::resized()
 {
     onButton.setBounds(8, 3, 50, 19);
     samplerButton.setBounds(196, 2, 82, 20);
-    mainButton.setBounds(318, 2, 60, 20);
-    loopButton.setBounds(382, 2, 60, 20);
+    mainButton.setBounds(284, 2, 80, 20);
+    loopButton.setBounds(368, 2, 80, 20);
     // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
     folderButton.setVisible((advanced || numAvailable == 0) && !editingLoop());
     folderButton.setText(numAvailable == 0 ? "ADD SOUNDS: OPEN THE FOLDER" : "OPEN SOUNDS FOLDER");
@@ -254,10 +254,10 @@ void SamplePanel::refresh()
     lookForNewSounds();
     setPowerActive(onButton, proc.getEngine().isEffectSideActive());
     {
-        const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
+        const bool on = rawValue(ids::sampleOn) > 0.5f;
         for (auto* c : getChildren())
             if (c != &onButton)
-                c->setAlpha(alpha);
+                c->setAlpha(offAlphaFor(*c, on));
     }
     // MAIN and LOOP are there while the sequence has a loop section
     const bool loopOn = proc.apvts.getRawParameterValue(ids::loopOn)->load() > 0.5f;
@@ -286,7 +286,7 @@ void SamplePanel::refresh()
     }
 
     // The bank list: its names, and which one is showing (none once the picked list has been changed since).
-    // (in the LOOP section the list starts with "Same as MAIN")
+    // (for the loop steps the list starts with "Same as the other steps")
     const auto names = bank.getBankNames();
     const auto active = bank.getActiveBank(section);
     const int first = editingLoop() ? 2 : 1;
@@ -298,7 +298,7 @@ void SamplePanel::refresh()
         const ScopedValueSetter<bool> guard(updatingControls, true);
         bankBox.clear(dontSendNotification);
         if (editingLoop())
-            bankBox.addItem("Same as MAIN", 1);
+            bankBox.addItem("Same as the other steps", 1);
         for (int i = 0; i < names.size(); ++i)
             bankBox.addItem(names[i], i + first);
         bankBox.setTextWhenNothingSelected(names.isEmpty() ? "No banks yet" : (active.isEmpty() ? "Sound bank" : "Custom list"));
@@ -497,7 +497,7 @@ void SamplePanel::paint(Graphics& g)
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     drawPanelTitle(g, kPanelTitleX, 4, 1, "SAMPLE BLEND");
-    const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffAlpha;
+    const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffTextAlpha;
 
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
