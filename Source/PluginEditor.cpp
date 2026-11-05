@@ -6,6 +6,7 @@
 #include "SamplerPage.h"
 #include "BeatDog.h"
 #include "EqPanel.h"
+#include "TremoloPanel.h"
 #include "UiSettings.h"
 
 #include <functional>
@@ -882,8 +883,9 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
              "The ON lights glow, and:\n"
              "- RATE, BITS and FILTER crush the sound (always, or only now with FX ON TRIGGERS)\n"
              "- 2 DISTORTION distorts it\n"
-             "- 3 DELAY echoes it, and the echoes ring on after\n"
-             "- 4 REVERB adds reverb, and the tail rings on after\n"
+             "- 3 TREMOLO cuts it in and out, at a rate that can speed up or slow down\n"
+             "- 4 DELAY echoes it, and the echoes ring on after\n"
+             "- 5 REVERB adds reverb, and the tail rings on after\n"
              "- SEQ ONLY lets the sound out\n"
              "- the random sounds stop when the sequence stops",
              true);
@@ -922,8 +924,8 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
         bool onlyWhilePlaying;
     };
     static const Stage stages[] { { "INPUT", 0, false },  { "STUTTER\n+ SOUNDS", 1, true }, { "PITCH", 0, true },  { "RATE, BITS,\nFILTER", 0, false },
-                                  { "DISTORTION", 2, true }, { "DELAY", 3, true },         { "REVERB", 4, true }, { "EQ", 5, false },
-                                  { "DRY/WET", 0, false }, { "OUTPUT", 0, false } };
+                                  { "DISTORTION", 2, true }, { "TREMOLO", 3, true },        { "DELAY", 4, true },  { "REVERB", 5, true },
+                                  { "EQ", 6, false },      { "DRY/WET,\nOUTPUT", 0, false } };
     const int n = (int) std::size(stages);
     const float slot = w / (float) n, gap = 14.0f;
     for (int i = 0; i < n; ++i)
@@ -1236,6 +1238,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     content.addAndMakeVisible(*samplePanel);
     eqPanel = std::make_unique<EqPanel>(proc, laf);
     content.addAndMakeVisible(*eqPanel);
+    tremoloPanel = std::make_unique<TremoloPanel>(proc, laf);
+    content.addAndMakeVisible(*tremoloPanel);
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     content.addAndMakeVisible(*patternPanel);
 
@@ -1415,7 +1419,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
@@ -1860,7 +1864,8 @@ void BitVibeEditor::applyRightMode()
 int BitVibeEditor::patternTop() const { return kColY; }
 int BitVibeEditor::samplesTop() const { return patternTop() + PatternPanel::kHeight + kPanelGap; }
 Rectangle<int> BitVibeEditor::distArea() const { return { kSideX, samplesTop() + samplePanel->currentHeight() + kPanelGap, 456, 100 }; }
-Rectangle<int> BitVibeEditor::delayArea() const { return distArea().translated(0, 100 + kPanelGap); }
+Rectangle<int> BitVibeEditor::tremoloArea() const { return { kSideX, distArea().getBottom() + kPanelGap, TremoloPanel::kWidth, TremoloPanel::kHeight }; }
+Rectangle<int> BitVibeEditor::delayArea() const { return { kSideX, tremoloArea().getBottom() + kPanelGap, 456, 100 }; }
 Rectangle<int> BitVibeEditor::reverbArea() const { return delayArea().translated(0, 100 + kPanelGap); }
 int BitVibeEditor::eqTop() const { return reverbArea().getBottom() + kPanelGap; }
 int BitVibeEditor::columnBottom() const
@@ -2332,6 +2337,7 @@ void BitVibeEditor::resized()
            44, delay.getY() + 46);
     samplePanel->setBounds(face({ kSideX, samplesTop(), SamplePanel::kWidth, samplePanel->currentHeight() }));
     eqPanel->setBounds(face({ kSideX, eqTop(), EqPanel::kWidth, EqPanel::kHeight }));
+    tremoloPanel->setBounds(face(tremoloArea()));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, PatternPanel::kHeight }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
@@ -2575,7 +2581,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     // Delay panel labels
     {
         const float delayAlpha = rawValue(ids::delayOn) > 0.5f ? 1.0f : kOffAlpha;
-        drawPanelTitle(g, kSideX + kPanelTitleX, delay.getY() + 4, 3, "DELAY");
+        drawPanelTitle(g, kSideX + kPanelTitleX, delay.getY() + 4, 4, "DELAY");
         g.setColour(kInkDim.withMultipliedAlpha(jmax(delayAlpha, kOffTextAlpha)));
         g.setFont(bold(9.5f));
         g.drawText("TIME", Rectangle<int>(kSideX + 300, delay.getY() + 4, 40, 18), Justification::centredRight);
@@ -2597,7 +2603,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     }
 
     // Reverb panel labels
-    drawPanelTitle(g, kSideX + kPanelTitleX, reverb.getY() + 4, 4, "REVERB");
+    drawPanelTitle(g, kSideX + kPanelTitleX, reverb.getY() + 4, 5, "REVERB");
     const float lowCut = rawValue(ids::reverbLowCut), highCut = rawValue(ids::reverbHighCut);
     const std::array<Entry, 6> reverbEntries {{
         { "DECAY", String(roundToInt(rawValue(ids::reverbDecay) * 100.0f)) + "%" },
@@ -2762,6 +2768,8 @@ void BitVibeEditor::timerCallback()
         samplePanel->refresh();
         if (eqPanel->isVisible())
             eqPanel->refresh();
+        if (tremoloPanel->isVisible())
+            tremoloPanel->refresh();
         patternPanel->refresh();
         repaint();
     }

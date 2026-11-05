@@ -429,7 +429,7 @@ void EqPanel::paint(Graphics& g)
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
     if (referenceTools)
-        drawPanelTitle(g, kPanelTitleX, 4, 5, "EQ");
+        drawPanelTitle(g, kPanelTitleX, 4, 6, "EQ");
     else
         drawSectionTitle(g, kPanelTitleX, 4, "EQ");
     g.setColour(inkDim);

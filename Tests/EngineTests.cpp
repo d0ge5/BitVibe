@@ -1634,6 +1634,92 @@ void testDistortion()
     }
 }
 
+void testTremolo()
+{
+    std::puts("tremolo: rate, depth, edge and the rate curve, only on the sequenced sound");
+    TremoloSettings s;
+    s.rateHz = 6.0f;
+    CHECK(std::abs(tremoloRateHz(s, 0.0f) - 6.0f) < 1e-4f && std::abs(tremoloRateHz(s, 1.0f) - 6.0f) < 1e-4f, "no change: constant");
+    s.endOctaves = 1.0f;
+    CHECK(std::abs(tremoloRateHz(s, 0.0f) - 6.0f) < 1e-4f && std::abs(tremoloRateHz(s, 1.0f) - 12.0f) < 1e-3f
+              && std::abs(tremoloRateHz(s, 3.0f) - 12.0f) < 1e-3f,
+          "one octave up: 6 Hz to 12 Hz, and it stays there after the ramp");
+    CHECK(tremoloRampShape(0.5f, 1.0f) > tremoloRampShape(0.5f, 0.0f) && tremoloRampShape(0.5f, 0.0f) > tremoloRampShape(0.5f, -1.0f)
+              && std::abs(tremoloRampShape(0.5f, 0.0f) - 0.5f) < 1e-5f && tremoloRampShape(0.0f, 1.0f) < 1e-6f
+              && std::abs(tremoloRampShape(1.0f, -1.0f) - 1.0f) < 1e-6f,
+          "bend: the change comes early (+), evenly (0) or late (-), always from start to end");
+
+    // depth and edge
+    {
+        float lo = 1.0f, hi = 0.0f, none = 0.0f;
+        int between0 = 0, between1 = 0;
+        for (int i = 0; i < 1000; ++i)
+        {
+            const float ph = (float) i / 1000.0f;
+            const float g = tremoloGain(ph, 1.0f, 0.0f);
+            lo = std::min(lo, g);
+            hi = std::max(hi, g);
+            none = std::max(none, std::abs(1.0f - tremoloGain(ph, 0.0f, 0.5f)));
+            between0 += g > 0.1f && g < 0.9f ? 1 : 0;
+            const float hard = tremoloGain(ph, 1.0f, 1.0f);
+            between1 += hard > 0.1f && hard < 0.9f ? 1 : 0;
+        }
+        CHECK(lo < 1e-4f && hi > 0.9999f && none < 1e-6f, "full depth cuts right out and comes back to full volume; no depth, no change");
+        CHECK(between1 * 8 < between0, "a hard EDGE spends far less time in between (%d of 1000 vs %d)", between1, between0);
+    }
+
+    // the cycles in a 4-beat ramp at 120 BPM (2 seconds): constant 6 Hz = 12, speeding up = more, slowing down = fewer
+    {
+        auto cycles = [](float endOctaves)
+        {
+            TremoloSettings t;
+            t.rateHz = 6.0f;
+            t.endOctaves = endOctaves;
+            t.rampBeats = 4;
+            Tremolo trem;
+            trem.restart();
+            int wraps = 0;
+            double last = 0.0;
+            for (int i = 0; i < (int) (2.0 * kFs); ++i)
+            {
+                trem.next(t, kFs, kFs * 0.5);
+                wraps += trem.getPhase() < last ? 1 : 0;
+                last = trem.getPhase();
+            }
+            return wraps;
+        };
+        const int constant = cycles(0.0f), faster = cycles(1.0f), slower = cycles(-1.0f);
+        CHECK(constant == 12 && faster >= 16 && faster <= 18 && slower >= 8 && slower <= 9,
+              "cycles over the ramp: %d constant, %d speeding up (period shrinking), %d slowing down", constant, faster, slower);
+    }
+
+    // Through the engine: on the sequenced sound only, like the distortion
+    {
+        const Signal in = quietToneWithPick();
+        Params seq = neutral();
+        seq.seqPlay = 1;
+        seq.seqMult = 0;
+        seq.tempoBpm = 600.0f;
+        seq.steps.fill(mapping::pitchStepKnob(0));
+        const Signal plain = render(seq, in);
+        Params trem = seq;
+        trem.tremOn = true;
+        trem.trem.rateHz = 8.0f;
+        trem.trem.depth = 1.0f;
+        const Signal with = render(trem, in);
+        CHECK(maxAbsDiff(with, plain, 0.0, 0.09) < 1.0e-6, "before the sequence starts the signal is untouched");
+        CHECK(rms(with, 0.7, 1.0) < 0.8 * rms(plain, 0.7, 1.0) && rms(plain, 0.7, 1.0) > 1.0e-4,
+              "while the sequence plays it is cut in and out (%.1f%% of the level)", 100.0 * rms(with, 0.7, 1.0) / rms(plain, 0.7, 1.0));
+        CHECK(maxAbsDiff(with, plain, 1.4, 2.1) < 1.0e-6, "after the sequence the signal is clean again (%g)", maxAbsDiff(with, plain, 1.4, 2.1));
+        Params off = seq;
+        off.trem.depth = 1.0f;
+        CHECK(maxAbsDiff(render(off, in), plain) == 0.0, "switched off: nothing changes");
+        Params byp = trem;
+        byp.bypass = true;
+        CHECK(maxAbsDiff(render(byp, in), in) < 1.0e-6, "bypass is clean");
+    }
+}
+
 // Runs a sine through the fuzz.
 Signal fuzzed(double hz, float amp, float sustain, float tone, float volume, double seconds = 0.4)
 {
@@ -3239,6 +3325,7 @@ int main(int argc, char** argv)
     testReverb();
     testSampleBlend();
     testDistortion();
+    testTremolo();
     testFuzz();
     testEqualizer();
     testTriggerEvents();

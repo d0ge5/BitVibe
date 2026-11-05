@@ -44,6 +44,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 **The right-hand side** (works only on the sequenced and stuttered sound; your clean signal is left alone)
 
 - **Distortion / fuzz:** an overdrive and a fuzz, each with its own knobs.
+- **Tremolo:** cuts the sound in and out, smooth or choppy, at a rate that can stay the same or speed up or slow down
+  while the sequence plays, drawn and edited as a curve.
 - **Delay:** echoes in time with the tempo (1/32 to a bar, with triplets and dotted notes), 1 to 16 repeats or
   forever, with mix, decay, low cut and high cut.
 - **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, level, low and high cut, and a
@@ -116,8 +118,8 @@ say when a hidden setting is on. A switched-off panel dims its knobs but keeps i
 can be set up before you switch it on. Buttons with a small light on the left switch something on and off; the
 others do something once.
 
-**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the ADVANCED window gets
-about 100 pixels shorter, handy on a laptop) and the theme:
+**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the SIMPLE window gets
+about 140 pixels shorter, handy on a laptop) and the theme:
 
 - **NIGHT**: the black pedal with orange lights (the one it starts in).
 - **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
@@ -203,8 +205,8 @@ and the other at the next. All of it is remembered.
 ### The right-hand side
 
 At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
-stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** delay,
-**4** reverb, **5** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
+stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** tremolo,
+**4** delay, **5** reverb, **6** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
 light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
@@ -229,11 +231,24 @@ them).
   MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
+- **Tremolo:** cuts the sequenced sound in and out while a sequence or stutter plays. **RATE** is how fast (0.5 to
+  20 times a second), **DEPTH** how far the volume drops (fully right, it cuts right out), **EDGE** how hard: a
+  smooth swell to the left, a hard on/off chop to the right. The graph shows the rate over the **CHANGE OVER** time
+  (1 to 16 beats from the start of each sequence or stutter; after that it stays at the end rate), with the tremolo
+  itself drawn behind it, so you can see the cuts bunch up or spread out. Drag the **left point** to set the rate it
+  starts at, the **right point** to set where it ends: higher speeds it up (a shorter period), lower slows it down,
+  level keeps it constant (it snaps there). The **middle point** bends the curve, so the change comes early or late.
+  Double-click a point to put it back, or the graph to make the rate constant again. The RATE knob moves the whole
+  curve; a line shows where a playing sequence is. It comes after the distortion and before the delay, so the
+  echoes are chopped too.
+
+  <p align="center"><img src="artifacts/tremolo.png" width="456" alt="The TREMOLO panel: a rate curve speeding up from 3 Hz, with the tremolo drawn behind it, and the RATE, DEPTH and EDGE knobs"></p>
+
 - **Delay:** a stutter for the sequenced sound itself. **TIME** is a note length of the tempo (1/32 up to a whole
   bar, with T for triplets and D for dotted notes), so the echoes always sit in time, also with SYNC on. **REPEATS** is
   how many echoes follow each sound (1 to 16, or **FOREVER** fully right), **DECAY** how much quieter each one is than
   the one before, **MIX** how loud they are, and **LOW CUT** / **HIGH CUT** (ADVANCED) filter the echoes only. It hears
-  the sound after the distortion; the reverb hears the echoes too, and they ring on after the sequence stops.
+  the sound after the distortion and the tremolo; the reverb hears the echoes too, and they ring on after the sequence stops.
 - **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
   of fading it.
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for

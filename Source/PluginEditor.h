@@ -427,6 +427,7 @@ private:
 class PatternPanel;
 class EqPanel;
 class SamplePanel;
+class TremoloPanel;
 class SamplerPage;
 class BeatDog;
 
@@ -506,6 +507,7 @@ private:
     int patternTop() const;
     int samplesTop() const;
     juce::Rectangle<int> distArea() const;
+    juce::Rectangle<int> tremoloArea() const;
     juce::Rectangle<int> delayArea() const;
     juce::Rectangle<int> reverbArea() const;
     int eqTop() const;
@@ -616,6 +618,7 @@ private:
     std::unique_ptr<SamplePanel> samplePanel;
     std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open
     std::unique_ptr<EqPanel> eqPanel;
+    std::unique_ptr<TremoloPanel> tremoloPanel; // between the distortion and the delay
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
 

@@ -19,6 +19,7 @@
 #include "Mapping.h"
 #include "Reverb.h"
 #include "Samples.h"
+#include "Tremolo.h"
 
 #include <array>
 #include <atomic>
@@ -118,6 +119,11 @@ struct Params
     int distType = 0; // 0 = overdrive, 1 = fuzz (drive = sustain, level = volume)
     float distDrive = 0.5f, distTone = 0.5f, distLevel = 0.8f;
     bool distReverb = false;
+
+    // The tremolo on the sequenced sound, after the distortion and before the delay (so the echoes are chopped too).
+    // Its rate curve starts again with each sequence or stutter. Off by default.
+    bool tremOn = false;
+    TremoloSettings trem;
 
     // On / off switches (both on by default): with the reverb off nothing is fed to it and nothing is added; with the
     // sample blend off no random sounds start (the preview of the volume range still plays).
@@ -243,6 +249,7 @@ public:
         sampleMixSm.setTime(fs, 15.0f);
         loopSampleMixSm.setTime(fs, 15.0f);
         distOnSm.setTime(fs, 10.0f);
+        tremOnSm.setTime(fs, 10.0f);
         reverbOnSm.setTime(fs, 15.0f);
         delayOnSm.setTime(fs, 15.0f);
         delayMixSm.setTime(fs, 15.0f);
@@ -431,6 +438,14 @@ public:
             const float eqAmount = eqOnSm.next(blk.eqOn ? 1.0f : 0.0f);
             const bool eqRun = blk.eqOn || eqAmount > 1.0e-4f;
             const float distGate = distAmount * reverbSend; // the distortion only touches the sound while a sequence or stutter plays
+            // the tremolo, gated the same way; its rate curve starts again when a sequence or stutter starts
+            const bool fxActive = seqRunning || channels[0].stutter.isActive();
+            if (fxActive && !tremWasActive)
+                tremolo.restart();
+            tremWasActive = fxActive;
+            const float tremAmount = tremOnSm.next(blk.tremOn ? 1.0f : 0.0f) * reverbSend;
+            const float tremLevel = tremolo.next(blk.trem, fs, beatSamples);
+            const float tremGain = 1.0f - (1.0f - tremLevel) * tremAmount;
             const auto heard = samplePlayer.process();
             const float sampleSignal = (heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.loopSequence * loopSampleMixSm.next(blk.loopSampleGain))
                                            * sampleOnGain + heard.preview;
@@ -482,6 +497,7 @@ public:
                     const float distorted = blk.distType == 1 ? ch.fuzz.process(y) : ch.dist.process(y);
                     y += (distorted - y) * distGate;
                 }
+                y *= tremGain;
                 y *= muteGain * seqGate;
                 // the delay: echoes of the sequenced sound (after the distortion), which ring on after the sequence stops
                 const float echoes = delayRun ? ch.delay.process(y * reverbSend, delaySettings) * delayGain : 0.0f;
@@ -544,7 +560,12 @@ public:
         inputPeak = 0.0f;
         attackCountOut.store(attacksHeard, std::memory_order_relaxed);
         effectsActiveOut.store(reverbSend > 0.05f, std::memory_order_relaxed);
+        tremRampOut.store(tremWasActive ? tremolo.rampPosition(blk.trem, beatSamples) : -1.0f, std::memory_order_relaxed);
     }
+
+    // How far along its rate curve the tremolo is (0..1, 1 = the end rate), or -1 while nothing plays; for the curve's
+    // playhead.
+    float getTremoloRampPosition() const { return tremRampOut.load(std::memory_order_relaxed); }
 
     // Read by the editor (relaxed atomics; purely cosmetic).
     float getBeatPhase() const { return beatPhaseOut.load(std::memory_order_relaxed); }
@@ -601,6 +622,8 @@ private:
         int reverbType = 0;
         bool reverbReverse = false;
         bool distOn = false, distReverb = false;
+        bool tremOn = false;
+        TremoloSettings trem;
         bool reverbOn = true, sampleOn = true, eqOn = false;
         int distType = 0;
         bool patternOn = false;
@@ -653,6 +676,11 @@ private:
         if (patternIdx >= blk.patternBarSteps)
             patternIdx = 0;
         blk.distOn = p.distOn;
+        blk.tremOn = p.tremOn;
+        blk.trem = p.trem;
+        blk.trem.rateHz = std::clamp(p.trem.rateHz, kTremoloMinHz, kTremoloMaxHz);
+        blk.trem.endOctaves = std::clamp(p.trem.endOctaves, -kTremoloMaxOctaves, kTremoloMaxOctaves);
+        blk.trem.rampBeats = std::max(1, p.trem.rampBeats);
         blk.reverbOn = p.reverbOn;
         blk.eqOn = p.eqOn;
         blk.sampleOn = p.sampleOn;
@@ -705,6 +733,7 @@ private:
             sampleMixSm.snap(blk.sampleGain);
             loopSampleMixSm.snap(blk.loopSampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
+            tremOnSm.snap(blk.tremOn ? 1.0f : 0.0f);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
             delayOnSm.snap(blk.delayOn ? 1.0f : 0.0f);
             delayMixSm.snap(blk.delayMix);
@@ -1015,8 +1044,11 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
+    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
+    Tremolo tremolo;
+    bool tremWasActive = false;
+    std::atomic<float> tremRampOut { -1.0f };
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
     // crush / sample-rate / filter stage on-off blend (see Params::fxOnlyOnTriggers)

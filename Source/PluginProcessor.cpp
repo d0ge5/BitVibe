@@ -177,6 +177,35 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     add(std::make_unique<AudioParameterFloat>(id(ids::distLevel), "Distortion Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
     add(std::make_unique<AudioParameterBool>(id(ids::distReverb), "Distort Reverb Too", false));
 
+    // ---- tremolo on the sequenced sound (rig settings): rate, depth, edge, and the rate's curve over the ramp ----
+    inGroup("tremolo", "Tremolo");
+    add(std::make_unique<AudioParameterBool>(id(ids::tremOn), "Tremolo On", false));
+    {
+        NormalisableRange<float> rateRange(bitvibe::kTremoloMinHz, bitvibe::kTremoloMaxHz, 0.01f);
+        rateRange.setSkewForCentre(4.0f);
+        add(std::make_unique<AudioParameterFloat>(id(ids::tremRate), "Tremolo Rate", rateRange, 6.0f,
+                                                  AudioParameterFloatAttributes().withLabel("Hz").withStringFromValueFunction(
+                                                      [](float v, int) { return String(v, v < 10.0f ? 2 : 1) + " Hz"; })));
+    }
+    add(std::make_unique<AudioParameterFloat>(id(ids::tremDepth), "Tremolo Depth", NormalisableRange<float>(0.0f, 1.0f), 0.8f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::tremEdge), "Tremolo Edge", NormalisableRange<float>(0.0f, 1.0f), 0.3f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::tremEnd), "Tremolo Speed Change",
+                                              NormalisableRange<float>(-bitvibe::kTremoloMaxOctaves, bitvibe::kTremoloMaxOctaves, 0.01f), 0.0f,
+                                              AudioParameterFloatAttributes().withStringFromValueFunction([](float v, int)
+                                              {
+                                                  if (std::abs(v) < 0.005f)
+                                                      return String("constant");
+                                                  const float times = std::exp2(std::abs(v));
+                                                  return String(times, 2) + (v > 0.0f ? "x faster" : "x slower");
+                                              })));
+    add(std::make_unique<AudioParameterFloat>(id(ids::tremBend), "Tremolo Curve Bend", NormalisableRange<float>(-1.0f, 1.0f, 0.01f), 0.0f));
+    {
+        StringArray ramps;
+        for (const int beats : bitvibe::kTremoloRampBeats)
+            ramps.add(String(beats) + (beats == 1 ? " beat" : " beats"));
+        add(std::make_unique<AudioParameterChoice>(id(ids::tremRamp), "Tremolo Change Time", ramps, bitvibe::kDefaultTremoloRamp));
+    }
+
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     inGroup("samples", "Sample Blend");
     add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
@@ -457,6 +486,13 @@ BitVibeProcessor::BitVibeProcessor()
     pDistTone = raw(ids::distTone);
     pDistLevel = raw(ids::distLevel);
     pDistReverb = raw(ids::distReverb);
+    pTremOn = raw(ids::tremOn);
+    pTremRate = raw(ids::tremRate);
+    pTremDepth = raw(ids::tremDepth);
+    pTremEdge = raw(ids::tremEdge);
+    pTremEnd = raw(ids::tremEnd);
+    pTremBend = raw(ids::tremBend);
+    pTremRamp = raw(ids::tremRamp);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
@@ -647,6 +683,13 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.distTone = pDistTone->load();
     p.distLevel = pDistLevel->load();
     p.distReverb = pDistReverb->load() > 0.5f;
+    p.tremOn = pTremOn->load() > 0.5f;
+    p.trem.rateHz = pTremRate->load();
+    p.trem.depth = pTremDepth->load();
+    p.trem.edge = pTremEdge->load();
+    p.trem.endOctaves = pTremEnd->load();
+    p.trem.bend = pTremBend->load();
+    p.trem.rampBeats = bitvibe::kTremoloRampBeats[(size_t) jlimit(0, (int) bitvibe::kTremoloRampBeats.size() - 1, roundToInt(pTremRamp->load()))];
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
     p.sampleBaseDb = pSampleBase->load();
@@ -970,7 +1013,7 @@ namespace
 // The parameters outside the preset slots that are part of a shared sound.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "delay", "sample", "eq" })
+    for (const char* prefix : { "reverb", "dist", "trem", "delay", "sample", "eq" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;

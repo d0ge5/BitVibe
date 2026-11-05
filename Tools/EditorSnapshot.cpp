@@ -12,6 +12,7 @@
 #include "SamplePanel.h"
 #include "SamplerPage.h"
 #include "BeatDog.h"
+#include "TremoloPanel.h"
 #include "BeatDogMesh.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
@@ -661,7 +662,7 @@ void testLayout(const File& outDir)
     check(dog->getX() < 480 && loopBox->isVisible(), "ADVANCED: BEAT DOG under the pedal, the loop settings showing");
 
     ed->setRightMode(false);
-    check(ed->getHeight() < advancedHeight - 150 && dog->getX() > 480 && !loopBox->isVisible(),
+    check(ed->getHeight() < advancedHeight - 100 && dog->getX() > 480 && !loopBox->isVisible(),
           "SIMPLE: a shorter window (" + String(ed->getHeight()) + " instead of " + String(advancedHeight)
               + "), BEAT DOG in the right-hand column, the loop settings hidden");
     check(dog->getBottom() <= ed->getContent().getHeight() - 12, "and everything still fits");
@@ -938,10 +939,14 @@ void testPageTools()
     }
     const int fullHeight = ed->getHeight(), inputY = input->getY();
     ed->viewMenuChosen(BitVibeEditor::kViewDog);
-    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() < fullHeight - 60 && input->getY() < inputY,
-          "VIEW > Show BEAT DOG off: it is hidden (remembered), the panel under the pedal moves up and the window is "
-              + String(fullHeight - ed->getHeight()) + " px shorter");
+    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() <= fullHeight && input->getY() < inputY,
+          "VIEW > Show BEAT DOG off: it is hidden (remembered) and the panel under the pedal moves up");
+    ed->setRightMode(false);
+    const int simpleWithout = ed->getHeight();
     ed->setBeatDogShown(true);
+    const int simpleWith = ed->getHeight();
+    check(simpleWithout < simpleWith - 60, "in SIMPLE the window is " + String(simpleWith - simpleWithout) + " px shorter without it");
+    ed->setRightMode(true);
     check(dog->isVisible() && ed->getHeight() == fullHeight && input->getY() == inputY, "and on again: as it was");
 
     // the preset list
@@ -1102,6 +1107,78 @@ void testPageTools()
     uisettings::setBeatDogShown(true);
 }
 
+// The TREMOLO panel's curve: drag the end point to speed it up, the middle to bend it, the start to move only the start;
+// double-clicks put them back. Saves a close-up of the panel.
+void testTremoloPanel(const File& outDir)
+{
+    std::puts("tremolo panel");
+    auto p = makeProcessor();
+    uisettings::setAdvancedRight(true);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    TremoloPanel* panel = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+        if (panel == nullptr)
+            panel = dynamic_cast<TremoloPanel*>(c);
+    if (panel == nullptr || !panel->isVisible())
+    {
+        check(false, "a TREMOLO panel on the right-hand side");
+        return;
+    }
+    auto& curve = panel->getCurve();
+    setValue(*p, ids::tremOn, 1.0f);
+    setValue(*p, ids::tremRate, 6.0f);
+    auto mouse = [&curve](Point<float> at, Point<float> down)
+    {
+        const auto now = Time::getCurrentTime();
+        return MouseEvent(Desktop::getInstance().getMainMouseSource(), at, ModifierKeys(ModifierKeys::leftButtonModifier), 1.0f, 0.0f, 0.0f,
+                          0.0f, 0.0f, &curve, &curve, now, down, now, 1, false);
+    };
+    auto drag = [&](int handle, float toHz)
+    {
+        const auto from = curve.handlePosition(handle);
+        const Point<float> to(from.x, curve.yForHz(toHz));
+        curve.mouseDown(mouse(from, from));
+        curve.mouseDrag(mouse((from + to) * 0.5f, from));
+        curve.mouseDrag(mouse(to, from));
+        curve.mouseUp(mouse(to, from));
+        p->getUndo().endStep();
+    };
+    check(std::abs(getValue(*p, ids::tremEnd)) < 1.0e-4f, "the curve starts flat: a constant rate");
+    drag(TremoloCurve::end, 12.0f);
+    check(std::abs(getValue(*p, ids::tremEnd) - 1.0f) < 0.05f, "dragging the right point up to 12 Hz: it speeds up an octave (" + String(getValue(*p, ids::tremEnd), 2) + ")");
+    drag(TremoloCurve::middle, 6.0f * std::exp2(0.8f));
+    check(getValue(*p, ids::tremBend) > 0.3f, "dragging the middle point up bends the change earlier (" + String(getValue(*p, ids::tremBend), 2) + ")");
+    drag(TremoloCurve::start, 3.0f);
+    check(std::abs(getValue(*p, ids::tremRate) - 3.0f) < 0.15f && std::abs(getValue(*p, ids::tremRate) * std::exp2(getValue(*p, ids::tremEnd)) - 12.0f) < 0.6f,
+          "dragging the left point down to 3 Hz moves only the start (it still ends at "
+              + String(getValue(*p, ids::tremRate) * std::exp2(getValue(*p, ids::tremEnd)), 1) + " Hz)");
+    drag(TremoloCurve::end, 0.75f);
+    check(getValue(*p, ids::tremEnd) < -1.9f, "and the right point below the left: it slows down (" + String(getValue(*p, ids::tremEnd), 2) + ")");
+    drag(TremoloCurve::end, 3.05f);
+    check(std::abs(getValue(*p, ids::tremEnd)) < 1.0e-4f, "level with the left point: it snaps to constant");
+    ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0));
+    check(getValue(*p, ids::tremEnd) < -1.9f, "a drag on the curve is one undo step");
+    const auto middle = curve.handlePosition(TremoloCurve::middle);
+    curve.mouseDoubleClick(mouse(middle, middle));
+    check(std::abs(getValue(*p, ids::tremBend)) < 1.0e-4f, "a double-click on the middle point straightens the curve");
+    curve.mouseDoubleClick(mouse({ 2.0f, 2.0f }, { 2.0f, 2.0f }));
+    check(std::abs(getValue(*p, ids::tremEnd)) < 1.0e-4f, "a double-click away from the points makes the rate constant");
+
+    // a close-up for the README: speeding up, a little bent, fairly hard
+    setValue(*p, ids::tremRate, 3.0f);
+    setValue(*p, ids::tremEnd, 1.6f);
+    setValue(*p, ids::tremBend, 0.4f);
+    setValue(*p, ids::tremDepth, 0.9f);
+    setValue(*p, ids::tremEdge, 0.45f);
+    panel->refresh();
+    const auto image = snapshot(*panel, 2.0f);
+    const File file = outDir.getChildFile("tremolo.png");
+    file.deleteFile();
+    if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+        PNGImageFormat().writeImageToStream(image, *out);
+    std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+}
+
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
 // looks off while it is off, and the sample blend says when there are no sounds to blend.
 void testEasierStart()
@@ -1109,12 +1186,12 @@ void testEasierStart()
     std::puts("first run");
     // the window fits the screen it opens on
     const Rectangle<int> fullHd(0, 0, 1920, 1040), laptop(0, 0, 1366, 728), big(0, 0, 3840, 2120);
-    const float onFullHd = uisettings::fittingScale(1.0f, 948, 1080, fullHd);
-    check(onFullHd < 1.0f && 1080.0f * onFullHd <= 1040.0f - 90.0f && onFullHd > 0.8f,
+    const float onFullHd = uisettings::fittingScale(1.0f, 948, 1122, fullHd);
+    check(onFullHd < 1.0f && 1122.0f * onFullHd <= 1040.0f - 90.0f && onFullHd > 0.8f,
           "on a 1080p screen the window opens at " + String(roundToInt(onFullHd * 100.0f)) + "%, so all of it is on screen");
-    check(std::abs(uisettings::fittingScale(1.0f, 948, 1080, laptop) - uisettings::kMinScale) < 1.0e-4f, "on a small laptop screen: the smallest size");
-    check(std::abs(uisettings::fittingScale(1.0f, 948, 1080, big) - 1.0f) < 1.0e-4f
-              && std::abs(uisettings::fittingScale(1.5f, 948, 1080, big) - 1.5f) < 1.0e-4f,
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1122, laptop) - uisettings::kMinScale) < 1.0e-4f, "on a small laptop screen: the smallest size");
+    check(std::abs(uisettings::fittingScale(1.0f, 948, 1122, big) - 1.0f) < 1.0e-4f
+              && std::abs(uisettings::fittingScale(1.5f, 948, 1122, big) - 1.5f) < 1.0e-4f,
           "on a big screen: the size chosen");
     {
         auto p = makeProcessor();
@@ -1239,7 +1316,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 1080, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 1122, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -2186,7 +2263,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 190, "190 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 197, "197 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -2814,6 +2891,7 @@ int main(int argc, char** argv)
     testLayout(outDir);
     testThemes(outDir);
     testPageTools();
+    testTremoloPanel(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }
