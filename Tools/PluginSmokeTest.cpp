@@ -341,7 +341,7 @@ int main(int argc, char** argv)
 
         // Slot 1 brings the factory sound back exactly: same knobs and the same audio as at start-up.
         plugin->setCurrentProgram(0);
-        check(text("Sequencer") == "Continuous" && text("Sequencer Type") == "Pitch", "slot 1 runs the pitch sequencer");
+        check(text("Sequencer") == "4 Times" && text("Sequencer Type") == "Pitch", "slot 1 runs the pitch sequencer on each pick");
         bool stepsOk = near(value("Bits"), 1.0f) && near(value("Filter"), 1.0f);
         const float expectedSteps[6] = { 6.5f / 27, 10.5f / 27, 1.5f / 27, 20.5f / 27, 17.5f / 27, 13.5f / 27 };
         for (int i = 0; i < 6; ++i)

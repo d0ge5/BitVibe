@@ -47,7 +47,7 @@ private:
 class TremoloPanel : public juce::Component
 {
 public:
-    static constexpr int kWidth = 456, kHeight = 128;
+    static constexpr int kWidth = 456, kHeight = 210;
 
     TremoloPanel(BitVibeProcessor&, PedalLookAndFeel&);
     ~TremoloPanel() override;

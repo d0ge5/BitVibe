@@ -400,6 +400,28 @@ private:
     bool dragged = false, menuClick = false;
 };
 
+// The effects on the sequenced sound, one panel at a time: a strip of numbered tabs in the order the sound goes through
+// them (sample blend, distortion, tremolo, delay, reverb, EQ), each with a light that is on when the effect is on and
+// glows while it acts. Click a tab to see its panel.
+class EffectTabs : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    static constexpr int kCount = 6, kHeight = 26;
+    std::function<void(int tab)> onPick;
+
+    void set(int chosen, int shownCount, const std::array<bool, kCount>& on, bool active); // repaints only on a change
+    int getChosen() const { return chosen; }
+    int tabAt(float x) const;
+    juce::Rectangle<float> tabBounds(int tab) const;
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+
+private:
+    int chosen = 0, count = kCount;
+    std::array<bool, kCount> lit {};
+    bool glowing = false;
+};
+
 // HELP, over the whole window, in two pages: the quick start (what to do first), and WHAT TRIGGERS WHAT, a flow chart of
 // what sets each part off, what it starts, what acts while it plays, and where the sound goes. Opens by itself the
 // first time, and with the HELP button at the top; the tabs switch pages, a click anywhere else closes it.
@@ -472,6 +494,11 @@ public:
     void setBeatDogShown(bool shown);    // hidden, ADVANCED gets shorter (the panel under the pedal moves up)
     bool isBeatDogShown() const { return beatDogShown; }
 
+    // The effect panel showing on the right-hand side (one at a time, picked with the tabs above it). Remembered.
+    static constexpr int kTabSamples = 0, kTabDist = 1, kTabTremolo = 2, kTabDelay = 3, kTabReverb = 4, kTabEq = 5;
+    void setEffectTab(int tab);
+    int getEffectTab() const { return effectTab; }
+
     // The preset menu (a click on the preset name or its arrow): every slot, undo and redo, save, rename, export, import.
     juce::PopupMenu presetMenu();
     void presetMenuChosen(int result);
@@ -504,11 +531,13 @@ private:
     void addKnobHelpers(juce::Slider&, const juce::String& paramId); // double-click to reset, value bubble while turning
     void applySize(); // the window size for the page that is showing, at the player's scale
     void applyRightMode();
-    // The right-hand column, top to bottom: the beat pattern (when the sequence fires), then the effects in the order the
-    // sequenced sound goes through them: sample blend, distortion / fuzz, reverb and (ADVANCED) the EQ. The sample panel
-    // changes height with the mode, so everything below it moves.
+    // The right-hand column, top to bottom: the beat pattern (when the sequence fires; folded while it is off), the effect
+    // tabs, the one effect panel showing (sample blend, distortion / fuzz, tremolo, delay, reverb or, in ADVANCED, the EQ;
+    // the area is the size of the tallest), then BEAT DOG. The pattern panel changes height, so everything below it moves.
     int patternTop() const;
-    int samplesTop() const;
+    int samplesTop() const; // the tab strip
+    juce::Rectangle<int> effectsArea() const;
+    void applyEffectTab(); // shows the chosen panel's controls and hides the others
     juce::Rectangle<int> distArea() const;
     juce::Rectangle<int> tremoloArea() const;
     juce::Rectangle<int> delayArea() const;
@@ -578,15 +607,14 @@ private:
     // global panel
     KnobSlider inSlider, mixSlider, outSlider, trigSlider;
     std::unique_ptr<APVTS::SliderAttachment> inAtt, mixAtt, outAtt, trigAtt;
-    juce::ToggleButton syncButton { "SYNC" }, holdButton { "STUTTER HOLD" }, fxTrigButton { "FX ON TRIGGERS" };
-    std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
-    juce::ToggleButton seqOnlyButton { "SEQ ONLY" };
-    std::unique_ptr<APVTS::ButtonAttachment> seqOnlyAtt;
+    juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" };
+    std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt;
+    // HEAR: what comes out, as one choice over the two switches underneath (Seq Only and FX Only On Triggers):
+    // 0 = the guitar and the effect, 1 = clean in between (the crush only while a sequence or stutter plays), 2 = the effect only.
+    juce::ComboBox hearBox;
+    int hearChoice() const;
+    void setHear(int choice);
     juce::ComboBox headroomBox, stutterLenBox, stutterTypeBox;
-    juce::ToggleButton loopButton { "LOOP" };
-    std::unique_ptr<APVTS::ButtonAttachment> loopAtt;
-    juce::ComboBox loopFromBox, loopToBox, loopRepeatsBox;
-    std::unique_ptr<APVTS::ComboBoxAttachment> loopFromAtt, loopToAtt, loopRepeatsAtt;
 
     // the delay on the sequenced sound: time, mix, decay, repeats, low and high cut, and its power button
     KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayWobbleSlider, delayLowSlider, delayHighSlider;
@@ -620,13 +648,17 @@ private:
     std::unique_ptr<DistortionGraph> distGraph;
     std::unique_ptr<DelayGraph> delayGraph;
     std::unique_ptr<ReverbGraph> reverbGraph;
-    static constexpr int kGraphX = 10, kGraphW = 120, kKnobsX = 136; // in a panel
+    static constexpr int kGraphX = 10, kGraphW = 180, kKnobsX = 200;          // in a panel: the graph on the left, the knobs right of it
+    static constexpr int kKnobRow1 = 62, kKnobRow2 = 146, kKnobMid = 104;    // the knobs' rows (one row sits in the middle)
+    static constexpr int kEffectsH = 210;                                      // the effect area: the tallest panel
+    EffectTabs effectTabs;
+    int effectTab = 0;
     std::unique_ptr<PatternPanel> patternPanel;
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt, stutterTypeAtt;
 
     // footswitches and buttons
     FootSwitch bypassSwitch, tapSwitch;
-    PedalButton altButton { "ALT" };
+    PedalButton altButton { "STEPS" };
     PedalButton typePitchButton { "PITCH" }, typeFilterButton { "FILTER" }, typeRateButton { "RATE" }; // what the sequencer changes
     void showSeqType();
 

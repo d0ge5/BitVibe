@@ -49,9 +49,10 @@ inline FactoryPreset factoryPreset(int slot)
 
     switch (std::clamp(slot, 0, kNumPresets - 1))
     {
-        case 0: // the default sound: pitch sequencer running
+        case 0: // the default sound: the pitch sequence, played four times after each picked note
             f.name = "Pitch Sequence";
             f.knobs = KnobSet {};
+            f.knobs.seqPlay = 3;
             break;
         case 1:
             f.name = "Clean";

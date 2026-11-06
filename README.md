@@ -20,7 +20,7 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 > the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
 **New in 0.3.0:** a tempo-synced **delay** on the sequenced sound, a **sampler** that records another program on
-your PC and turns a part of it into a sound, **SEQ ONLY** to hear only the sequenced sound, step knobs remembered per
+your PC and turns a part of it into a sound, **EFFECT ONLY** (HEAR) to hear only the sequenced sound, step knobs remembered per
 sequencer type, **MAX BEATS** for the sample blend, and **BEAT DOG**, a headbanging wireframe husky that keeps time
 under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.3.0).
 
@@ -41,8 +41,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
-- **Mix**, tempo **sync** to your DAW, input and output gain, an option to apply the effects **only while
-  the stutter or sequencer plays**, and **SEQ ONLY** to send out nothing but the sequenced sound.
+- **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
+  **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
 
 **The right-hand side** (works only on the sequenced and stuttered sound; your clean signal is left alone)
 
@@ -61,7 +61,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
   or save it as a WAV.
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
-- **SIMPLE or ADVANCED** view, so you only see what you need (SIMPLE also makes the window shorter).
+- **SIMPLE or ADVANCED** view, so you only see what you need, and the effects as **tabs**, one panel at a time, so the
+  whole window fits a laptop screen.
 - **Six themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST.
 - **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z, Cmd on a Mac), **Shift-drag** for fine settings, and an **output meter**
   with a clip light.
@@ -121,8 +122,8 @@ say when a hidden setting is on. A switched-off panel dims its knobs but keeps i
 can be set up before you switch it on. Buttons with a small light on the left switch something on and off; the
 others do something once.
 
-**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the SIMPLE window gets
-about 140 pixels shorter, handy on a laptop) and the theme:
+**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the window gets about
+170 pixels shorter) and the theme:
 
 - **NIGHT**: the black pedal with orange lights (the one it starts in).
 - **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
@@ -148,14 +149,14 @@ on afterwards. The tempo clock sets the speed of all of it.
 
 | Knob | What it does |
 | --- | --- |
-| **Rate** | Sample-rate reduction (fully clockwise = off) |
+| **Sample Rate** | Sample-rate reduction (fully clockwise = off) |
 | **Filter** | Ladder low-pass (fully clockwise = off) |
 | **Bits** | Bit depth, 24 to 1 bit (fully clockwise = off) |
 | **Stutter** | Off, then three speeds with 1 to 16 repeats, then random |
 | **Sequencer** | Number of passes: off, once, twice, 4x, 8x, continuous |
-| **Seq Mult** | Sequencer speed as a multiple of the tempo |
+| **Speed** | Sequencer speed as a multiple of the tempo (x1 to x128) |
 
-- **ALT** swaps the knobs for the **step editor**:
+- **STEPS** swaps the knobs for the **step editor**:
 
   <p align="center"><img src="artifacts/steps.png" width="480" alt="The step editor: sixteen steps as bars (pitch in blue, one filter step in green, one rate step in purple, one muted), the step numbers with the END marker, the P / F / R letters, the lane tabs and the LEVEL lane"></p>
 
@@ -166,6 +167,11 @@ on afterwards. The tempo clock sets the speed of all of it.
     its knob. Right at the bottom the step is **skipped**, right at the top **muted** (a cross). **Shift** for fine
     control, a **double-click** puts a step back, a **right-click** opens its menu (what it controls, loop it, end the
     sequence there). The playing step lights up; the loop section is framed.
+  - **LOOP** (next to LENGTH) repeats part of the sequence: the steps you drag across on the strip above TEMPO (or
+    "Loop this step only" in a step's menu), as often as the box says (2 to 16 times, or forever). Each time the
+    sequence restarts (a hard pick or the beat pattern), it plays from step 1 again, so the steps before the loop
+    come back once and then the loop takes over: loop steps 4 to 6 forever on a filter sequence to keep the sweep
+    going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
   - **P / F / R** under the step numbers say what each step controls. A lit letter is the step's own choice, an outlined
     one follows **SEQ TYPE**; click to go round them (follow, pitch, filter, rate). Blue is pitch, green filter, purple
     sample rate.
@@ -181,52 +187,48 @@ on afterwards. The tempo clock sets the speed of all of it.
   the steps as they are). Steps with a P / F / R choice of their own stay put through the switch. The remembered
   steps are saved with the preset and travel in exported preset files.
 - **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step that plays, the
-  playing step outlined, the loop section framed. Click a step to see it on ALT, **drag across steps** to make them
+  playing step outlined, the loop section framed. Click a step to see it on STEPS, **drag across steps** to make them
   the loop section, and **right-click** a step to set what it controls, loop it alone or end the sequence there.
 - **TEMPO** is the big number in the middle: drag it up or down, double-click it to type a BPM, or tap **TAP**.
   **SYNC** under it follows your DAW's tempo instead. Holding TAP freezes the stutter for as long as you hold it.
 - **BYPASS** switches the effect off.
 
-Under the pedal, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the stutter and
-sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that crosses it is
-caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over the line; and
-**HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an output meter
-(its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it out),
-**SEQ ONLY** and, in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, the stutter type, **STUTTER HOLD** (freezes the stutter until you
-switch it off) and the sequence loop:
+At the bottom of the right-hand side, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the
+stutter and sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that
+crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over
+the line; and **HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an
+output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
+out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**:
+
+- **HEAR** is what comes out. **Guitar + effect**: both, blended with DRY/WET. **Clean in between**: the crush and
+  filter act only while a stutter or sequence plays, so your playing stays clean in between. **Effect only**: your
+  clean signal is cut, so only the sequenced sound leaves the plug-in: silence between sequences (the echoes and
+  reverb still ring out) and DRY/WET does nothing. Handy on a parallel track or with the clean guitar on another channel.
+- **HOLD** freezes the stutter on the current (or next) note until you switch it off; holding the TAP footswitch does
+  the same for as long as you hold it.
 
 - **STUTTER TYPE** is what the stutter does with the slice it catches. The STUTTER knob's repeats and speed still
   count: **REPEAT** plays the slice that many times (as before), **REVERSE** plays it backwards, **RISE** plays each
   repeat a whole tone higher than the last (up to two octaves), **TAPE STOP** slows it down to a stop like a tape
   machine switched off (taking that many slices to stop), **SCRATCH** pushes it back and forth like a record under a
   hand (one push and pull per slice), and **FREEZE** holds the end of it as a steady cloud of tiny overlapping grains
-  for that many slices. With STUTTER HOLD each of them goes on until you let go. The knob's read-out names the type,
+  for that many slices. With HOLD each of them goes on until you let go. The knob's read-out names the type,
   it is saved with the preset, and in SIMPLE a type other than REPEAT is listed under "Also on".
 
-- **SEQUENCE LOOP** repeats part of the sequence. Choose its first and last step and how often it
-  plays (2 to 16 times, or forever), or drag across the step strip; the looped steps are framed on it. Each time the sequence
-  restarts (a hard pick or the beat pattern), it plays from step 1 again, so the steps before the loop come back
-  once and then the loop takes over. For example, loop steps 4 to 6 forever on a filter sequence to keep the
-  sweep going, while steps 1 to 3 hit again on every restart. The loop is saved with the preset.
-- **DRY/WET** blends your clean input with the effect. **FX ON TRIGGERS** applies the crush and filter only
-  while a stutter or sequence plays, so your playing stays clean in between.
-- **SEQ ONLY** cuts your clean signal so only the sequenced sound
-  leaves the plug-in: it is silent between sequences, the reverb still rings out, and DRY/WET does nothing while it
-  is on. Handy on a parallel track or with the clean guitar on another channel.
+It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
+for a clean signal, or to *Continuous* to have it run on its own.
 
-It starts on preset 1, a pitch sequence. Turn **Sequencer** to *Off* for a clean signal.
-
-**BEAT DOG** (under the pedal in ADVANCED, at the bottom of the right-hand side in SIMPLE) is a green wireframe husky
+**BEAT DOG** (in the right-hand column, under the effects) is a green wireframe husky
 that headbangs in time: its head nods forward on the beat and pulls back again, ears flopping, with the beat of the
 bar beside it. It follows the tempo, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
 animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
-`Assets/beat_dog.jpg`), so it costs one small image draw per frame. Switch on **LIVE 3D** to draw the head in real
-time from its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15
-FPS**: smoother, and still light (well under a millisecond a frame). The numbered **HEADBANG ON** buttons pick the
-beats of the bar the head nods forward on; it pulls back smoothly in between (pick fewer beats for a slower, heavier
-headbang). **SMOOTH** sets how much quicker the nod forward is: all the way left a sudden headbang, all the way right
-an even bob, forward and back alike. **SWAY** floats the head from side to side, landing on one side at a picked beat
-and the other at the next. All of it is remembered.
+`Assets/beat_dog.jpg`), so it costs one small image draw per frame. **Right-click the dog** for its settings:
+**HEADBANG ON** picks the beats of the bar the head nods forward on (the lit dots beside the screen); it pulls back
+smoothly in between (pick fewer beats for a slower, heavier headbang). **SMOOTH** sets how much quicker the nod
+forward is, from a sudden headbang to an even bob, forward and back alike. **SWAY** floats the head from side to
+side, landing on one side at a picked beat and the other at the next. **LIVE 3D** draws the head in real time from
+its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15 FPS**:
+smoother, and still light (well under a millisecond a frame). All of it is remembered.
 
 **SCOPE** turns BEAT DOG's screen into an oscilloscope of the last two beats: your clean input on top (**IN**), what
 comes out below (**OUT**), a line on each beat and, along the bottom, a strip in the colour of the step that was
@@ -237,10 +239,15 @@ step going flat, the crush, the tremolo cutting, the echoes trailing on.
 
 ### The right-hand side
 
-At the top, the **beat pattern** decides when the sequence fires. Below it, the effect panels are numbered and
-stacked in the order the sequenced sound goes through them: **1** sample blend, **2** distortion / fuzz, **3** tremolo,
-**4** delay, **5** reverb, **6** EQ (ADVANCED). They hear only the sequenced and stuttered sound. Each has a power button next to its title: its
-light glows while the sequence or stutter plays (which is when the effect acts), and a switched-off panel is dimmed.
+At the top, the **beat pattern** decides when the sequence fires; it has a power button like the effects and folds to
+its title row while it is off. Below it, the effects are **numbered tabs** in the order the sequenced sound goes
+through them: **1** sample blend, **2** distortion / fuzz, **3** tremolo, **4** delay, **5** reverb, **6** EQ
+(ADVANCED). One panel shows at a time; click a tab to see it (the choice is remembered). They hear only the
+sequenced and stuttered sound. Each tab has a light that is on when its effect is on and glows while the sequence or
+stutter plays (which is when the effect acts); each panel has the same power button next to its title, and a
+switched-off panel is dimmed.
+
+<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the six numbered tabs, the reverb's graph and six knobs, BEAT DOG and the in / out panel"></p>
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 The distortion, delay and reverb panels each have a small graph on the left of what the effect does, worked out by
 running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and
@@ -258,14 +265,14 @@ them).
   **NO SOUNDS YET** and shows the folder button; the first sounds you add are found and picked by themselves. Subfolders are read too, and CHOOSE
   SOUNDS shows each one as a submenu with its own *Pick all* and *Pick none*, so a sorted library stays easy to pick
   from. File names must differ across folders (a name found twice is used once). Free sound packs released under CC0,
-  such as [Kenney's audio packs](https://kenney.nl/assets/category:Audio), work well. **MIX** moves between the **BASE**
-  and **MAX** volumes, **CHANCE** is how often a step gets a sound, **MAX BEATS** is the longest a sound may play
+  such as [Kenney's audio packs](https://kenney.nl/assets/category:Audio), work well. **VOLUME** moves between the **BASE**
+  and **MAX** volumes (ADVANCED), **CHANCE** is how often a step gets a sound, **MAX BEATS** is the longest a sound may play
   (a quarter beat up to 8 beats of the tempo, or the whole sound) before it fades out, which tames long sounds, and
   **PREVIEW** plays one so you can set the volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
-  picks and banks are remembered between sessions. While **SEQUENCE LOOP** is on (see the pedal above), **OTHER STEPS** and
+  picks and banks are remembered between sessions. While the **LOOP** is on (see the step editor above), **OTHER STEPS** and
   **LOOP STEPS** buttons appear: LOOP STEPS sets up the loop section's steps. Its bank list starts on **Same as the other steps**; pick a bank or
-  choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own SAMPLE
-  MIX, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
+  choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own
+  VOLUME, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
 - **Tremolo:** cuts the sequenced sound in and out while a sequence or stutter plays. **RATE** is how fast (0.5 to

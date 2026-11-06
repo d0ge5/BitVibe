@@ -940,8 +940,10 @@ void testPresets()
     // Slot 1 is the sound the plug-in has always started with.
     const FactoryPreset first = factoryPreset(0);
     const Params def;
-    CHECK(first.knobs == knobsOf(def), "slot 1 must be the default knob set");
-    CHECK(first.knobs.seqPlay == 5 && first.knobs.seqType == SeqType::Pitch, "slot 1 must run the pitch sequencer");
+    Params fourTimes = def;
+    fourTimes.seqPlay = 3;
+    CHECK(first.knobs == knobsOf(fourTimes), "slot 1 must be the default knob set, played four times a pick");
+    CHECK(first.knobs.seqPlay == 3 && first.knobs.seqType == SeqType::Pitch, "slot 1 must run the pitch sequencer on each pick");
     const float expected[kNumSteps] = { -7, -3, -12, 7, 4, 0 };
     for (int i = 0; i < kNumSteps; ++i)
     {

@@ -131,7 +131,7 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     button->setTooltip("LIVE 3D: draw the dog in real time from its 3D mesh instead of the pre-rendered frames: smoother, at the "
                        "frame rate chosen below, and uses a little more CPU. Off: the pre-rendered animation (the lightest).");
     button->onClick = [this] { setLive(!live); };
-    addAndMakeVisible(*button);
+    addChildComponent(*button); // LIVE 3D, the frame rate, SMOOTH, SWAY and the beats are in the right-click menu
 
     scopeButton = std::make_unique<PedalButton>("SCOPE");
     scopeButton->toggle = true;
@@ -147,20 +147,20 @@ BeatDog::BeatDog(PedalLookAndFeel& lookAndFeel) : laf(lookAndFeel)
     fpsBox.setLookAndFeel(&laf);
     fpsBox.setTooltip("FRAME RATE of the live dog: 60 is the smoothest, 30 or 15 use less CPU.");
     fpsBox.onChange = [this] { setFrameRate(fpsBox.getSelectedId()); };
-    addAndMakeVisible(fpsBox);
+    addChildComponent(fpsBox);
 
     setUpKnob(smoothKnob, laf, 0.0);
     smoothKnob.setTooltip("SMOOTH: how much quicker the nod forward is than the smooth pull back. Left, the headbang: a "
                           "sudden nod on each picked beat. Right, an even bob, forward and back alike. Double-click: the headbang.");
     smoothKnob.onValueChange = [this] { setSmoothness((float) smoothKnob.getValue()); };
     smoothKnob.onDragEnd = [this] { saveSettings(); };
-    addAndMakeVisible(smoothKnob);
+    addChildComponent(smoothKnob);
     setUpKnob(swayKnob, laf, 0.5);
     swayKnob.setTooltip("SWAY: floats the head from side to side in time, landing on one side at a picked beat and on the "
                         "other at the next. Left: no sway. Double-click: the middle.");
     swayKnob.onValueChange = [this] { setSway((float) swayKnob.getValue()); };
     swayKnob.onDragEnd = [this] { saveSettings(); };
-    addAndMakeVisible(swayKnob);
+    addChildComponent(swayKnob);
 
     fps = jlimit(15, 60, uisettings::beatDogFps());
     beatMask = uisettings::beatDogBeats() & ((1 << kMaxBeats) - 1);
@@ -599,20 +599,58 @@ void BeatDog::resized()
 
 void BeatDog::mouseDown(const MouseEvent& e)
 {
+    if (e.mods.isPopupMenu())
+        showMenu();
+}
+
+// The settings that used to be knobs and buttons on the panel: the beats the head hits, SWAY, SMOOTH, LIVE 3D and its frame rate.
+void BeatDog::showMenu()
+{
+    PopupMenu menu;
+    menu.addSectionHeader("HEADBANG ON");
     for (int b = 0; b < beatsInBar(); ++b)
-        if (beatButton(b).expanded(2).contains(e.getPosition()))
-            setBeatMask(beatMask ^ (1 << b));
+        menu.addItem(1 + b, "Beat " + String(b + 1), true, ((beatMask >> b) & 1) != 0);
+    menu.addSeparator();
+    PopupMenu swayMenu, smoothMenu, fpsMenu;
+    static const char* swayNames[3] { "Off", "Half", "Full" };
+    static const char* smoothNames[3] { "Headbang (quick nod)", "Halfway", "Even bob" };
+    for (int i = 0; i < 3; ++i)
+    {
+        swayMenu.addItem(10 + i, swayNames[i], true, std::abs(sway - 0.5f * (float) i) < 0.25f);
+        smoothMenu.addItem(20 + i, smoothNames[i], true, std::abs(smoothness - 0.5f * (float) i) < 0.25f);
+    }
+    menu.addSubMenu("Sway", swayMenu);
+    menu.addSubMenu("Smooth", smoothMenu);
+    menu.addSeparator();
+    menu.addItem(30, "LIVE 3D (drawn in real time)", true, live);
+    static const int rates[3] { 60, 30, 15 };
+    for (int i = 0; i < 3; ++i)
+        fpsMenu.addItem(40 + i, String(rates[i]) + " FPS", true, fps == rates[i]);
+    menu.addSubMenu("Frame rate", fpsMenu, live);
+    Component::SafePointer<BeatDog> safe(this);
+    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(this), [safe](int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+        if (result >= 1 && result <= 6)
+            safe->setBeatMask(safe->beatMask ^ (1 << (result - 1)));
+        else if (result >= 10 && result <= 12)
+            safe->setSway(0.5f * (float) (result - 10));
+        else if (result >= 20 && result <= 22)
+            safe->setSmoothness(0.5f * (float) (result - 20));
+        else if (result == 30)
+            safe->setLive(!safe->live);
+        else if (result >= 40 && result <= 42)
+            safe->setFrameRate(rates[result - 40]);
+        if (result >= 10 && result <= 22)
+            safe->saveSettings();
+    });
 }
 
 String BeatDog::getTooltip()
 {
-    const auto mouse = getMouseXYRelative();
-    for (int b = 0; b < beatsInBar(); ++b)
-        if (beatButton(b).expanded(2).contains(mouse))
-            return "Beat " + String(b + 1) + ": click to have the head nod forward on it, or not. Pick fewer beats for a slower, "
-                   "heavier headbang; the sway follows the beats picked. The playing beat lights up.";
-    return "BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on). Pick the beats it hits with the numbered "
-           "buttons; SWAY floats it from side to side between them.";
+    return "BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on). SCOPE shows the sound instead. Right-click "
+           "for the beats it hits, SWAY, SMOOTH, LIVE 3D and the frame rate.";
 }
 
 // The frames are drawn in green, whiter where the lines are brightest; for another screen colour each pixel keeps its
@@ -704,34 +742,15 @@ void BeatDog::paint(Graphics& g)
     g.setFont(mono(14.0f));
     g.drawText("/ " + String(beatsInBar()), 50, 48, 50, 18, Justification::centredLeft);
 
-    // the knobs' names and settings
-    for (const auto* knob : { &smoothKnob, &swayKnob })
-    {
-        const bool on = knob->isEnabled();
-        const auto column = Rectangle<int>(64, 11).withCentre({ knob->getBounds().getCentreX(), knob->getBottom() + 8 });
-        g.setColour(on ? inkLabel : inkDim.withAlpha(0.5f));
-        g.setFont(bold(10.0f));
-        g.drawText(knob == &smoothKnob ? "SMOOTH" : "SWAY", column, Justification::centred);
-        g.setColour(on ? inkDim : inkDim.withAlpha(0.4f));
-        g.setFont(bold(9.5f));
-        const String value = knob->getValue() <= 0.0 ? (knob == &smoothKnob ? "HEADBANG" : "OFF") : String(roundToInt(knob->getValue() * 100.0)) + "%";
-        g.drawText(on ? value : "LIVE 3D", column.translated(0, 11), Justification::centred);
-    }
-
-    // the beats the head hits: lit when picked, filled while playing
-    g.setColour(inkDim);
-    g.setFont(bold(9.0f));
-    g.drawText("HEADBANG ON", beatButton(0).getX(), 24, 140, 12, Justification::left);
+    // the beats the head hits, as small lights (the menu picks them)
     for (int b = 0; b < beatsInBar(); ++b)
     {
-        const auto r = beatButton(b).toFloat();
+        const auto r = beatButton(b).toFloat().withSizeKeepingCentre(10.0f, 10.0f);
         const bool picked = ((beatMask >> b) & 1) != 0, playing = b == beat;
-        g.setColour(playing ? (picked ? accent : theme.buttonTop) : theme.well);
-        g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(picked ? accent.withAlpha(playing ? 1.0f : 0.8f) : theme.outline);
-        g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.2f);
-        g.setColour(playing && picked ? theme.onAccent : (picked ? accent : theme.mid));
-        g.setFont(mono(12.0f));
-        g.drawText(String(b + 1), r, Justification::centred);
+        g.setColour(picked ? accent.withAlpha(playing ? 1.0f : 0.55f) : theme.outline);
+        g.fillEllipse(r);
     }
+    g.setColour(inkDim);
+    g.setFont(plain(9.5f));
+    g.drawText("right-click for more", scopeButton->getX(), scopeButton->getBottom() + 6, 120, 12, Justification::left);
 }

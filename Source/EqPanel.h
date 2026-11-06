@@ -12,7 +12,7 @@
 class EqPanel : public juce::Component
 {
 public:
-    static constexpr int kWidth = 456, kHeight = 196;
+    static constexpr int kWidth = 456, kHeight = 210;
 
     // prefix: the parameters it sets ("eq": eqOn, eqOutput, eq1Freq ...; the sampler's copy uses "smpEq"). Without the
     // reference tools there is no reference clip and no live spectrum (the sampler's copy).

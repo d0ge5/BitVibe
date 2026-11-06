@@ -90,6 +90,7 @@ private:
     void timerCallback() override;
     juce::Rectangle<int> screenArea() const;
     juce::Rectangle<int> beatButton(int beat) const;
+    void showMenu(); // the right-click menu: the beats, SWAY, SMOOTH, LIVE 3D, the frame rate
     int beatsInBar() const;
     void buildScanlines();
     void updateControls();

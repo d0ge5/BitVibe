@@ -89,7 +89,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         rememberKnobs();
         repaint();
     };
-    ownLevelsButton.setTooltip("OWN LEVELS FOR THE LOOP: off, the loop steps use the same SAMPLE MIX, CHANCE, BASE and MAX as the "
+    ownLevelsButton.setTooltip("OWN LEVELS FOR THE LOOP: off, the loop steps use the same VOLUME, CHANCE, BASE and MAX as the "
                                "other steps. On, they get their own (starting from the same values); the knobs then set the loop's.");
     addChildComponent(ownLevelsButton);
     addAndMakeVisible(bankBox);
@@ -109,7 +109,7 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                             "them is picked at random and blended in. Your picks are remembered next time.");
     folderButton.setTooltip("OPEN SOUNDS FOLDER: opens the folder for your own sounds (WAV, AIFF, FLAC or OGG files). "
                             "Put files in it, then pick them with CHOOSE SOUNDS.");
-    mixSlider.setTooltip("SAMPLE MIX: how loud the random sounds are, between the BASE volume (fully left) and the MAX volume (fully right). "
+    mixSlider.setTooltip("SAMPLE VOLUME: how loud the random sounds are, between BASE (fully left) and MAX (fully right; both in ADVANCED). "
                          "With the base left at Off, fully left means no sounds. Remembered next time.");
     baseSlider.setTooltip("BASE VOLUME: how loud the sounds are with MIX fully left. Fully left = Off. Let go of the knob to hear a sound at this volume.");
     maxSlider.setTooltip("MAX VOLUME: how loud the sounds are with MIX fully right. Let go of the knob to hear a sound at this volume.");
@@ -502,13 +502,14 @@ void SamplePanel::paint(Graphics& g)
     struct Entry { const char* name; String value; int cx, y; };
     auto volumeText = [](float db) { return db <= bitvibe::Engine::kSampleOffDb + 0.05f ? String("OFF") : String(db, 1) + " dB"; };
     static const char* lengths[] { "WHOLE", "1/4 BEAT", "1/2 BEAT", "1 BEAT", "2 BEATS", "4 BEATS", "8 BEATS" };
-    const Entry entries[] = { { "MIX", String(roundToInt(rawValue(mixId()) * 100.0f)) + "%", 284, 76 },
+    const Entry entries[] = { { "VOLUME", String(roundToInt(rawValue(mixId()) * 100.0f)) + "%", 284, 76 },
                               { "CHANCE", String(roundToInt(rawValue(chanceId()) * 100.0f)) + "%", 352, 76 },
                               { "MAX BEATS", lengths[jlimit(0, 6, roundToInt(rawValue(ids::sampleMaxBeats)))], 420, 76 },
                               { "BASE", volumeText(rawValue(baseId())), 62, 180 },
                               { "MAX", volumeText(rawValue(maxId())), 154, 180 } };
     for (const auto& e : entries)
-        drawControlLabel(g, e.cx, e.y - 7, e.name, e.value, alpha);
+        if (advanced || e.y < 100) // BASE and MAX are ADVANCED controls
+            drawControlLabel(g, e.cx, e.y - 7, e.name, e.value, alpha);
 
     if (!advanced)
         return; // SIMPLE: no volume range row

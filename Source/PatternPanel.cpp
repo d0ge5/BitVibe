@@ -38,12 +38,33 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
             return;
         auto current = beat.getPattern();
         current.action = (DrumAction) jlimit(0, kNumDrumActions - 1, actionBox.getSelectedId() - 1);
+        if (current.action != DrumAction::Off)
+            lastAction = current.action;
         beat.setPattern(current);
         pattern = current;
-        updateDimming();
-        repaint();
+        refresh();
     };
     addAndMakeVisible(actionBox);
+    makePowerButton(onButton);
+    onButton.setLookAndFeel(&laf);
+    onButton.setTooltip("BEAT PATTERN ON: fire the sequence (or the stutter) on chosen steps of the bar, in time with the tempo. "
+                        "Off, picked notes alone start it. The panel opens out when it is on.");
+    onButton.onClick = [this]
+    {
+        auto current = beat.getPattern();
+        if (onButton.getToggleState())
+            current.action = lastAction;
+        else
+        {
+            if (current.action != DrumAction::Off)
+                lastAction = current.action;
+            current.action = DrumAction::Off;
+        }
+        beat.setPattern(current);
+        pattern = current;
+        refresh();
+    };
+    addAndMakeVisible(onButton);
 
     for (int i = 0; i < kNumTimeSignatures; ++i)
         signatureBox.addItem(timeSignature(i).name, i + 1);
@@ -93,6 +114,7 @@ PatternPanel::PatternPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) :
 
 PatternPanel::~PatternPanel()
 {
+    onButton.setLookAndFeel(nullptr);
     actionBox.setLookAndFeel(nullptr);
     signatureBox.setLookAndFeel(nullptr);
     lockButton.setLookAndFeel(nullptr);
@@ -101,9 +123,25 @@ PatternPanel::~PatternPanel()
 void PatternPanel::setAdvanced(bool on)
 {
     advanced = on;
-    for (Component* c : std::initializer_list<Component*> { &signatureBox, &restartButton, &lockButton })
-        c->setVisible(on);
+    applyCollapse();
     repaint();
+}
+
+void PatternPanel::applyCollapse()
+{
+    const bool open = !isDimmed();
+    for (Component* c : std::initializer_list<Component*> { &signatureBox, &restartButton, &lockButton })
+        c->setVisible(open && advanced);
+    for (Component* c : std::initializer_list<Component*> { &actionBox, &clearButton, &beatsButton, &offbeatsButton, &backbeatButton, &randomButton })
+        c->setVisible(open);
+    if (onButton.getToggleState() != open)
+        onButton.setToggleState(open, dontSendNotification);
+    if (getHeight() != currentHeight())
+    {
+        setSize(kWidth, currentHeight());
+        if (onHeightChange)
+            onHeightChange();
+    }
 }
 
 void PatternPanel::updateDimming()
@@ -117,6 +155,7 @@ void PatternPanel::updateDimming()
 void PatternPanel::resized()
 {
     // first row: what the pattern does, the time signature, restart the bar
+    onButton.setBounds(8, 3, 50, 19);
     actionBox.setBounds(64, kRowY, 132, kRowH);
     signatureBox.setBounds(262, kRowY, 66, kRowH);
     restartButton.setBounds(336, kRowY, 108, kRowH);
@@ -230,6 +269,7 @@ void PatternPanel::refresh()
         signatureBox.setSelectedId(pattern.signature + 1, dontSendNotification);
     }
     updateDimming();
+    applyCollapse();
     repaint();
 }
 
@@ -243,7 +283,7 @@ void PatternPanel::paint(Graphics& g)
     g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
-    drawSectionTitle(g, 14, 3, "BEAT PATTERN");
+    drawSectionTitle(g, kPanelTitleX, 3, "BEAT PATTERN");
 
     const auto& ts = timeSignature(pattern.signature);
     const bool active = pattern.action != DrumAction::Off;
@@ -252,8 +292,8 @@ void PatternPanel::paint(Graphics& g)
     Colour textColour = inkDim;
     if (!active)
     {
-        text = "Off: choose an ACTION to use the pattern";
-        textColour = accent;
+        text = "Off: switch it on to start the sequence on steps of the bar";
+        textColour = inkDim;
     }
     else
     {
@@ -277,7 +317,9 @@ void PatternPanel::paint(Graphics& g)
     }
     g.setColour(textColour);
     g.setFont(plain(10.0f));
-    g.drawText(text, 130, 4, kWidth - 144, 12, Justification::centredRight, true);
+    g.drawText(text, 160, 4, kWidth - 174, 12, Justification::centredRight, true);
+    if (!active)
+        return; // folded: the title row only
 
     g.setColour(inkDim);
     g.setFont(bold(10.0f));

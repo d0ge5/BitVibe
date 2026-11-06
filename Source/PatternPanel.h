@@ -9,7 +9,10 @@
 class PatternPanel : public juce::Component, public juce::TooltipClient
 {
 public:
-    static constexpr int kWidth = 456, kHeight = 134;
+    static constexpr int kWidth = 456, kHeight = 134, kCollapsedHeight = 30;
+    // The panel folds to its title row while it is off (its settings stay); the editor lays the column out again when it changes.
+    int currentHeight() const { return isDimmed() ? kCollapsedHeight : kHeight; }
+    std::function<void()> onHeightChange;
 
     PatternPanel(BitVibeProcessor&, PedalLookAndFeel&);
     ~PatternPanel() override;
@@ -36,11 +39,14 @@ private:
     void setSteps(std::uint32_t steps);
     void randomise();
     void updateDimming();
+    void applyCollapse(); // shows or hides the controls for the height, and tells the editor
 
     BitVibeProcessor& proc;
     DrumBeat& beat;
     PedalLookAndFeel& laf;
 
+    juce::ToggleButton onButton { "ON" }; // on = the ACTION chosen last (restart, by default); off = Off
+    bitvibe::DrumAction lastAction = bitvibe::DrumAction::RestartSequence;
     juce::ComboBox actionBox, signatureBox;
     PedalButton restartButton { "RESTART BAR" };
     juce::ToggleButton lockButton { "PATTERN LOCK" }; // only the pattern restarts the sequence

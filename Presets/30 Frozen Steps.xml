@@ -51,13 +51,13 @@
           laneStutter7="0.0" laneStutter8="0.0" laneStutter9="1.0" laneStutter10="0.0"
           laneStutter11="0.0" laneStutter12="0.0" laneStutter13="1.0" laneStutter14="0.0"
           laneStutter15="0.0" laneStutter16="0.0">
-    <UP sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="5"
+    <UP sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="3"
         seqMult="1" seqType="0" step1="0.2407407462596893" step2="0.3888888955116272"
         step3="0.0555555559694767" step4="0.7592592835426331" step5="0.6481481194496155"
         step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"
         step11="0.5" step12="0.5" step13="0.5" step14="0.5" step15="0.5"
         step16="0.5"/>
-    <DOWN sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="5"
+    <DOWN sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="3"
           seqMult="1" seqType="0" step1="0.2407407462596893" step2="0.3888888955116272"
           step3="0.0555555559694767" step4="0.7592592835426331" step5="0.6481481194496155"
           step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"

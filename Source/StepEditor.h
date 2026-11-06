@@ -5,6 +5,8 @@
 // The sequence on the pedal's Alt layer: up to sixteen steps, each a bar to drag, and under them the lanes, the other
 // things a step can do while it plays. From the top:
 //   LENGTH [-] 6 [+]      how many steps play (the END marker under the bars can be dragged too)
+//   LOOP 13-16 [forever]  the loop section: on or off, which steps (drag across the bars on the strip above TEMPO, or
+//                         right-click a step), and how many times it plays in a row
 //   the bars              each step's main value, in the colour of what it controls (pitch, filter or rate). Drag up and
 //                         down, or across several steps to draw them. Right at the bottom skips the step, right at the
 //                         top mutes it. Shift for fine control, a double-click puts a step back, a right-click opens its menu
@@ -19,8 +21,9 @@ class StepEditor : public juce::Component, public juce::TooltipClient
 public:
     static constexpr int kWidth = 448, kHeight = 276;
 
-    explicit StepEditor(BitVibeProcessor&);
+    StepEditor(BitVibeProcessor&, PedalLookAndFeel&);
     ~StepEditor() override;
+    void resized() override;
 
     // From the editor's timer: what the parameters and the playing sequence say now. Repaints only on a change.
     void refresh(int playingStep);
@@ -48,6 +51,9 @@ public:
     static juce::Rectangle<float> laneArea() { return { 0.0f, 214.0f, (float) kWidth, 60.0f }; }
     static juce::Rectangle<float> minusButton() { return { 54.0f, 1.0f, 20.0f, 18.0f }; }
     static juce::Rectangle<float> plusButton() { return { 104.0f, 1.0f, 20.0f, 18.0f }; }
+    static juce::Rectangle<int> loopButtonArea() { return { 140, 1, 50, 18 }; }
+    static juce::Rectangle<float> loopTextArea() { return { 194.0f, 0.0f, 50.0f, 20.0f }; }
+    static juce::Rectangle<int> repeatsBoxArea() { return { 246, 1, 84, 18 }; }
     static juce::Rectangle<float> column(int step, juce::Rectangle<float> row);
     static int stepAt(float x); // the step under x, clamped to 0 .. kNumSteps - 1
 
@@ -72,6 +78,9 @@ private:
     bool laneUsed(int laneIndex) const;
 
     BitVibeProcessor& proc;
+    PedalButton loopButton { "LOOP" };
+    juce::ComboBox repeatsBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> repeatsAtt;
     int lane = (int) bitvibe::Lane::Level;
     Drag drag = Drag::none;
     int dragStep = -1;

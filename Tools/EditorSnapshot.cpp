@@ -637,7 +637,7 @@ void testLayout(const File& outDir)
     const int advancedHeight = ed->getHeight();
     TempoReadout* tempo = nullptr;
     BeatDog* dog = nullptr;
-    Component* loopBox = nullptr;
+    Component* holdBox = nullptr, *input = nullptr;
     int tempoKnobs = 0;
     for (auto* c : ed->getContent().getChildren())
     {
@@ -645,14 +645,16 @@ void testLayout(const File& outDir)
             tempo = dynamic_cast<TempoReadout*>(c);
         if (dog == nullptr)
             dog = dynamic_cast<BeatDog*>(c);
-        if (auto* box = dynamic_cast<ComboBox*>(c); box != nullptr && box->getTooltip().startsWith("LOOP REPEATS"))
-            loopBox = box;
+        if (auto* box = dynamic_cast<ComboBox*>(c); box != nullptr && box->getTooltip().startsWith("STUTTER TYPE"))
+            holdBox = box;
+        if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith("INPUT:"))
+            input = c;
         if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith("TEMPO"))
             ++tempoKnobs;
     }
-    if (tempo == nullptr || dog == nullptr || loopBox == nullptr)
+    if (tempo == nullptr || dog == nullptr || holdBox == nullptr || input == nullptr)
     {
-        check(false, "the tempo read-out, BEAT DOG and the loop settings are on the page");
+        check(false, "the tempo read-out, BEAT DOG, the stutter type and the INPUT knob are on the page");
         return;
     }
     check(tempoKnobs == 1, "one tempo control on the page (the read-out on the pedal)");
@@ -662,22 +664,23 @@ void testLayout(const File& outDir)
     tempo->onDragEnd();
     check(std::abs(p->apvts.getRawParameterValue(ids::tempo)->load() - 130.0f) < 0.05f, "dragging the tempo up 20 pixels: 120 to 130 BPM");
     setValue(*p, ids::tempo, 120.0f);
-    check(dog->getX() < 480 && loopBox->isVisible(), "ADVANCED: BEAT DOG under the pedal, the loop settings showing");
+    check(dog->getX() > 480 && input->getX() > 480 && input->getY() > dog->getBottom() && holdBox->isVisible(),
+          "ADVANCED: BEAT DOG and the in / out panel under the effects in the right-hand column, the stutter type showing");
+    check(ed->getHeight() <= 1040 - 90, "the window fits a 1080p screen at full size (" + String(ed->getHeight()) + " px)");
 
     ed->setRightMode(false);
-    check(ed->getHeight() < advancedHeight - 100 && dog->getX() > 480 && !loopBox->isVisible(),
-          "SIMPLE: a shorter window (" + String(ed->getHeight()) + " instead of " + String(advancedHeight)
-              + "), BEAT DOG in the right-hand column, the loop settings hidden");
-    check(dog->getBottom() <= ed->getContent().getHeight() - 12, "and everything still fits");
-    setValue(*p, ids::loopOn, 1.0f);
-    const auto withLoop = snapshot(*ed, 1.0f);
-    setValue(*p, ids::loopOn, 0.0f);
-    const auto withoutLoop = snapshot(*ed, 1.0f);
+    check(ed->getHeight() < advancedHeight && !holdBox->isVisible(),
+          "SIMPLE: a shorter window (" + String(ed->getHeight()) + " instead of " + String(advancedHeight) + "), the stutter type hidden");
+    check(input->getBottom() <= ed->getContent().getHeight() - 12, "and everything still fits");
+    setValue(*p, ids::hold, 1.0f);
+    const auto withHold = snapshot(*ed, 1.0f);
+    setValue(*p, ids::hold, 0.0f);
+    const auto withoutHold = snapshot(*ed, 1.0f);
     int changed = 0;
-    for (int y = 816; y < 838; ++y) // the line under the SIMPLE panel's buttons (window coordinates)
-        for (int x = 30; x < 460; ++x)
-            changed += withLoop.getPixelAt(x, y) != withoutLoop.getPixelAt(x, y) ? 1 : 0;
-    check(changed > 40, "and a line says when a hidden setting is on (SEQUENCE LOOP: " + String(changed) + " pixels)");
+    for (int y = input->getY() + 110; y < input->getY() + 140; ++y) // the line under the SIMPLE panel's boxes
+        for (int x = 500; x < 940; ++x)
+            changed += withHold.getPixelAt(x, y) != withoutHold.getPixelAt(x, y) ? 1 : 0;
+    check(changed > 40, "and a line says when a hidden setting is on (STUTTER HOLD: " + String(changed) + " pixels)");
     ed->setRightMode(true);
     check(ed->getHeight() == advancedHeight, "ADVANCED again: the full height");
 
@@ -942,13 +945,13 @@ void testPageTools()
     }
     const int fullHeight = ed->getHeight(), inputY = input->getY();
     ed->viewMenuChosen(BitVibeEditor::kViewDog);
-    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() <= fullHeight && input->getY() < inputY,
-          "VIEW > Show BEAT DOG off: it is hidden (remembered) and the panel under the pedal moves up");
+    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() < fullHeight && input->getY() < inputY,
+          "VIEW > Show BEAT DOG off: it is hidden (remembered), the in / out panel moves up and the window gets shorter");
     ed->setRightMode(false);
     const int simpleWithout = ed->getHeight();
     ed->setBeatDogShown(true);
     const int simpleWith = ed->getHeight();
-    check(simpleWithout < simpleWith - 60, "in SIMPLE the window is " + String(simpleWith - simpleWithout) + " px shorter without it");
+    check(simpleWithout < simpleWith - 40, "in SIMPLE too: " + String(simpleWith - simpleWithout) + " px shorter without it");
     ed->setRightMode(true);
     check(dog->isVisible() && ed->getHeight() == fullHeight && input->getY() == inputY, "and on again: as it was");
 
@@ -1093,7 +1096,7 @@ void testPageTools()
             }
         };
         walk(ed->getContent());
-        check(unnamed.isEmpty() && named > 60, String(named) + " controls have a name a screen reader can read"
+        check(unnamed.isEmpty() && named > 40, String(named) + " controls have a name a screen reader can read"
                                                   + (unnamed.isEmpty() ? String() : " (no name: " + unnamed.joinIntoString(", ") + ")"));
         PedalButton* view = nullptr;
         for (auto* c : ed->getContent().getChildren())
@@ -1118,6 +1121,7 @@ void testTremoloPanel(const File& outDir)
     auto p = makeProcessor();
     uisettings::setAdvancedRight(true);
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ed->setEffectTab(BitVibeEditor::kTabTremolo);
     TremoloPanel* panel = nullptr;
     for (auto* c : ed->getContent().getChildren())
         if (panel == nullptr)
@@ -1794,7 +1798,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 1122, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 748, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -1855,7 +1859,29 @@ void testRightModes(const File& outDir)
     save(*ed, outDir.getChildFile("editor_simple.png"));
     ed->setRightMode(true);
     const int advanced = countRight(*ed);
-    check(advanced == simple + 8, "ADVANCED shows the eight extra distortion, delay and reverb controls (" + String(simple) + " then " + String(advanced) + ")");
+    check(advanced == simple + 3, "ADVANCED shows the stutter's length, type and hold (" + String(simple) + " then " + String(advanced) + ")");
+    check(ed->getEffectTab() == BitVibeEditor::kTabSamples, "the sample blend is the effect panel showing first");
+    {
+        // the effect tabs: one panel at a time, ADVANCED adds the extra controls of the one showing
+        int extra = 0;
+        for (const auto& [tab, more] : { std::pair { BitVibeEditor::kTabDist, 2 }, std::pair { BitVibeEditor::kTabDelay, 2 }, std::pair { BitVibeEditor::kTabReverb, 4 } })
+        {
+            ed->setRightMode(false);
+            ed->setEffectTab(tab);
+            const int few = countRight(*ed);
+            ed->setRightMode(true);
+            extra += countRight(*ed) - few == more + 3 ? 1 : 0;
+        }
+        check(extra == 3, "each of the distortion, delay and reverb tabs shows its extra controls in ADVANCED (" + String(extra) + " of 3)");
+        ed->setEffectTab(BitVibeEditor::kTabEq);
+        check(ed->getEffectTab() == BitVibeEditor::kTabEq && uisettings::effectTab() == BitVibeEditor::kTabEq, "the EQ tab shows in ADVANCED, and the tab is remembered");
+        ed->setRightMode(false);
+        check(ed->getEffectTab() == BitVibeEditor::kTabSamples, "SIMPLE has no EQ tab: back to the sample blend");
+        ed->setRightMode(true);
+        ed->setEffectTab(BitVibeEditor::kTabReverb);
+        save(*ed, outDir.getChildFile("editor_effects.png")); // the reverb tab: the graph and six knobs in two rows
+        ed->setEffectTab(BitVibeEditor::kTabSamples);
+    }
     save(*ed, outDir.getChildFile("editor_advanced.png"));
     std::unique_ptr<BitVibeEditor> again(static_cast<BitVibeEditor*>(p->createEditor()));
     check(again->isAdvancedRight(), "the choice is remembered");
@@ -2598,7 +2624,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 67 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 67 and 0)");
+    check(controls == 62 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 62 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2606,7 +2632,10 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
     // What a tooltip looks like in the editor's own style: show one for the MIX knob.
     if (imageFile != nullptr)
     {
-        const Point<int> mixKnob(300, 898); // in the panel under the BEAT DOG pane (ADVANCED), right half
+        Point<int> mixKnob;
+        for (int i = 0; i < pane.getNumChildComponents(); ++i)
+            if (auto* tip = dynamic_cast<TooltipClient*>(pane.getChildComponent(i)); tip != nullptr && tip->getTooltip().startsWith("DRY/WET:"))
+                mixKnob = pane.getChildComponent(i)->getBounds().getCentre();
         // The headless editor is never marked visible, which makes getComponentAt() return nothing, so find the
         // topmost visible child under the point the same way hit-testing would.
         Component* under = nullptr;

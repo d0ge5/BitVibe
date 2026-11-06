@@ -345,10 +345,10 @@ void TremoloPanel::resized()
 {
     onButton.setBounds(8, 3, 50, 19);
     rampBox.setBounds(344, 3, 100, 20);
-    curve.setBounds(12, 27, 256, 94);
-    rateSlider.setBounds(Rectangle<int>(42, 42).withCentre({ 302, 50 }));
-    depthSlider.setBounds(Rectangle<int>(42, 42).withCentre({ 364, 50 }));
-    edgeSlider.setBounds(Rectangle<int>(42, 42).withCentre({ 426, 50 }));
+    curve.setBounds(12, 27, 256, kHeight - 39);
+    rateSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 302, 92 }));
+    depthSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 364, 92 }));
+    edgeSlider.setBounds(Rectangle<int>(44, 44).withCentre({ 426, 92 }));
 }
 
 void TremoloPanel::paint(Graphics& g)
@@ -366,9 +366,9 @@ void TremoloPanel::paint(Graphics& g)
     g.drawText("CHANGE OVER", Rectangle<int>(244, 4, 96, 18), Justification::centredRight);
 
     const float edge = (float) edgeSlider.getValue();
-    drawControlLabel(g, 302, 74, "RATE", hzText((float) rateSlider.getValue()), alpha);
-    drawControlLabel(g, 364, 74, "DEPTH", String(roundToInt(depthSlider.getValue() * 100.0)) + "%", alpha);
-    drawControlLabel(g, 426, 74, "EDGE", edge < 0.05f ? String("SMOOTH") : (edge > 0.95f ? String("CHOP") : String(roundToInt(edge * 100.0f)) + "%"), alpha);
+    drawControlLabel(g, 302, 118, "RATE", hzText((float) rateSlider.getValue()), alpha);
+    drawControlLabel(g, 364, 118, "DEPTH", String(roundToInt(depthSlider.getValue() * 100.0)) + "%", alpha);
+    drawControlLabel(g, 426, 118, "EDGE", edge < 0.05f ? String("SMOOTH") : (edge > 0.95f ? String("CHOP") : String(roundToInt(edge * 100.0f)) + "%"), alpha);
 }
 
 void TremoloPanel::refresh()

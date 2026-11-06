@@ -10,13 +10,44 @@ constexpr float kDimAlpha = 0.35f; // steps past the length
 constexpr float kFine = 0.2f;      // Shift-drag moves this much of the normal amount
 } // namespace
 
-StepEditor::StepEditor(BitVibeProcessor& p) : proc(p)
+StepEditor::StepEditor(BitVibeProcessor& p, PedalLookAndFeel& laf) : proc(p)
 {
     setTitle("STEPS");
     setMouseCursor(MouseCursor::PointingHandCursor);
+    loopButton.toggle = true;
+    loopButton.setTooltip("LOOP: keep part of the sequence going. Drag across steps on the strip above TEMPO (or right-click a step here) to "
+                          "choose them; the box says how many times they play in a row before the sequence goes on. A restart still begins "
+                          "at step 1.");
+    loopButton.onClick = [this]
+    {
+        if (auto* param = proc.apvts.getParameter(ids::loopOn))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(param->getValue() > 0.5f ? 0.0f : 1.0f);
+            param->endChangeGesture();
+        }
+    };
+    addAndMakeVisible(loopButton);
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::loopRepeats)))
+        repeatsBox.addItemList(choice->choices, 1);
+    repeatsBox.setLookAndFeel(&laf);
+    repeatsBox.setTooltip("LOOP REPEATS: how many times the loop section plays in a row each time the sequence reaches it; forever keeps it "
+                          "going until the next restart.");
+    repeatsAtt = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(proc.apvts, ids::loopRepeats, repeatsBox);
+    addAndMakeVisible(repeatsBox);
 }
 
-StepEditor::~StepEditor() { endGestures(); }
+StepEditor::~StepEditor()
+{
+    endGestures();
+    repeatsBox.setLookAndFeel(nullptr);
+}
+
+void StepEditor::resized()
+{
+    loopButton.setBounds(loopButtonArea());
+    repeatsBox.setBounds(repeatsBoxArea());
+}
 
 // ------------------------------------------------------------------------------------------
 // Parameters
@@ -175,6 +206,13 @@ void StepEditor::refresh(int playingStep)
     for (int l = 0; l < kNumLanes; ++l)
         for (int i = 0; i < kNumSteps; ++i)
             now.push_back(value(ids::lane(l, i)));
+    const bool loopOn = value(ids::loopOn) > 0.5f;
+    if (loopButton.lit != loopOn)
+    {
+        loopButton.lit = loopOn;
+        loopButton.repaint();
+    }
+    repeatsBox.setAlpha(loopOn ? 1.0f : kOffAlpha);
     if (now != shown)
     {
         shown = std::move(now);
@@ -246,7 +284,7 @@ String StepEditor::getTooltip()
     const auto type = (SeqType) jlimit(0, 2, roundToInt(value(ids::seqType)));
     const char* what = type == SeqType::Pitch    ? "pitch shift, -12 to +12 semitones (the middle = unshifted)"
                        : type == SeqType::Filter ? "filter cutoff, as a percent of the FILTER knob"
-                                                 : "sample rate, as a percent of the RATE knob";
+                                                 : "sample rate, as a percent of the SAMPLE RATE knob";
     return String("THE STEPS: drag each bar to set the step's ") + what
            + ". At the bottom it skips, at the top it mutes. Drag across to draw; Shift = fine; double-click = reset; right-click = menu.";
 }
@@ -282,11 +320,15 @@ void StepEditor::paint(Graphics& g)
     g.setColour(accent);
     g.setFont(bold(14.0f));
     g.drawText(String(n), Rectangle<float>(74.0f, 0.0f, 30.0f, 20.0f), Justification::centred);
+    // the loop section: its steps next to the LOOP button
+    g.setColour(loopOn ? ink : inkDim.withAlpha(0.5f));
+    g.setFont(plain(11.0f));
+    g.drawText(loopOn ? String(loopLo + 1) + "-" + String(loopHi + 1) : String("off"), loopTextArea(), Justification::centredLeft);
     g.setColour(inkDim);
     g.setFont(plain(11.0f));
     const String caption = describe(hover);
-    g.drawText(caption.isNotEmpty() ? caption : (morphOn ? String("MORPH ON: the steps heard come from STORE A / B") : String()),
-               Rectangle<float>(132.0f, 0.0f, (float) kWidth - 132.0f, 20.0f), Justification::centredRight);
+    g.drawFittedText(caption.isNotEmpty() ? caption : (morphOn ? String("MORPH ON: the steps heard come from STORE A / B") : String()),
+                     Rectangle<int>(336, 0, kWidth - 336, 20), Justification::centredRight, 1, 0.7f);
 
     // the bars
     const auto bars = barsArea();
