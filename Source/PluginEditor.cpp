@@ -1195,6 +1195,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(delayMixSlider, delayMixAtt, ids::delayMix);
     smallKnob(delayDecaySlider, delayDecayAtt, ids::delayDecay);
     smallKnob(delayRepeatsSlider, delayRepeatsAtt, ids::delayRepeats);
+    smallKnob(delayWobbleSlider, delayWobbleAtt, ids::delayWobble);
     smallKnob(delayLowSlider, delayLowAtt, ids::delayLowCut);
     smallKnob(delayHighSlider, delayHighAtt, ids::delayHighCut);
     delayOnButton.setLookAndFeel(&laf);
@@ -1398,7 +1399,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &stutterTypeBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(),
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
@@ -1484,7 +1485,7 @@ BitVibeEditor::~BitVibeEditor()
     for (auto& k : knobs)
         k.front.setLookAndFeel(nullptr);
     for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
-                      &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider })
+                      &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider })
         s->setLookAndFeel(nullptr);
     delayTimeBox.setLookAndFeel(nullptr);
     delayOnButton.setLookAndFeel(nullptr);
@@ -1991,6 +1992,8 @@ void BitVibeEditor::setTooltips()
                                 "hardly fade.");
     delayRepeatsSlider.setTooltip("DELAY REPEATS: how many echoes follow each sound, 1 to 16, or FOREVER (fully right) for echoes that "
                                   "keep coming, fading with DECAY.");
+    delayWobbleSlider.setTooltip("DELAY WOBBLE: makes it a worn tape echo. The echoes waver in pitch (slow wow, fast flutter), each later "
+                                 "one more, and get darker and softer. Fully left = a clean digital delay.");
     delayLowSlider.setTooltip("DELAY LOW CUT: a high-pass filter on the echoes only. Turn right for thinner echoes. Fully left = off.");
     delayHighSlider.setTooltip("DELAY HIGH CUT: a low-pass filter on the echoes only. Turn left for darker echoes. Fully right = off.");
     makePowerButton(reverbOnButton);
@@ -2313,7 +2316,8 @@ void BitVibeEditor::resized()
     spread({ { &reverbDecaySlider, false }, { &reverbToneSlider, true }, { &reverbMixSlider, false }, { &reverbLevelSlider, true },
              { &reverbLowSlider, true }, { &reverbHighSlider, true } },
            44, reverb.getY() + 46);
-    spread({ { &delayMixSlider, false }, { &delayDecaySlider, false }, { &delayRepeatsSlider, false }, { &delayLowSlider, true }, { &delayHighSlider, true } },
+    spread({ { &delayMixSlider, false }, { &delayDecaySlider, false }, { &delayRepeatsSlider, false }, { &delayWobbleSlider, false },
+             { &delayLowSlider, true }, { &delayHighSlider, true } },
            44, delay.getY() + 46);
     samplePanel->setBounds(face({ kSideX, samplesTop(), SamplePanel::kWidth, samplePanel->currentHeight() }));
     eqPanel->setBounds(face({ kSideX, eqTop(), EqPanel::kWidth, EqPanel::kHeight }));
@@ -2553,12 +2557,14 @@ void BitVibeEditor::paintContent(Graphics& g)
         g.drawText("TIME", Rectangle<int>(kSideX + 300, delay.getY() + 4, 40, 18), Justification::centredRight);
         const int repeats = roundToInt(rawValue(ids::delayRepeats));
         const float delayLow = rawValue(ids::delayLowCut), delayHigh = rawValue(ids::delayHighCut);
-        const std::array<Entry, 5> delayEntries {{
+        const float wobble = rawValue(ids::delayWobble);
+        const std::array<Entry, 6> delayEntries {{
             { "MIX", String(roundToInt(rawValue(ids::delayMix) * 100.0f)) + "%" },
             { "DECAY", String(roundToInt(rawValue(ids::delayDecay) * 100.0f)) + "%" },
             { "REPEATS", repeats >= bitvibe::kDelayForever ? String("FOREVER") : String(repeats) },
-            { "LOW CUT", delayLow <= 20.5f ? String("OFF") : hzText(delayLow), true },
-            { "HIGH CUT", delayHigh >= 19950.0f ? String("OFF") : hzText(delayHigh), true },
+            { "WOBBLE", wobble < 0.005f ? String("OFF") : String(roundToInt(wobble * 100.0f)) + "%" },
+            { "LO CUT", delayLow <= 20.5f ? String("OFF") : hzText(delayLow), true },
+            { "HI CUT", delayHigh >= 19950.0f ? String("OFF") : hzText(delayHigh), true },
         }};
         for (size_t i = 0; i < delayEntries.size(); ++i)
         {
@@ -2618,8 +2624,8 @@ void BitVibeEditor::updateLiveState()
         setPowerActive(reverbOnButton, live);
         setPowerActive(delayOnButton, live);
         const bool delayOn = rawValue(ids::delayOn) > 0.5f;
-        for (Component* c : std::initializer_list<Component*> { &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider,
-                                                                 &delayHighSlider, &delayTimeBox })
+        for (Component* c : std::initializer_list<Component*> { &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider,
+                                                                 &delayLowSlider, &delayHighSlider, &delayTimeBox })
             c->setAlpha(offAlphaFor(*c, delayOn));
         const bool distOn = rawValue(ids::distOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &distDriveSlider, &distToneSlider, &distLevelSlider, &distTypeBox, &distReverbButton })

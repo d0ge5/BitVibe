@@ -174,6 +174,7 @@ inline const std::vector<Preset>& presets()
              b.sequence(6, 0, 1);
              b.stutter(0, 3, kReverse, 1);
              b.delay(kQuarter, 0.35f, 0.55f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 0.3f);
              b.reverb(kHall, 0.3f, 0.6f, true);
          } },
         { "Gate Grid", [](Builder& b) {
@@ -199,6 +200,7 @@ inline const std::vector<Preset>& presets()
              b.delay(kQuarterDotted, 0.6f, 0.7f, 8);
              b.set(ids::delayLowCut, 300.0f);
              b.set(ids::delayHighCut, 3000.0f);
+             b.set(ids::delayWobble, 0.6f); // a worn tape echo
              b.lane(Lane::Delay, { 0.0f, 1.0f });
              b.reverb(kSpring, 0.25f, 0.5f);
              b.lane(Lane::Reverb, { 0.0f, 1.0f });

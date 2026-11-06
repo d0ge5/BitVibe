@@ -116,13 +116,13 @@ void DistortionGraph::draw(Graphics& g, Rectangle<float> area) const
 DelayGraph::DelayGraph(BitVibeProcessor& p) : EffectGraph(p)
 {
     setTooltip("DELAY GRAPH: one note (grey) and its echoes, with a line on each beat. Their spacing is TIME, their height "
-               "MIX and DECAY, their number REPEATS; FOREVER goes on until they fade.");
+               "MIX and DECAY, their number REPEATS; FOREVER goes on until they fade. WOBBLE sets them drifting, like tape.");
 }
 
 String DelayGraph::settingsKey() const
 {
     return String(roundToInt(value(ids::delayTime))) + "|" + String(proc.getEffectiveBpm(), 1) + "|" + String(value(ids::delayMix), 3) + "|"
-           + String(value(ids::delayDecay), 3) + "|" + String(roundToInt(value(ids::delayRepeats)));
+           + String(value(ids::delayDecay), 3) + "|" + String(roundToInt(value(ids::delayRepeats))) + "|" + String(value(ids::delayWobble), 2);
 }
 
 void DelayGraph::compute()
@@ -132,6 +132,7 @@ void DelayGraph::compute()
     division = d.name;
     echoBeats = d.beats;
     echoMs = d.beats * 60000.0 / bpm;
+    wobble = value(ids::delayWobble);
     const int repeats = roundToInt(value(ids::delayRepeats));
     const bool forever = repeats >= kDelayForever;
     const float g = Delay::decayGain(value(ids::delayDecay));
@@ -158,12 +159,16 @@ void DelayGraph::draw(Graphics& g, Rectangle<float> area) const
     g.setColour(inkDim.withAlpha(0.7f));
     g.fillRect(xFor(0.0) - barW * 0.5f, bottom - height, barW, height);
     g.setColour(accent);
+    int k = 0;
     for (const auto& e : echoes)
     {
+        // with WOBBLE the echoes drift off the beat, each later one further, as on a worn tape
+        ++k;
+        const float drift = wobble * 2.5f * std::sqrt((float) k) * (float) std::sin(1.7 * k + 0.5);
         const float h = jmax(1.0f, height * jlimit(0.0f, 1.0f, e.level));
-        g.fillRect(xFor(e.beats) - barW * 0.5f, bottom - h, barW, h);
+        g.fillRect(xFor(e.beats) - barW * 0.5f + drift, bottom - h, barW, h);
     }
-    caption(g, area, division + "  " + String(roundToInt(echoMs)) + " ms");
+    caption(g, area, division + "  " + String(roundToInt(echoMs)) + " ms" + (wobble >= 0.005f ? "  TAPE" : ""));
 }
 
 // ------------------------------------------------------------------------------------------

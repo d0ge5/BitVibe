@@ -396,6 +396,88 @@ void testStutter()
     CHECK(rms(held, 1.8, 2.0) < 1.0e-4, "released hold should stop (rms %g)", rms(held, 1.8, 2.0));
 }
 
+// WOBBLE on the delay: off, the echoes are exact copies; on, their pitch wavers (wow and flutter) by about the amount
+// a worn tape gives, without changing their level much or ever running away.
+void testDelayWobble()
+{
+    std::puts("delay wobble");
+    constexpr int fs = 48000;
+    auto echoOf = [&](float wobble, int repeats, float decay, int seconds, const std::function<float(int)>& input)
+    {
+        Delay d;
+        d.prepare(fs);
+        DelaySettings s;
+        s.timeSamples = 12000.0;
+        s.repeats = repeats;
+        s.decay = decay;
+        s.wobble = wobble;
+        std::vector<float> out((size_t) (fs * seconds));
+        double mostWobble = 0.0;
+        for (int n = 0; n < (int) out.size(); ++n)
+        {
+            out[(size_t) n] = d.process(input(n), s);
+            mostWobble = std::max(mostWobble, std::abs(d.getWobbleSamples()));
+        }
+        return std::make_pair(out, mostWobble);
+    };
+    // off: an impulse comes back exactly a delay later, as loud as it should
+    {
+        const auto [out, most] = echoOf(0.0f, 2, 0.5f, 1, [](int n) { return n == 100 ? 1.0f : 0.0f; });
+        CHECK(std::abs(out[12100] - 1.0f) < 1.0e-6f && std::abs(out[24100] - Delay::decayGain(0.5f)) < 1.0e-6f && most == 0.0,
+              "WOBBLE off: the echoes are exact (%g, %g)", (double) out[12100], (double) out[24100]);
+    }
+    // on: a 1 kHz tone's echo wavers in pitch
+    auto tone = [](int n) { return 0.3f * (float) std::sin(6.283185307179586 * 1000.0 * n / 48000.0); };
+    auto periods = [&](const std::vector<float>& out, int from)
+    {
+        std::vector<double> p;
+        double last = -1.0;
+        for (int n = from + 1; n < (int) out.size(); ++n)
+            if (out[(size_t) n - 1] < 0.0f && out[(size_t) n] >= 0.0f)
+            {
+                const double at = (double) (n - 1) + out[(size_t) n - 1] / (out[(size_t) n - 1] - out[(size_t) n]);
+                if (last >= 0.0)
+                    p.push_back(at - last);
+                last = at;
+            }
+        return p;
+    };
+    auto swing = [&](const std::vector<double>& p)
+    {
+        double most = 0.0;
+        for (double v : p)
+            most = std::max(most, std::abs(v / 48.0 - 1.0));
+        return most;
+    };
+    auto rmsFrom = [](const std::vector<float>& v, int from)
+    {
+        double acc = 0.0;
+        for (size_t i = (size_t) from; i < v.size(); ++i)
+            acc += (double) v[i] * v[i];
+        return std::sqrt(acc / (double) (v.size() - (size_t) from));
+    };
+    const auto clean = echoOf(0.0f, 1, 0.5f, 4, tone);
+    const auto worn = echoOf(1.0f, 1, 0.5f, 4, tone);
+    const double cleanSwing = swing(periods(clean.first, fs)), wornSwing = swing(periods(worn.first, fs));
+    CHECK(cleanSwing < 1.0e-3 && wornSwing > 2.0e-3 && wornSwing < 0.02,
+          "WOBBLE on: the echo's pitch wavers (%.2f%%, clean %.3f%%)", wornSwing * 100.0, cleanSwing * 100.0);
+    CHECK(worn.second > 40.0 && worn.second < 120.0, "by moving the delay up to %g samples", worn.second);
+    const double level = rmsFrom(worn.first, fs) / rmsFrom(clean.first, fs);
+    CHECK(level > 0.6 && level < 1.1, "at about the same level (x%.2f)", level);
+    // forever, with the most feedback, it stays finite and bounded
+    {
+        const auto [out, most] = echoOf(1.0f, kDelayForever, 1.0f, 8, [&](int n) { return n < fs ? tone(n) : 0.0f; });
+        float peak = 0.0f;
+        bool finite = true;
+        for (float v : out)
+        {
+            finite = finite && std::isfinite(v);
+            peak = std::max(peak, std::abs(v));
+        }
+        CHECK(finite && peak < 0.6f, "FOREVER with full wobble stays bounded (peak %g)", (double) peak);
+    }
+}
+
 // The stutter types, on one channel: a 100 ms slice of a rising tone (so forwards and backwards differ), four repeats.
 void testStutterKinds()
 {
@@ -3570,6 +3652,7 @@ int main(int argc, char** argv)
     testTremolo();
     testSeqLengthAndLanes();
     testStutterKinds();
+    testDelayWobble();
     testFuzz();
     testEqualizer();
     testTriggerEvents();

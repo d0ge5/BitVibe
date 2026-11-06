@@ -356,6 +356,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20.0f, true))));
         add(std::make_unique<AudioParameterFloat>(id(ids::delayHighCut), "Delay High Cut", highRange, 20000.0f,
                                                          AudioParameterFloatAttributes().withStringFromValueFunction(hzText(20000.0f, false))));
+        // tape wobble: wow and flutter on the echoes, which also get darker and softer (0 = a clean digital delay)
+        add(std::make_unique<AudioParameterFloat>(id(ids::delayWobble), "Delay Wobble", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     }
 
     // ---- drum beat (DRUMS tab) -----------------------------------------------------------
@@ -490,6 +492,7 @@ BitVibeProcessor::BitVibeProcessor()
     pDelayRepeats = raw(ids::delayRepeats);
     pDelayLowCut = raw(ids::delayLowCut);
     pDelayHighCut = raw(ids::delayHighCut);
+    pDelayWobble = raw(ids::delayWobble);
     pReverbTone = raw(ids::reverbTone);
     pReverbMix = raw(ids::reverbMix);
     pReverbLevel = raw(ids::reverbLevel);
@@ -697,6 +700,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.delayRepeats = roundToInt(pDelayRepeats->load());
     p.delayLowCutHz = pDelayLowCut->load();
     p.delayHighCutHz = pDelayHighCut->load();
+    p.delayWobble = pDelayWobble->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();

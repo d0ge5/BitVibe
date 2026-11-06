@@ -113,6 +113,7 @@ struct Params
     float delayDecay = 0.5f;           // how much quieter each echo is than the one before
     int delayRepeats = 4;              // 1..16 echoes, or kDelayForever
     float delayLowCutHz = 20.0f, delayHighCutHz = 20000.0f;
+    float delayWobble = 0.0f;          // tape wobble on the echoes (0 = clean)
     float reverbHighCutHz = 20000.0f;  // low-pass on the reverb only (20 kHz = off)
 
     // Distortion on the sequenced sound (the sequence, its stutters and the random sounds; never the clean signal):
@@ -703,6 +704,7 @@ private:
         blk.delay.repeats = std::clamp(p.delayRepeats, 1, kDelayForever);
         blk.delay.lowCutHz = std::clamp(p.delayLowCutHz, 20.0f, 2000.0f);
         blk.delay.highCutHz = std::clamp(p.delayHighCutHz, 200.0f, 20000.0f);
+        blk.delay.wobble = std::isfinite(p.delayWobble) ? std::clamp(p.delayWobble, 0.0f, 1.0f) : 0.0f;
         blk.reverbReverse = p.reverbReverse;
         if (const int requests = patternRestartRequests.load(std::memory_order_acquire); requests != seenPatternRestarts)
         {

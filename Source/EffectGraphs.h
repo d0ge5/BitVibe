@@ -64,6 +64,7 @@ protected:
     void draw(juce::Graphics&, juce::Rectangle<float>) const override;
 
 private:
+    float wobble = 0.0f;
     std::vector<Echo> echoes;
     double windowBeats = 4.0, echoBeats = 0.5, echoMs = 250.0;
     juce::String division;

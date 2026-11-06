@@ -50,7 +50,7 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 - **Tremolo:** cuts the sound in and out, smooth or choppy, at a rate that can stay the same or speed up or slow down
   while the sequence plays, drawn and edited as a curve.
 - **Delay:** echoes in time with the tempo (1/32 to a bar, with triplets and dotted notes), 1 to 16 repeats or
-  forever, with mix, decay, low cut and high cut.
+  forever, with mix, decay, low cut and high cut, and **WOBBLE** to turn it into a worn tape echo.
 - **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, level, low and high cut, and a
   reverse option for each type.
 - **Sample blend:** a random sound from your own audio files joins each step, crushed along with the sequence.
@@ -284,7 +284,11 @@ them).
 - **Delay:** a stutter for the sequenced sound itself. **TIME** is a note length of the tempo (1/32 up to a whole
   bar, with T for triplets and D for dotted notes), so the echoes always sit in time, also with SYNC on. **REPEATS** is
   how many echoes follow each sound (1 to 16, or **FOREVER** fully right), **DECAY** how much quieter each one is than
-  the one before, **MIX** how loud they are, and **LOW CUT** / **HIGH CUT** (ADVANCED) filter the echoes only. It hears
+  the one before, **MIX** how loud they are, and **LO CUT** / **HI CUT** (ADVANCED) filter the echoes only.
+  **WOBBLE** makes it a worn tape echo: the echoes waver in pitch, a slow wandering wow with a fast flutter on top,
+  each later echo a little more (on FOREVER the wobble builds up trip after trip), and they get darker and softer the
+  further it is turned (the high cut closes towards 6 kHz). Fully left it is a clean digital delay; the graph shows
+  the echoes drifting off the beat and says TAPE. It hears
   the sound after the distortion and the tremolo; the reverb hears the echoes too, and they ring on after the sequence stops.
 - **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
   of fading it.

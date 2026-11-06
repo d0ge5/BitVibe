@@ -156,6 +156,7 @@
     <PARAM id="delayRepeats" value="3.0"/>
     <PARAM id="delayLowCut" value="20.0"/>
     <PARAM id="delayHighCut" value="20000.0"/>
+    <PARAM id="delayWobble" value="0.0"/>
     <PARAM id="patternLock" value="1.0"/>
   </EFFECTS>
   <PATTERN action="0" steps="0" randomBeats="31" signature="0"/>

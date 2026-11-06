@@ -56,6 +56,7 @@ inline constexpr const char* delayDecay = "delayDecay";
 inline constexpr const char* delayRepeats = "delayRepeats";
 inline constexpr const char* delayLowCut = "delayLowCut";
 inline constexpr const char* delayHighCut = "delayHighCut";
+inline constexpr const char* delayWobble = "delayWobble";
 inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
 inline constexpr const char* reverbLevel = "reverbLevel";
@@ -357,6 +358,7 @@ private:
     std::atomic<float>* pDelayRepeats = nullptr;
     std::atomic<float>* pDelayLowCut = nullptr;
     std::atomic<float>* pDelayHighCut = nullptr;
+    std::atomic<float>* pDelayWobble = nullptr;
     std::atomic<float>* pReverbTone = nullptr;
     std::atomic<float>* pReverbMix = nullptr;
     std::atomic<float>* pReverbLevel = nullptr;

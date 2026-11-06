@@ -589,8 +589,8 @@ private:
     std::unique_ptr<APVTS::ComboBoxAttachment> loopFromAtt, loopToAtt, loopRepeatsAtt;
 
     // the delay on the sequenced sound: time, mix, decay, repeats, low and high cut, and its power button
-    KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayLowSlider, delayHighSlider;
-    std::unique_ptr<APVTS::SliderAttachment> delayMixAtt, delayDecayAtt, delayRepeatsAtt, delayLowAtt, delayHighAtt;
+    KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayWobbleSlider, delayLowSlider, delayHighSlider;
+    std::unique_ptr<APVTS::SliderAttachment> delayMixAtt, delayDecayAtt, delayRepeatsAtt, delayWobbleAtt, delayLowAtt, delayHighAtt;
     juce::ComboBox delayTimeBox;
     std::unique_ptr<APVTS::ComboBoxAttachment> delayTimeAtt;
     juce::ToggleButton delayOnButton { "ON" };
