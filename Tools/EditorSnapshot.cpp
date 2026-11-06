@@ -171,7 +171,7 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 76 && p->getCurrentProgram() == 0,
+    check(p->getNumPrograms() == slotCount && slotCount == 80 && p->getCurrentProgram() == 0,
           "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack), starts on slot 1");
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
@@ -953,6 +953,30 @@ void testThemes(const File& outDir)
         }
         else
             check(false, "DOG5 is on the page");
+    }
+    {
+        // WIREFRAME: the panel outlines glow, brighter right on a beat (the editor's timer sets the pulse)
+        pedalstyle::setTheme(pedalstyle::findTheme("WIREFRAME"));
+        pedalstyle::setPulse(0.0f);
+        const auto dim = snapshot(*ed, 1.0f);
+        pedalstyle::setPulse(1.0f);
+        const auto lit = snapshot(*ed, 1.0f);
+        pedalstyle::setPulse(0.0f);
+        auto glow = [](const Image& img)
+        {
+            const auto edge = pedalstyle::theme.panelEdge;
+            int n = 0;
+            for (int yy = 0; yy < img.getHeight(); yy += 2)
+                for (int xx = 0; xx < img.getWidth(); xx += 2)
+                {
+                    const auto px = img.getPixelAt(xx, yy);
+                    n += std::abs(px.getRed() - edge.getRed()) < 60 && std::abs(px.getGreen() - edge.getGreen()) < 60
+                                 && std::abs(px.getBlue() - edge.getBlue()) < 60 ? 1 : 0;
+                }
+            return n;
+        };
+        const int dimGlow = glow(dim), litGlow = glow(lit);
+        check(litGlow > dimGlow + 200, "WIREFRAME: the outlines glow brighter on the beat (" + String(dimGlow) + " -> " + String(litGlow) + " edge pixels)");
     }
     ed->setThemeFromPage(0);
     check(pedalstyle::themeIndex() == 0 && uisettings::themeName() == "NIGHT", "and back to NIGHT");

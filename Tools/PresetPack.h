@@ -115,7 +115,8 @@ inline float P(int semitones) { return bitvibe::mapping::pitchStepKnob(semitones
 inline float pct(float fraction) { return 0.03f + 0.94f * fraction; } // a filter or rate step: this much of its knob
 constexpr float kSkip = 0.0f, kMute = 1.0f;
 // stutter types
-constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5;
+constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5, kFall = 6, kShuffle = 7,
+              kHalf = 8, kGate = 9;
 // filter types
 constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4, kBloom = 5;
 // delay times (kDelayDivisions)
@@ -740,6 +741,41 @@ inline const std::vector<Preset>& presets()
              b.stutter(0, 2, kScratch, 2);
              b.lane(Lane::Stutter, { 0, 0, 0, 0, 1, 0, 0, 0 });
              b.dist(1, 0.4f, 0.5f, 0.6f);
+         } },
+        { "Falling Down", [](Builder& b) {
+             // every pick tumbles a whole tone at a time, two octaves down a hall
+             b.set(ids::tempo, 110.0f);
+             b.sequence(6, 0, 1);
+             b.stutter(0, 8, kFall, 1);
+             b.reverb(kHall, 0.3f, 0.6f);
+         } },
+        { "Cut Up Kid", [](Builder& b) {
+             // a running line diced by the SHUFFLE: steps one and five throw the slice into a new order
+             b.set(ids::tempo, 118.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(3), P(7), P(3), P(12), P(7), P(3), P(10) });
+             b.stutter(1, 4, kShuffle, 2);
+             b.lane(Lane::Stutter, { 1, 0, 0, 0, 1, 0, 0, 0 });
+             b.lane(Lane::Crush, { 0.0f, 0.1f, 0.0f, 0.2f });
+             b.delay(k16th, 0.2f, 0.45f, 2);
+         } },
+        { "Molasses Tape", [](Builder& b) {
+             // HALF SPEED on the slow setting: every pick a quarter-speed sludge, the echoes wobbling behind it
+             b.set(ids::tempo, 80.0f);
+             b.sequence(6, 0, 1);
+             b.stutter(2, 4, kHalf, 0);
+             b.delay(kQuarter, 0.35f, 0.5f, 6);
+             b.set(ids::delayWobble, 0.5f);
+             b.reverb(kHall, 0.35f, 0.7f);
+         } },
+        { "Gate Crasher", [](Builder& b) {
+             // a quarter-note slice chopped by the GATE, sixteen slices long, with a little grit and a plate
+             b.set(ids::tempo, 124.0f);
+             b.sequence(6, 0, 1);
+             b.stutter(0, 16, kGate, 0);
+             b.dist(0, 0.3f, 0.5f, 0.7f);
+             b.reverb(kPlate, 0.2f, 0.45f);
          } },
     };
     return list;

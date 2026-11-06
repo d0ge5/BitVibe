@@ -4,6 +4,7 @@
 // Nothing here allocates after prepare(), so it is safe to call from the audio thread.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -296,6 +297,10 @@ private:
 //   TapeStop  the slice slows down to a stop, like a tape machine switched off; it takes that many slices to stop
 //   Scratch   the slice pushed back and forth like a record under a hand, one push and pull per slice
 //   Freeze    the end of the slice held as a steady cloud of tiny overlapping grains, for that many slices
+//   Fall      each repeat a whole tone lower than the one before (down to two octaves)
+//   Shuffle   the slice cut into eight pieces, played in a new order on every repeat
+//   Half      the slice an octave down, so each repeat takes twice as long
+//   Gate      the repeats chopped by a square gate, eight gates per slice
 enum class StutterKind
 {
     Repeat = 0,
@@ -303,9 +308,13 @@ enum class StutterKind
     Rise,
     TapeStop,
     Scratch,
-    Freeze
+    Freeze,
+    Fall,
+    Shuffle,
+    Half,
+    Gate
 };
-inline constexpr int kNumStutterKinds = 6;
+inline constexpr int kNumStutterKinds = 10;
 
 class StutterChannel
 {
@@ -349,7 +358,8 @@ public:
         kind = newKind;
         if (kind == StutterKind::Reverse)
             reversed = !reversed;
-        else if (kind != StutterKind::Repeat && kind != StutterKind::Rise)
+        else if (kind == StutterKind::TapeStop || kind == StutterKind::Scratch || kind == StutterKind::Freeze
+                 || kind == StutterKind::Shuffle)
             reversed = false;
         length = std::clamp(length, 32, capacity);
         preRoll = std::clamp(preRoll, 0, length / 4);
@@ -359,6 +369,8 @@ public:
         recPos = preRoll;
         snippetLen = length;
         speed = baseSpeed = speedRatio;
+        if (kind == StutterKind::Half) // an octave down, whatever the knob says
+            speed = 0.5f * baseSpeed;
         repeatsTotal = std::max(1, repeats);
         elapsed = 0;
         infinite = repeats < 0 || hold;
@@ -412,6 +424,8 @@ public:
                     passes = 0;
                     elapsed = 0;
                     grainPhase = 0.0f;
+                    if (kind == StutterKind::Shuffle)
+                        reshuffle();
                 }
                 break;
 
@@ -421,9 +435,13 @@ public:
                     case StutterKind::TapeStop: out = tapeStopSample(); break;
                     case StutterKind::Scratch: out = scratchSample(); break;
                     case StutterKind::Freeze: out = freezeSample(); break;
+                    case StutterKind::Shuffle: out = shuffleSample(); break;
+                    case StutterKind::Gate: out = gateSample(); break;
                     case StutterKind::Repeat:
                     case StutterKind::Reverse:
-                    case StutterKind::Rise: out = playbackSample(); break;
+                    case StutterKind::Rise:
+                    case StutterKind::Fall:
+                    case StutterKind::Half: out = playbackSample(); break;
                 }
                 break;
         }
@@ -526,6 +544,68 @@ private:
         return s;
     }
 
+    // A new order for the eight pieces, from the pass count alone, so the two channels of a stereo
+    // pair always shuffle the same way.
+    void reshuffle()
+    {
+        uint32_t r = (uint32_t) passes * 2654435761u + (uint32_t) snippetLen * 19349663u + 12345u;
+        auto next = [&r]
+        {
+            r ^= r << 13;
+            r ^= r >> 17;
+            r ^= r << 5;
+            return r;
+        };
+        for (int i = 0; i < 8; ++i)
+            shuffleOrder[(size_t) i] = i;
+        for (int i = 7; i > 0; --i)
+            std::swap(shuffleOrder[(size_t) i], shuffleOrder[(size_t) (next() % (uint32_t) (i + 1))]);
+    }
+
+    float shuffleSample()
+    {
+        // the slice in eight pieces, played in some other order, reshuffled on every pass
+        const float chunk = (float) snippetLen / 8.0f;
+        const int piece = std::min(7, (int) (pos / chunk));
+        const float offset = pos - (float) piece * chunk;
+        const float at = (float) shuffleOrder[(size_t) piece] * chunk + offset;
+        float s = readAt(std::min(at, (float) (snippetLen - 1)));
+        const float edge = std::min(offset, chunk - offset); // each piece fades at its edges, so the cuts do not click
+        s *= std::clamp(edge / (float) fadeLen, 0.0f, 1.0f);
+        pos += speed;
+        if (pos >= (float) snippetLen)
+        {
+            ++passes;
+            if (!infinite && passes >= repeatsTotal)
+            {
+                state = State::Idle;
+            }
+            else
+            {
+                pos -= (float) snippetLen;
+                pos = std::clamp(pos, 0.0f, (float) (snippetLen - 1));
+                reshuffle();
+            }
+        }
+        return s;
+    }
+
+    float gateSample()
+    {
+        // eight gates per slice, each three fifths open, with short ramps so they do not click
+        const float cycle = (float) snippetLen / 8.0f;
+        float phase = pos / cycle;
+        phase -= std::floor(phase);
+        constexpr float kOpen = 0.6f;
+        float gate = 0.0f;
+        if (phase < kOpen)
+        {
+            const float into = phase * cycle, left = (kOpen - phase) * cycle;
+            gate = std::clamp(std::min(into, left) / (float) fadeLen, 0.0f, 1.0f);
+        }
+        return playbackSample() * gate;
+    }
+
     float playbackSample()
     {
         float s = readAt(pos);
@@ -546,6 +626,8 @@ private:
             {
                 if (kind == StutterKind::Rise) // each repeat a whole tone higher, up to two octaves
                     speed = std::min(speed * kRiseStep, baseSpeed * kRiseMost);
+                else if (kind == StutterKind::Fall) // or lower, down to two octaves
+                    speed = std::max(speed / kRiseStep, baseSpeed / kRiseMost);
                 pos = reverse ? pos + (float) snippetLen : pos - (float) snippetLen;
                 pos = std::clamp(pos, 0.0f, (float) (snippetLen - 1));
             }
@@ -558,6 +640,7 @@ private:
     int snippetLen = 0, recPos = 0, passes = 0, repeatsTotal = 1;
     int fadeLen = 48, xfadeLen = 144, xfadeLeft = 0, grainMax = 2880;
     float pos = 0.0f, speed = 1.0f, baseSpeed = 1.0f, xfadeFrom = 0.0f, lastOut = 0.0f, grainPhase = 0.0f;
+    std::array<int, 8> shuffleOrder { 0, 1, 2, 3, 4, 5, 6, 7 };
     std::int64_t elapsed = 0;
     StutterKind kind = StutterKind::Repeat;
     bool reverse = false, infinite = false, heldByUser = false;

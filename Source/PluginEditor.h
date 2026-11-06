@@ -39,6 +39,7 @@ struct Theme
     juce::Colour gridLine { 0xff222226 }, gridMajor { 0xff3a3a40 };
     juce::Colour screen { 0xff19ff3a }, screenEdge { 0xff1f3a26 }; // DOG5's screen
     std::array<juce::Colour, 3> steps { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) }; // pitch, filter, rate
+    bool wireframe = false; // the panels as glowing outlines whose edges breathe with the beat (see panelFrame)
 };
 
 // The themes in the VIEW menu, the first one being the default.
@@ -47,6 +48,7 @@ namespace detail
 {
 inline Theme shown;
 inline int shownIndex = 0, serial = 0;
+inline float pulse = 0.0f; // 1 right on a beat, fading towards the next (only read by a wireframe theme)
 } // namespace detail
 // The theme every editor paints in. It is one for the whole computer (kept with the window settings), so changing it
 // changes every open window: an editor checks serial (which goes up with each change) and repaints.
@@ -55,6 +57,34 @@ void setTheme(int index); // wraps around, so themeIndex() + 1 is always the nex
 inline int themeIndex() { return detail::shownIndex; }
 int findTheme(const juce::String& name); // its index, or 0 (the default) for a name that is not a theme
 inline int themeSerial() { return detail::serial; }
+
+// The glow level of a wireframe theme's edges: the editor's timer sets it from the engine's beat clock
+// (1 on the beat, fading), so every panel's outline keeps time with the sequencer.
+inline void setPulse(float level) { detail::pulse = juce::jlimit(0.0f, 1.0f, level); }
+inline float pulse() { return detail::pulse; }
+
+// A panel's card: its fill and its edge. A wireframe theme draws the edge as a glowing outline, haloed
+// rings fading outwards, brighter on each beat; the other themes draw the plain hairline they always had.
+inline void panelFrame(juce::Graphics& g, juce::Rectangle<float> r, float corner = 10.0f)
+{
+    g.setColour(detail::shown.panel);
+    g.fillRoundedRectangle(r, corner);
+    if (detail::shown.wireframe)
+    {
+        for (int ring = 3; ring >= 1; --ring)
+        {
+            g.setColour(detail::shown.panelEdge.withAlpha((0.07f + 0.17f * detail::pulse) / (float) ring));
+            g.drawRoundedRectangle(r.expanded(1.1f * (float) ring), corner + (float) ring, 2.2f);
+        }
+        g.setColour(detail::shown.panelEdge.withAlpha(0.7f + 0.3f * detail::pulse));
+        g.drawRoundedRectangle(r.reduced(0.5f), corner, 1.2f);
+    }
+    else
+    {
+        g.setColour(detail::shown.panelEdge);
+        g.drawRoundedRectangle(r.reduced(0.5f), corner, 1.0f);
+    }
+}
 
 inline const juce::Colour& ink = detail::shown.ink;
 inline const juce::Colour& inkDim = detail::shown.inkDim;

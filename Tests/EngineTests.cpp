@@ -684,6 +684,35 @@ void testStutterKinds()
     CHECK(maxJump(freeze.out, recordEnd, recordEnd + repeats * len) < 0.15f, "without clicks (%g)",
           (double) maxJump(freeze.out, recordEnd, recordEnd + repeats * len));
 
+    const Run fall = run(StutterKind::Fall);
+    const float fallLast = fall.speed[(size_t) (1000 + fall.activeFor - 2)];
+    CHECK(std::abs(fallLast - std::pow(1.0f / StutterChannel::kRiseStep, 3.0f)) < 1.0e-3f && fall.activeFor > repeat.activeFor + len / 2,
+          "FALL: each repeat a tone lower (the fourth at %gx), so it lasts longer", (double) fallLast);
+
+    const Run shuffle = run(StutterKind::Shuffle);
+    const double shufRms = sliceRms(shuffle.out, recordEnd, recordEnd + repeats * len);
+    const double repRms = sliceRms(repeat.out, recordEnd, recordEnd + repeats * len);
+    float moved = 0.0f;
+    for (int k = 200; k < repeats * len - 200; ++k)
+        moved = std::max(moved, std::abs(shuffle.out[(size_t) (recordEnd + k)] - repeat.out[(size_t) (recordEnd + k)]));
+    CHECK(std::abs(shuffle.activeFor - repeat.activeFor) < 8 && std::abs(shufRms / repRms - 1.0) < 0.3 && moved > 0.1f,
+          "SHUFFLE: the same slice, as loud, in another order (rms %g vs %g, moved %g)", shufRms, repRms, (double) moved);
+    CHECK(maxJump(shuffle.out, recordEnd, recordEnd + repeats * len) < 0.2f, "without clicks (%g)",
+          (double) maxJump(shuffle.out, recordEnd, recordEnd + repeats * len));
+
+    const Run half = run(StutterKind::Half);
+    CHECK(std::abs(half.speed[(size_t) (recordEnd + 10)] - 0.5f) < 1.0e-3f && std::abs(half.activeFor - (len + 2 * repeats * len)) < 8,
+          "HALF plays an octave down, so the repeats take twice as long (%d samples)", half.activeFor);
+
+    const Run gate = run(StutterKind::Gate);
+    int gateQuiet = 0;
+    for (int n = recordEnd; n < recordEnd + repeats * len; ++n)
+        gateQuiet += std::abs(gate.out[(size_t) n]) < 1.0e-4f ? 1 : 0;
+    CHECK(std::abs(gate.activeFor - repeat.activeFor) < 8 && gateQuiet > repeats * len / 4,
+          "GATE chops the repeats (%d of %d samples silent)", gateQuiet, repeats * len);
+    CHECK(maxJump(gate.out, recordEnd, recordEnd + repeats * len) < 0.2f, "without clicks (%g)",
+          (double) maxJump(gate.out, recordEnd, recordEnd + repeats * len));
+
     for (const Run* r : { &stop, &scratch, &freeze })
         CHECK(maxJump(r->out, 1000 + r->activeFor - 50, 1000 + r->activeFor + 400) < 0.2f, "and back to the live sound smoothly");
 

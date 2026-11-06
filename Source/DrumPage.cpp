@@ -28,10 +28,7 @@ const char* shortActionName(DrumAction a)
 
 void drawPanel(Graphics& g, Rectangle<int> r, const String& caption)
 {
-    g.setColour(panel);
-    g.fillRoundedRectangle(r.toFloat(), 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, r.toFloat());
     g.setColour(inkDim);
     g.setFont(bold(10.0f));
     g.drawText(caption, r.getX() + 14, r.getY() + 4, 200, 12, Justification::left);

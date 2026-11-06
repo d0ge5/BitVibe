@@ -354,10 +354,7 @@ void TremoloPanel::resized()
 void TremoloPanel::paint(Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
-    g.setColour(panel);
-    g.fillRoundedRectangle(bounds, 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, bounds);
     drawPanelTitle(g, kPanelTitleX, 4, 4, "TREMOLO");
     const bool on = proc.apvts.getRawParameterValue(ids::tremOn)->load() > 0.5f;
     const float alpha = on ? 1.0f : kOffTextAlpha;

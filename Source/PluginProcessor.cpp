@@ -117,7 +117,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                   .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     // what the stutter does with its slice (StutterKind; stored in the preset slots)
     add(std::make_unique<AudioParameterChoice>(id(ids::stutterType), "Stutter Type",
-                                               StringArray { "Repeat", "Reverse", "Rise", "Tape Stop", "Scratch", "Freeze" }, 0));
+                                               StringArray { "Repeat", "Reverse", "Rise", "Tape Stop", "Scratch", "Freeze",
+                                                             "Fall", "Shuffle", "Half Speed", "Gate" }, 0));
     {
         static const char* laneTitles[kNumLanes] { "Crush", "Level", "Tremolo", "Delay Send", "Reverb Send", "Stutter" };
         for (int l = 0; l < kNumLanes; ++l)
@@ -267,9 +268,12 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                       .withLabel("Hz")
                                                       .withStringFromValueFunction([](float v, int)
                                                                                    {
-                                                                                       if (v >= 1000.0f)
-                                                                                           return String(v / 1000.0f, 2) + " kHz";
-                                                                                       return String(v, v < 10.0f ? 2 : (v < 100.0f ? 1 : 0)) + " Hz";
+                                                                                       String text = v >= 1000.0f
+                                                                                                         ? String(v / 1000.0f, 2) + " kHz"
+                                                                                                         : String(v, v < 10.0f ? 2 : (v < 100.0f ? 1 : 0)) + " Hz";
+                                                                                       if (const String note = noteNameForHz(v); note.isNotEmpty())
+                                                                                           text += " (" + note + ")";
+                                                                                       return text;
                                                                                    })
                                                       .withValueFromStringFunction([](const String& t)
                                                                                    {

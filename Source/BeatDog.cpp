@@ -698,10 +698,7 @@ void BeatDog::paint(Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
     g.fillAll(theme.background); // what is behind the rounded corners
-    g.setColour(panel);
-    g.fillRoundedRectangle(bounds, 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, bounds);
     drawSectionTitle(g, 14, 4, "DOG5");
 
     // the screen: the live frame, or the pre-rendered frame for this moment, swayed as a picture

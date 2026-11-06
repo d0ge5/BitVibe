@@ -133,6 +133,21 @@ inline const char* laneName(int lane)
 inline juce::String lane(int laneIndex, int index) { return "lane" + juce::String(laneName(laneIndex)) + juce::String(index + 1); }
 } // namespace ids
 
+// The nearest note to a frequency ("A4", "E5 +23c"; empty below A0), for tuning the ring mod to the song.
+inline juce::String noteNameForHz(float hz)
+{
+    if (!(hz >= 27.0f))
+        return {};
+    static const char* names[12] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    const float midi = 69.0f + 12.0f * std::log2(hz / 440.0f);
+    const int nearest = (int) std::lround(midi);
+    const int cents = (int) std::lround((midi - (float) nearest) * 100.0f);
+    juce::String s = juce::String(names[((nearest % 12) + 12) % 12]) + juce::String(nearest / 12 - 1);
+    if (cents != 0)
+        s += (cents > 0 ? " +" : " ") + juce::String(cents) + "c";
+    return s;
+}
+
 class BitVibeProcessor : public juce::AudioProcessor
 {
 public:

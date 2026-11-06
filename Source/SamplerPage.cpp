@@ -13,10 +13,7 @@ constexpr double kMaxSoundSeconds = 20.0; // the sample blend uses at most this 
 
 void drawBox(Graphics& g, Rectangle<int> r, int number, const String& title)
 {
-    g.setColour(panel);
-    g.fillRoundedRectangle(r.toFloat(), 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, r.toFloat());
     drawPanelTitle(g, r.getX() + 12, r.getY() + 5, number, title);
 }
 } // namespace

@@ -36,8 +36,9 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
 - **Filter** with six types and a **RESONANCE** knob: the ladder-style low-pass (96 Hz to 24 kHz), a cleaner
   two-pole low-pass, a band-pass and a high-pass (96 Hz to 8 kHz), an **envelope** type that opens with each pick,
   and a **res bloom** type where each pick pushes the resonance up instead.
-- **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random), a hold to freeze it, and six **stutter
-  types**: repeat, reverse, rise (each repeat a tone higher), tape stop, scratch and freeze.
+- **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random), a hold to freeze it, and ten **stutter
+  types**: repeat, reverse, rise and fall (each repeat a tone higher or lower), tape stop, scratch, freeze, shuffle
+  (the slice rearranged on every repeat), half speed and gate.
 - **Step sequencer of up to 16 steps** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole
   sequence or for each step on its own. Each step can be skipped or muted, and has **lanes** for what else it does while
   it plays: crush the bits further, set its level, its share of the tremolo, the delay and the reverb, or fire the
@@ -46,7 +47,7 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   **SWING** delays every second step, from straight up to a triplet shuffle, and **PING** rings the filter with a
   click at every step, a drum synth that needs no input; both are saved with the preset.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **one bank of 76 preset slots** with editable names,
+- **Expression morph** between two stored sets of knobs, and **one bank of 80 preset slots** with editable names,
   grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
@@ -71,7 +72,9 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **SIMPLE or ADVANCED** view, so you only see what you need, and the effects as **tabs**, one panel at a time, so the
   whole window fits a laptop screen.
-- **Six themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST.
+- **Seven themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS, CONTRAST, and
+  **WIREFRAME**, the page as glowing outlines (like DOG5) whose edges pulse with the beat, so you can see the
+  rhythm as well as hear it.
 - **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z, Cmd on a Mac), **Shift-drag** for fine settings, and an **output meter**
   with a clip light.
 
@@ -139,8 +142,11 @@ others do something once.
 - **SYNTHWAVE**: deep purple, with hot pink lights and a cyan DOG5 (the one it starts in).
 - **SURPLUS**: olive drab, with amber lights and an amber DOG5 screen.
 - **CONTRAST**: black and white, with yellow lights and strong outlines, the easiest to read.
+- **WIREFRAME**: the page as glowing cyan outlines on black, like DOG5 itself. Every panel's edge pulses with the
+  beat, bright on each beat and fading towards the next, quieter while nothing plays, so you can see the rhythm
+  the sequencer is on as well as hear it.
 
-Only the colours change. Every open BitVibe window follows, and the choice is remembered. Every theme is checked for
+Only the look changes, never the sound. Every open BitVibe window follows, and the choice is remembered. Every theme is checked for
 contrast, so its text and lights stay easy to read.
 
 <p align="center"><img src="artifacts/themes.png" width="720" alt="The six themes: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS and CONTRAST"></p>
@@ -220,8 +226,11 @@ a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row wit
   count: **REPEAT** plays the slice that many times (as before), **REVERSE** plays it backwards, **RISE** plays each
   repeat a whole tone higher than the last (up to two octaves), **TAPE STOP** slows it down to a stop like a tape
   machine switched off (taking that many slices to stop), **SCRATCH** pushes it back and forth like a record under a
-  hand (one push and pull per slice), and **FREEZE** holds the end of it as a steady cloud of tiny overlapping grains
-  for that many slices. With HOLD each of them goes on until you let go. The knob's read-out names the type,
+  hand (one push and pull per slice), **FREEZE** holds the end of it as a steady cloud of tiny overlapping grains
+  for that many slices, **FALL** plays each repeat a whole tone lower (down to two octaves), **SHUFFLE** cuts the
+  slice into eight pieces and plays them in a new order on every repeat, **HALF SPEED** plays it an octave down
+  (each repeat twice as long), and **GATE** chops the repeats with a square gate, eight gates per slice. With HOLD
+  each of them goes on until you let go. The knob's read-out names the type,
   it is saved with the preset, and in SIMPLE a type other than REPEAT is listed under "Also on".
 - **FILTER TYPE** is what the FILTER knob is the cutoff of. **LADDER** is the pedal's own four-pole low-pass
   (24 dB/oct). **LOW PASS** is a two-pole one (12 dB/oct): cleaner and more like a synth. **BAND PASS** leaves only
@@ -365,8 +374,8 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **one bank of 76 preset slots** (they also appear as programs in your DAW). `<` and `>`
-  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 76 are the preset
+- The bar at the top holds **one bank of 80 preset slots** (they also appear as programs in your DAW). `<` and `>`
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 80 are the preset
   pack. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
@@ -375,15 +384,15 @@ Only record what you have the right to use.
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
   rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 76 in order
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 80 in order
   and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** fifty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble, the filter types, swing, the ping and the ring mod, in slots 21 to 76 (your picked sounds stay as they are). Save over
+- **Preset pack:** sixty sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
+  the delay's tape wobble, the filter types, swing, the ping and the ring mod, in slots 21 to 80 (your picked sounds stay as they are). Save over
   one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 

@@ -279,10 +279,7 @@ void PatternPanel::paint(Graphics& g)
         layoutGrid();
 
     const auto bounds = getLocalBounds();
-    g.setColour(panel);
-    g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, bounds.toFloat());
     drawSectionTitle(g, kPanelTitleX, 3, "BEAT PATTERN");
 
     const auto& ts = timeSignature(pattern.signature);

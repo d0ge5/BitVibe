@@ -492,10 +492,7 @@ void SamplePanel::showChooser()
 void SamplePanel::paint(Graphics& g)
 {
     const auto bounds = getLocalBounds();
-    g.setColour(panel);
-    g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, bounds.toFloat());
     drawPanelTitle(g, kPanelTitleX, 4, 1, "SAMPLE BLEND");
     const float alpha = rawValue(ids::sampleOn) > 0.5f ? 1.0f : kOffTextAlpha;
 

@@ -424,10 +424,7 @@ float EqPanel::yForLevel(float dbfs) const
 void EqPanel::paint(Graphics& g)
 {
     const auto bounds = getLocalBounds();
-    g.setColour(panel);
-    g.fillRoundedRectangle(bounds.toFloat(), 10.0f);
-    g.setColour(panelEdge);
-    g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 10.0f, 1.0f);
+    panelFrame(g, bounds.toFloat());
     if (referenceTools)
         drawPanelTitle(g, kPanelTitleX, 4, 7, "EQ");
     else

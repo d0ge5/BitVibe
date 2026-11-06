@@ -288,6 +288,50 @@ std::vector<pedalstyle::Theme> makeThemes()
         t.steps = { Colour(0xff6cc0ff), Colour(0xff5cff8a), Colour(0xffe2a8ff) };
         all.push_back(t);
     }
+    {
+        // WIREFRAME: glowing cyan outlines on black, like DOG5 itself; the edges breathe with the beat
+        Theme t;
+        t.name = "WIREFRAME";
+        t.wireframe = true;
+        t.ink = t.pointer = Colour(0xffdbfbff);
+        t.inkDim = Colour(0xff6fa9b6);
+        t.inkLabel = Colour(0xffa9e2ec);
+        setAccent(t, Colour(0xffff4df0));
+        t.onAccent = Colour(0xff0a0212);
+        t.red = Colour(0xffff5257);
+        t.background = Colour(0xff020608);
+        t.faceTop = Colour(0xff06141c);
+        t.faceBottom = Colour(0xff010507);
+        t.flake = Colour(0xff103440);
+        t.rim = Colour(0xff145b6b);
+        t.panel = Colour(0xff030a0e);
+        t.panelEdge = Colour(0xff35e0ff);
+        t.well = Colour(0xff010b10);
+        t.outline = Colour(0xff11606f);
+        t.mid = Colour(0xff57d4e8);
+        t.unlit = Colour(0xff0a3540);
+        t.buttonTop = Colour(0xff07222c);
+        t.buttonBottom = Colour(0xff03121a);
+        t.buttonPressed = Colour(0xff0a2e3c);
+        t.buttonEdge = Colour(0xff1f8ba0);
+        t.popup = Colour(0xff031018);
+        t.tooltip = Colour(0xff04202a);
+        t.tooltipEdge = Colour(0xff35e0ff);
+        t.knobLight = Colour(0xff10404e);
+        t.knobDark = Colour(0xff010a0e);
+        t.capTop = Colour(0xff07222c);
+        t.capBottom = Colour(0xff03141b);
+        t.cell = Colour(0xff04161e);
+        t.cellStrong = Colour(0xff07242e);
+        t.cellPlaying = Colour(0xff136b80);
+        t.cellEdge = Colour(0xff0f6d80);
+        t.gridLine = Colour(0xff06222b);
+        t.gridMajor = Colour(0xff11505f);
+        t.screen = Colour(0xff35e0ff);
+        t.screenEdge = Colour(0xff0d3540);
+        t.steps = { Colour(0xff58f0ff), Colour(0xff8dff6e), Colour(0xffff7ae0) };
+        all.push_back(t);
+    }
     return all;
 }
 } // namespace
@@ -670,7 +714,7 @@ int EffectTabs::tabAt(float x) const { return jlimit(0, count - 1, (int) std::fl
 
 void EffectTabs::paint(Graphics& g)
 {
-    static const char* names[kCount] { "SAMPLES", "DIST", "RING", "TREMOLO", "DELAY", "REVERB", "EQ" };
+    static const char* names[kCount] { "SAMPLES", "DIST", "RING", "TREM", "DELAY", "REVERB", "EQ" };
     for (int i = 0; i < count; ++i)
     {
         const auto r = tabBounds(i);
@@ -684,8 +728,8 @@ void EffectTabs::paint(Graphics& g)
         g.setColour(lit[(size_t) i] ? (glowing ? kAccent : kAccent.withAlpha(0.55f)) : kTheme.unlit);
         g.fillEllipse(light);
         g.setColour(isChosen ? kInk : pedalstyle::inkLabel);
-        g.setFont(bold(10.5f));
-        g.drawFittedText(String(i + 1) + "  " + names[i], r.withTrimmedLeft(19.0f).toNearestInt(), Justification::centredLeft, 1, 0.8f);
+        g.setFont(bold(10.0f));
+        g.drawFittedText(String(i + 1) + " " + names[i], r.withTrimmedLeft(17.0f).toNearestInt(), Justification::centredLeft, 1, 0.7f);
     }
 }
 
@@ -2052,7 +2096,8 @@ String BitVibeEditor::readoutText(int i) const
             const String speed = m.speed > 1.5f ? ", FAST" : (m.speed < 0.75f ? ", SLOW" : "");
             if (type != 0)
             {
-                static const char* typeNames[kNumStutterKinds] { "REPEAT", "REVERSE", "RISE", "TAPE STOP", "SCRATCH", "FREEZE" };
+                static const char* typeNames[kNumStutterKinds] { "REPEAT", "REVERSE", "RISE", "TAPE STOP", "SCRATCH", "FREEZE",
+                                                                 "FALL", "SHUFFLE", "HALF SPEED", "GATE" };
                 return String(typeNames[type]) + " x" + String(m.repeats) + speed;
             }
             return String(m.repeats) + (m.repeats == 1 ? " REPEAT" : " REPEATS") + speed;
@@ -2158,8 +2203,9 @@ void BitVibeEditor::setTooltips()
                           "switch does the same for as long as you hold it.");
     headroomBox.setTooltip("HEADROOM: Instrument for guitar level, Line for hotter signals such as synths. Set it first, then INPUT and TRIGGER.");
     stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
-    stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE (backwards), RISE (each repeat a tone "
-                              "higher), TAPE STOP (slows to a stop), SCRATCH (back and forth), FREEZE (holds it as a cloud).");
+    stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE, RISE (a tone higher each repeat), "
+                              "FALL (lower), TAPE STOP, SCRATCH (back and forth), FREEZE (a grain cloud), SHUFFLE (pieces "
+                              "reordered), HALF SPEED (an octave down), GATE (chopped).");
     filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own low-pass), LOW PASS (cleaner, 12 dB/oct), BAND PASS (around the "
                              "cutoff), HIGH PASS (above it), ENVELOPE (each pick opens the cutoff: an auto-wah), RES BLOOM (each pick "
                              "pushes RESONANCE instead).");
@@ -2326,10 +2372,7 @@ void BitVibeEditor::buildBackground()
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
     const auto header = kHeader.withHeight(advancedRight ? kHeader.getHeight() : 56).toFloat();
-    g.setColour(kTheme.panel);
-    g.fillRoundedRectangle(header, 10.0f);
-    g.setColour(kTheme.panelEdge);
-    g.drawRoundedRectangle(header.reduced(0.5f), 10.0f, 1.0f);
+    pedalstyle::panelFrame(g, header);
     g.setColour(kTheme.well);
     g.fillRoundedRectangle(kNameBox.toFloat(), 4.0f);
     g.setColour(kTheme.outline);
@@ -2588,10 +2631,7 @@ void BitVibeEditor::paintContent(Graphics& g)
         Graphics::ScopedSaveState inOutState(g);
         g.addTransform(AffineTransform::translation((float) kSideX, 0.0f)); // the in / out panel sits in the right-hand column
         const Rectangle<float> panelArea(12.0f, (float) gy, 456.0f, (float) globalHeight());
-        g.setColour(pedalstyle::panel);
-        g.fillRoundedRectangle(panelArea, 10.0f);
-        g.setColour(pedalstyle::panelEdge);
-        g.drawRoundedRectangle(panelArea.reduced(0.5f), 10.0f, 1.0f);
+        pedalstyle::panelFrame(g, panelArea);
         g.drawVerticalLine(240, (float) gy + 10.0f, (float) gy + 136.0f);
         pedalstyle::drawSectionTitle(g, 26, gy + 6, "IN");
         pedalstyle::drawSectionTitle(g, 252, gy + 6, "OUT");
@@ -2674,6 +2714,11 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         const bool sequenceOff = roundToInt(rawValue(ids::seqPlay)) == 0;
         const bool stutterOff = bitvibe::mapping::stutterMode(roundToInt(rawValue(ids::stutter))).off;
+        const auto shownType = (bitvibe::FilterType) roundToInt(rawValue(ids::filterType));
+        const bool filterIdle = bitvibe::mapping::filterHzFor(shownType, rawValue(ids::filter))
+                                >= bitvibe::mapping::filterOffAboveHz(shownType);
+        // RES BLOOM raises the resonance by itself on each pick, so a low knob is fine there
+        const bool resLow = shownType != bitvibe::FilterType::Bloom && rawValue(ids::filterRes) < 0.35f;
         if (sequenceOff && stutterOff)
         {
             g.setColour(kAccent);
@@ -2682,16 +2727,23 @@ void BitVibeEditor::paintContent(Graphics& g)
                              "Turn up the SEQUENCER or STUTTER knob on the pedal.", Rectangle<int>(kSideX + 8, columnBottom() + 10, 440, 30),
                              Justification::topLeft, 2);
         }
+        else if (rawValue(ids::pingOn) > 0.5f && (filterIdle || resLow))
+        {
+            g.setColour(kAccent);
+            g.setFont(plain(10.5f));
+            g.drawFittedText(filterIdle ? String("PING is on, but with FILTER fully open each step is only a click. Turn FILTER down "
+                                                 "and RESONANCE up, and every step rings at the cutoff.")
+                                        : String("PING is on, but RESONANCE is low, so the steps thud rather than ring. Turn "
+                                                 "RESONANCE up (say 80%) and each step becomes a note."),
+                             Rectangle<int>(kSideX + 8, columnBottom() + 10, 440, 30), Justification::topLeft, 2);
+        }
     }
 
     // The distortion, delay and reverb panels are drawn by the editor (the other effects draw themselves): the one showing.
     const auto dist = distArea(), ring = ringArea(), delay = delayArea(), reverb = reverbArea();
     if (effectTab == kTabDist || effectTab == kTabDelay || effectTab == kTabReverb)
     {
-        g.setColour(pedalstyle::panel);
-        g.fillRoundedRectangle(dist.toFloat(), 10.0f);
-        g.setColour(pedalstyle::panelEdge);
-        g.drawRoundedRectangle(dist.toFloat().reduced(0.5f), 10.0f, 1.0f);
+        pedalstyle::panelFrame(g, dist.toFloat());
     }
     const float distAlpha = rawValue(ids::distOn) > 0.5f ? 1.0f : kOffAlpha;
     const float reverbAlpha = rawValue(ids::reverbOn) > 0.5f ? 1.0f : kOffAlpha;
@@ -2720,8 +2772,11 @@ void BitVibeEditor::paintContent(Graphics& g)
         const float ringAlpha = rawValue(ids::ringOn) > 0.5f ? 1.0f : kOffAlpha;
         drawPanelTitle(g, kSideX + kPanelTitleX, ring.getY() + 4, 3, "RING MOD");
         const float ringHzNow = rawValue(ids::ringHz);
+        String ringFreqText = ringHzNow < 100.0f ? String(ringHzNow, ringHzNow < 10.0f ? 2 : 1) + " Hz" : hzText(ringHzNow);
+        if (const String note = noteNameForHz(ringHzNow); note.isNotEmpty())
+            ringFreqText += "  " + note;
         const std::array<Entry, 2> ringEntries {{
-            { "FREQUENCY", ringHzNow < 100.0f ? String(ringHzNow, ringHzNow < 10.0f ? 2 : 1) + " Hz" : hzText(ringHzNow) },
+            { "FREQUENCY", ringFreqText },
             { "MIX", String(roundToInt(rawValue(ids::ringMix) * 100.0f)) + "%" },
         }};
         for (size_t i = 0; i < ringEntries.size(); ++i)
@@ -2841,6 +2896,18 @@ void BitVibeEditor::timerCallback()
 {
     if (pedalstyle::themeSerial() != shownThemeSerial) // another window changed the theme
         applyTheme();
+
+    if (pedalstyle::theme.wireframe)
+    {
+        // the glow of every panel's outline: bright on each beat, fading towards the next, quieter while
+        // nothing plays, so the page itself keeps time with the sequencer
+        const auto& engine = proc.getEngine();
+        float level = std::pow(1.0f - engine.getBeatPhase(), 3.0f);
+        if (!engine.isEffectSideActive())
+            level *= 0.35f;
+        pedalstyle::setPulse(level);
+        content.repaint();
+    }
 
     // Holding the tap switch freezes the stutter buffer (manual, section 4).
     if (tapDown && !holdFromTap && Time::getMillisecondCounterHiRes() - tapPressMs > 300.0)
