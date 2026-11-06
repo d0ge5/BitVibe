@@ -317,13 +317,13 @@ int main(int argc, char** argv)
             return d;
         };
 
-        check(plugin->getNumPrograms() == 68, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack)");
+        check(plugin->getNumPrograms() == 76, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack)");
         StringArray names;
         for (int i = 0; i < plugin->getNumPrograms(); ++i)
             names.add(plugin->getProgramName(i));
         StringArray unique(names);
         unique.removeDuplicates(false);
-        check(names.size() == 68 && unique.size() == 68 && !names.contains(""), "preset names are set and unique");
+        check(names.size() == 76 && unique.size() == 76 && !names.contains(""), "preset names are set and unique");
         check(names[0] == "Pitch Sequence", "slot 1 is '" + names[0] + "'");
         std::printf("    presets: %s\n", names.joinIntoString(" | ").toRawUTF8());
         check(plugin->getCurrentProgram() == 0, "starts on slot 1");

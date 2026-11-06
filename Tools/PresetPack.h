@@ -640,6 +640,107 @@ inline const std::vector<Preset>& presets()
              b.set(ids::filter, 0.5f);
              b.reverb(kSpring, 0.3f, 0.5f);
          } },
+        { "Robot Voice", [](Builder& b) {
+             // a 32 Hz ring mod, fully wet, on whatever you play: the classic metal voice, dropping an octave to close
+             b.set(ids::tempo, 110.0f);
+             b.sequence(4, 3, 1);
+             b.steps({ P(0), P(0), P(-5), P(-12) });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 32.0f);
+             b.set(ids::ringMix, 1.0f);
+             b.reverb(kRoom, 0.15f, 0.35f);
+         } },
+        { "Bell Tower", [](Builder& b) {
+             // slow octaves rung at 1.3 kHz into a shimmer: church bells from single notes
+             b.set(ids::tempo, 70.0f);
+             b.sequence(4, 5, 0);
+             b.freeRunning();
+             b.steps({ P(0), P(5), P(7), P(12) });
+             b.lane(Lane::Level, { 1.0f, 0.8f, 0.85f, 0.9f });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 1318.0f);
+             b.set(ids::ringMix, 0.85f);
+             b.reverb(kShimmer, 0.45f, 0.8f);
+         } },
+        { "Ring Shuffle", [](Builder& b) {
+             // a swung funk line with a 220 Hz ring blended halfway in and a touch of drive
+             b.set(ids::tempo, 116.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::swing, 1.0f);
+             b.steps({ P(0), P(12), P(0), P(7), P(3), P(12), P(5), P(10) });
+             b.lane(Lane::Level, { 1.0f, 0.7f });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 220.0f);
+             b.set(ids::ringMix, 0.55f);
+             b.dist(0, 0.35f, 0.5f, 0.7f);
+             b.delay(k16th, 0.2f, 0.45f, 2);
+         } },
+        { "Tin Can Kit", [](Builder& b) {
+             // a swung sixteenth-note drum kit from the PING alone: low pings as kicks, high ones as hats
+             b.set(ids::tempo, 108.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.on(ids::pingOn);
+             b.set(ids::pingLevel, 0.85f);
+             b.set(ids::swing, 0.5f);
+             b.set(ids::filterRes, 0.9f);
+             b.set(ids::filter, 0.3f);
+             b.steps({ pct(0.05f), pct(0.9f), pct(0.45f), pct(0.9f), pct(0.05f), pct(0.9f), pct(0.45f), pct(0.95f),
+                       pct(0.05f), pct(0.85f), pct(0.45f), pct(0.9f), pct(0.1f), pct(0.9f), pct(0.5f), pct(0.95f) });
+             b.lane(Lane::Level, { 1.0f, 0.6f, 0.85f, 0.6f });
+             b.reverb(kRoom, 0.12f, 0.3f);
+         } },
+        { "Ping Pong", [](Builder& b) {
+             // two pings a bar, their dotted-eighth echoes bouncing between the beats
+             b.set(ids::tempo, 120.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(4, 5, 1);
+             b.freeRunning();
+             b.on(ids::pingOn);
+             b.set(ids::pingLevel, 0.8f);
+             b.set(ids::filterRes, 0.95f);
+             b.set(ids::filter, 0.28f);
+             b.steps({ pct(0.2f), kMute, pct(0.55f), kMute });
+             b.delay(k8thDotted, 0.45f, 0.6f, 6);
+         } },
+        { "Bloom Swells", [](Builder& b) {
+             // RES BLOOM under a slowing tremolo and a hall: every pick swells open, then settles
+             b.set(ids::tempo, 90.0f);
+             b.sequence(4, 2, 0);
+             b.steps({ P(0), P(5), P(7), P(12) });
+             b.set(ids::filterType, (float) kBloom);
+             b.set(ids::filterRes, 0.15f);
+             b.set(ids::filter, 0.55f);
+             b.tremolo(3.5f, 0.45f, 0.1f, -1.0f, 0.0f, 3);
+             b.reverb(kHall, 0.4f, 0.75f);
+         } },
+        { "Tape Bells", [](Builder& b) {
+             // bells rung at 880 Hz, their quarter-note echoes wobbling like a worn tape loop
+             b.set(ids::tempo, 84.0f);
+             b.sequence(4, 5, 0);
+             b.freeRunning();
+             b.steps({ P(0), P(12), P(7), P(12) });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 880.0f);
+             b.set(ids::ringMix, 0.8f);
+             b.delay(kQuarter, 0.4f, 0.5f, 8);
+             b.set(ids::delayWobble, 0.7f);
+             b.reverb(kPlate, 0.25f, 0.5f);
+         } },
+        { "Shuffle Strut", [](Builder& b) {
+             // a hard-swung strut with soft backbeats, a scratch thrown on step five and a light fuzz
+             b.set(ids::tempo, 100.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::swing, 0.75f);
+             b.steps({ P(0), P(10), P(12), P(7), P(3), P(10), P(12), P(5) });
+             b.lane(Lane::Level, { 1.0f, 0.65f });
+             b.stutter(0, 2, kScratch, 2);
+             b.lane(Lane::Stutter, { 0, 0, 0, 0, 1, 0, 0, 0 });
+             b.dist(1, 0.4f, 0.5f, 0.6f);
+         } },
     };
     return list;
 }
