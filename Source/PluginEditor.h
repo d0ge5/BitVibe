@@ -513,6 +513,7 @@ class PatternPanel;
 class EqPanel;
 class SamplePanel;
 class TremoloPanel;
+class PresetSearch;
 class DistortionGraph;
 class DelayGraph;
 class ReverbGraph;
@@ -568,7 +569,10 @@ public:
     // The preset menu (a click on the preset name or its arrow): every slot, undo and redo, save, rename, export, import.
     juce::PopupMenu presetMenu();
     void presetMenuChosen(int result);
-    static constexpr int kMenuSave = 1, kMenuRename = 2, kMenuExport = 3, kMenuImport = 4, kMenuUndo = 5, kMenuRedo = 6,
+    // FIND A PRESET (Ctrl+F, or the top of the preset menu): type a name or what a preset uses, browse by ear
+    void openPresetSearch();
+    PresetSearch* getPresetSearch() { return presetSearch.get(); }
+    static constexpr int kMenuSave = 1, kMenuRename = 2, kMenuExport = 3, kMenuImport = 4, kMenuUndo = 5, kMenuRedo = 6, kMenuSearch = 7,
                          kMenuSlot = 100; // + the slot's index (the same in every list it is in)
 
 private:
@@ -676,6 +680,8 @@ private:
     // global panel
     KnobSlider inSlider, mixSlider, outSlider, trigSlider;
     std::unique_ptr<APVTS::SliderAttachment> inAtt, mixAtt, outAtt, trigAtt;
+    KnobSlider levelSlider; // OUT: the preset's own level, between DRY/WET and OUTPUT
+    std::unique_ptr<APVTS::SliderAttachment> levelAtt;
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt;
     // HEAR: what comes out, as one choice over the two switches underneath (Seq Only and FX Only On Triggers):
@@ -740,6 +746,8 @@ private:
     std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open
     std::unique_ptr<EqPanel> eqPanel;
     std::unique_ptr<TremoloPanel> tremoloPanel; // between the distortion and the delay
+    std::unique_ptr<PresetSearch> presetSearch; // made the first time it opens, over the pedal
+    int searchStartSlot = 0;                    // where Escape goes back to
     // what the distortion, the delay and the reverb do, drawn in the left of their panels (the knobs share the rest)
     std::unique_ptr<DistortionGraph> distGraph;
     std::unique_ptr<DelayGraph> delayGraph;

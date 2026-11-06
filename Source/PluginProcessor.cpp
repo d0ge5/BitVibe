@@ -167,6 +167,10 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     add(std::make_unique<AudioParameterFloat>(
         id(ids::outputGain), "Output Gain", NormalisableRange<float>(-24.0f, 12.0f, 0.1f), 0.0f,
         withText([](float v, int) { return String(v, 1) + " dB"; })));
+    // the preset's own level (stored in the preset slots), so presets sit at the same loudness
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::soundLevel), "Sound Level", NormalisableRange<float>(-18.0f, 12.0f, 0.1f), 0.0f,
+        withText([](float v, int) { return (v > 0.04f ? "+" : "") + String(v, 1) + " dB"; })));
     add(std::make_unique<AudioParameterChoice>(id(ids::headroom), "Headroom",
                                                       StringArray { "Instrument", "Line" }, 0));
     add(std::make_unique<AudioParameterFloat>(id(ids::sensitivity), "Trigger Sensitivity",
@@ -460,7 +464,7 @@ std::vector<String> presetParameterIds()
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             list.push_back(ids::stepMem(t, i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats,
-                            ids::seqLength, ids::stutterType, ids::swing, ids::pingOn, ids::pingLevel })
+                            ids::seqLength, ids::stutterType, ids::swing, ids::pingOn, ids::pingLevel, ids::soundLevel })
         list.emplace_back(id);
     for (int l = 0; l < bitvibe::kNumLanes; ++l)
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -647,6 +651,7 @@ BitVibeProcessor::BitVibeProcessor()
     pModDepth = raw(ids::modDepth);
     pModFeedback = raw(ids::modFeedback);
     pModMix = raw(ids::modMix);
+    pSoundLevel = raw(ids::soundLevel);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
@@ -881,6 +886,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.modDepth = pModDepth->load();
     p.modFeedback = pModFeedback->load();
     p.modMix = pModMix->load();
+    p.soundLevelDb = pSoundLevel->load();
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
     p.sampleBaseDb = pSampleBase->load();
@@ -1487,7 +1493,7 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
     { "SOUND", "Talking filter (formant)" },  { "SOUND", "Filter ping" },
     { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Ring mod" },
-    { "EFFECTS", "Phaser and flanger" },
+    { "EFFECTS", "Phaser" },                 { "EFFECTS", "Flanger" },
     { "EFFECTS", "Tremolo" },
     { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
     { "EFFECTS", "Reverb" },                 { "EFFECTS", "EQ" },
@@ -1582,7 +1588,9 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     mark(featPing, running && plain(ids::pingOn) > 0.5f && plain(ids::pingLevel) > 0.005f);
     mark(featDistortion, effect(ids::distOn) > 0.5f);
     mark(featRingMod, effect(ids::ringOn) > 0.5f && effect(ids::ringMix) > 0.005f);
-    mark(featModulation, effect(ids::modOn) > 0.5f && effect(ids::modMix) > 0.005f);
+    const bool sweepHeard = effect(ids::modOn) > 0.5f && effect(ids::modMix) > 0.005f;
+    mark(featPhaser, sweepHeard && roundToInt(effect(ids::modType)) == 0);
+    mark(featFlanger, sweepHeard && roundToInt(effect(ids::modType)) == 1);
     mark(featTremolo, effect(ids::tremOn) > 0.5f);
     mark(featDelay, effect(ids::delayOn) > 0.5f);
     mark(featTapeWobble, effect(ids::delayOn) > 0.5f && effect(ids::delayWobble) > 0.005f);

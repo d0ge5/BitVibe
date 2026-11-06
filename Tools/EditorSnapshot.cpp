@@ -14,6 +14,7 @@
 #include "SamplerPage.h"
 #include "BeatDog.h"
 #include "TremoloPanel.h"
+#include "PresetSearch.h"
 #include "StepEditor.h"
 #include "PresetPack.h"
 #include "EffectGraphs.h"
@@ -1723,6 +1724,53 @@ int writePresetPack(const File& folder)
 // The preset pack: the files match the table they were written from, the plug-in carries all of them, and each one
 // loads, uses something new (a length other than six, a lane, a stutter type or the tremolo) and makes a sound that is
 // clearly the effect's, without clipping.
+// FIND A PRESET: Ctrl+F opens it on every preset; a name or what a preset uses finds it, every word typed must match;
+// typing plays nothing, Down plays the next result, Escape goes back, Return keeps the one highlighted.
+void testPresetSearch(const File& outDir)
+{
+    std::puts("preset search");
+    auto p = makeProcessor();
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    const int start = p->getCurrentProgram();
+    const bool opened = ed->keyPressed(KeyPress('f', ModifierKeys::commandModifier, 0));
+    auto* s = ed->getPresetSearch();
+    check(opened && s != nullptr && s->isVisible(), "Ctrl+F opens FIND A PRESET");
+    if (s == nullptr)
+        return;
+    check((int) s->results().size() == p->getNumPrograms(), "listing every preset (" + String((int) s->results().size()) + ")");
+    auto names = [&]
+    {
+        StringArray n;
+        for (int slot : s->results())
+            n.add(p->getProgramName(slot));
+        return n;
+    };
+    s->setQuery("talk box");
+    check(names() == StringArray { "Talk Box" }, "a name finds its preset ('talk box': " + names().joinIntoString(", ") + ")");
+    s->setQuery("flanger");
+    check(names().contains("Jet Plane") && names().contains("Metal Flange") && !names().contains("Talk Box") && !names().contains("Phase Walk"),
+          "what a preset uses finds every one that uses it ('flanger': " + names().joinIntoString(", ") + ")");
+    save(*ed, outDir.getChildFile("preset_search.png"));
+    s->setQuery("ping swing");
+    check(names().contains("Kick the Filter") && names().contains("Vowel Ping") && !names().contains("Ping Pong"),
+          "every word typed must match ('ping swing': " + names().joinIntoString(", ") + ")");
+    check(p->getCurrentProgram() == start, "typing plays nothing yet");
+    s->handleKey(KeyPress(KeyPress::downKey));
+    check(s->results().size() > 1 && p->getCurrentProgram() == s->results()[1], "Down plays the next result");
+    s->handleKey(KeyPress(KeyPress::escapeKey));
+    check(!s->isVisible() && p->getCurrentProgram() == start, "Escape closes it and goes back to the preset it started on");
+    ed->openPresetSearch();
+    s->setQuery("jet");
+    s->handleKey(KeyPress(KeyPress::returnKey));
+    check(!s->isVisible() && p->getProgramName(p->getCurrentProgram()) == "Jet Plane", "Return keeps the one highlighted");
+    bool inMenu = false;
+    const auto menu = ed->presetMenu();
+    PopupMenu::MenuItemIterator it(menu);
+    while (it.next())
+        inMenu = inMenu || it.getItem().itemID == BitVibeEditor::kMenuSearch;
+    check(inMenu, "and the preset menu opens it too");
+}
+
 void testPresetPack(const File& outDir)
 {
     std::puts("preset pack");
@@ -1737,22 +1785,12 @@ void testPresetPack(const File& outDir)
                                                    + "; run BitVibeEditorSnapshot --write-presets Presets after changing it)");
     check(BitVibeProcessor::numPackPresets() == count, "the plug-in carries all " + String(count) + " (" + String(BitVibeProcessor::numPackPresets()) + ")");
 
-    // a guitar-like pluck every second
-    constexpr int fs = 48000, seconds = 4;
-    AudioBuffer<float> dry(2, fs * seconds);
-    dry.clear();
-    for (int start = fs / 4; start < fs * seconds; start += fs)
-        for (int n = 0; start + n < fs * seconds; ++n)
-        {
-            const double t = (double) n / fs, env = std::exp(-3.0 * t);
-            const float v = (float) (0.35 * env * (std::sin(MathConstants<double>::twoPi * 196.0 * t) + 0.5 * std::sin(MathConstants<double>::twoPi * 392.0 * t)
-                                                   + 0.25 * std::sin(MathConstants<double>::twoPi * 588.0 * t)));
-            dry.setSample(0, start + n, v);
-            dry.setSample(1, start + n, v);
-        }
+    // a guitar-like pluck every second, the one the pack is levelled on
+    const auto dry = presetpack::pluckTestSignal();
     const double dryRms = dry.getRMSLevel(0, 0, dry.getNumSamples());
 
-    int good = 0;
+    int good = 0, matched = 0;
+    double quietest = 1.0e9, loudest = 0.0;
     for (int i = 0; i < BitVibeProcessor::numPackPresets(); ++i)
     {
         auto p = makeProcessor();
@@ -1768,13 +1806,7 @@ void testPresetPack(const File& outDir)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
 
-        AudioBuffer<float> wet(dry);
-        MidiBuffer midi;
-        for (int pos = 0; pos < wet.getNumSamples(); pos += 512)
-        {
-            AudioBuffer<float> block(wet.getArrayOfWritePointers(), 2, pos, jmin(512, wet.getNumSamples() - pos));
-            p->processBlock(block, midi);
-        }
+        const auto wet = presetpack::playThrough(*p, dry);
         bool finite = true;
         double diff = 0.0;
         for (int n = 0; n < wet.getNumSamples(); ++n)
@@ -1788,10 +1820,16 @@ void testPresetPack(const File& outDir)
         const double rmsRatio = wet.getRMSLevel(0, 0, wet.getNumSamples()) / dryRms;
         const bool ok = loaded && named && usesNew && finite && peak < 1.0f && rmsRatio > 0.25 && rmsRatio < 3.0 && diff > 0.1 * dryRms;
         good += ok ? 1 : 0;
+        // levelled: as loud as the dry pluck, within 1.5 dB, unless its peaks hold it down
+        matched += (rmsRatio > 0.84 && rmsRatio < 1.19) || (rmsRatio <= 0.84 && peak > 0.8f * presetpack::kLevelPeakCeiling) ? 1 : 0;
+        quietest = std::min(quietest, rmsRatio);
+        loudest = std::max(loudest, rmsRatio);
         std::printf("    %-20s %s  peak %.2f  level x%.2f  change %.2f%s\n", BitVibeProcessor::packPresetName(i).toRawUTF8(), ok ? "ok  " : "FAIL", peak,
                     rmsRatio, diff / dryRms, usesNew ? "" : "  (nothing new)");
     }
     check(good == count, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of " + String(count) + ")");
+    check(matched == count, "and every one plays at the dry pluck's loudness, or as near as its peaks allow (" + String(matched) + " of "
+                                + String(count) + "; levels x" + String(quietest, 2) + " to x" + String(loudest, 2) + ")");
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -2759,7 +2797,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
+    check(controls == 77 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 77 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2905,7 +2943,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 360, "360 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 361, "361 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -3539,6 +3577,7 @@ int main(int argc, char** argv)
     testVisuals(outDir);
     testStepEditor(outDir);
     testPresetPack(outDir);
+    testPresetSearch(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

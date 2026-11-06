@@ -215,8 +215,9 @@ on afterwards. The tempo clock sets the speed of all of it.
 At the bottom of the right-hand side, **IN** has **INPUT**, **TRIGGER** (how easily picked notes start the
 stutter and sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that
 crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over
-the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **OUTPUT** with an
-output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
+the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **LEVEL** (the preset's own
+volume on the effect side, saved with it; the pack's presets are already matched in loudness, so moving between them
+does not jump in volume), **OUTPUT** with an output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
 out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
 a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row with **SWING** and **PING**:
 
@@ -396,6 +397,10 @@ Only record what you have the right to use.
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
   sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then.
+- **Search** with **Ctrl+F** (Cmd+F on a Mac), or *Search presets...* at the top of the preset menu. Type part of a
+  name, or what a preset uses (*flanger*, *ping*, *swing*, *formant*, *lanes*), or its slot number; every word must
+  match. **Up** and **Down** play each result as you reach it, so you can browse by ear, **Return** keeps the one
+  highlighted, and **Esc** goes back to where you started (Ctrl+Z brings back unsaved edits).
 - **Click the name** (or the arrow beside it) for the preset menu. The presets are **grouped by what they use**:
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample

@@ -120,6 +120,7 @@ inline constexpr const char* modRate = "modRate";
 inline constexpr const char* modDepth = "modDepth";
 inline constexpr const char* modFeedback = "modFeedback";
 inline constexpr const char* modMix = "modMix";
+inline constexpr const char* soundLevel = "soundLevel";
 inline constexpr const char* ringOn = "ringOn";
 inline constexpr const char* ringHz = "ringHz";
 inline constexpr const char* ringMix = "ringMix";
@@ -214,7 +215,7 @@ public:
         featBeatPattern,
         featStutter, featStutterTypes,
         featCrush, featFilterTypes, featFormant, featPing,
-        featDistortion, featRingMod, featModulation, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
+        featDistortion, featRingMod, featPhaser, featFlanger, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
         kNumPresetFeatures
     };
@@ -483,6 +484,7 @@ private:
     std::atomic<float>* pModDepth = nullptr;
     std::atomic<float>* pModFeedback = nullptr;
     std::atomic<float>* pModMix = nullptr;
+    std::atomic<float>* pSoundLevel = nullptr;
     std::atomic<float>* pRingOn = nullptr;
     std::atomic<float>* pRingHz = nullptr;
     std::atomic<float>* pRingMix = nullptr;

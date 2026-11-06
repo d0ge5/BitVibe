@@ -7,6 +7,7 @@
 #include "BeatDog.h"
 #include "EqPanel.h"
 #include "TremoloPanel.h"
+#include "PresetSearch.h"
 #include "EffectGraphs.h"
 #include "StepEditor.h"
 #include "UiSettings.h"
@@ -1257,6 +1258,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(inSlider, inAtt, ids::inputGain);
     smallKnob(mixSlider, mixAtt, ids::mix);
     smallKnob(outSlider, outAtt, ids::outputGain);
+    smallKnob(levelSlider, levelAtt, ids::soundLevel);
     smallKnob(trigSlider, trigAtt, ids::sensitivity);
     smallKnob(filterResSlider, filterResAtt, ids::filterRes);
     smallKnob(swingSlider, swingAtt, ids::swing);
@@ -1511,7 +1513,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     setTooltips();
     nameControls();
 
-    pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton,
+    pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &levelSlider, &syncButton, &holdButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox, &modRateSlider, &modDepthSlider,
                         &modFeedbackSlider, &modMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &pingButton, &pingLevelSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
@@ -1598,7 +1600,7 @@ BitVibeEditor::~BitVibeEditor()
     stopTimer();
     for (auto& k : knobs)
         k.front.setLookAndFeel(nullptr);
-    for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
+    for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &levelSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider,
                       &ringHzSlider, &ringMixSlider, &swingSlider, &pingLevelSlider, &modRateSlider, &modDepthSlider,
                       &modFeedbackSlider, &modMixSlider })
@@ -1718,6 +1720,12 @@ PopupMenu BitVibeEditor::presetMenu()
         features[(size_t) i] = proc.presetFeatures(i);
 
     menu.addSectionHeader("PRESETS   " + String(current + 1).paddedLeft('0', 2) + "  " + proc.getProgramName(current));
+    {
+        PopupMenu::Item search("Search presets...");
+        search.setID(kMenuSearch);
+        search.shortcutKeyDescription = KeyPress('f', ModifierKeys::commandModifier, 0).getTextDescriptionWithIcons();
+        menu.addItem(search);
+    }
     PopupMenu all;
     for (int i = 0; i < count; ++i)
     {
@@ -1786,6 +1794,8 @@ void BitVibeEditor::presetMenuChosen(int result)
         undoOrRedo(true);
     else if (result == kMenuRedo)
         undoOrRedo(false);
+    else if (result == kMenuSearch)
+        openPresetSearch();
     else if (result == kMenuSave)
         saveButton.onClick();
     else if (result == kMenuRename)
@@ -1804,6 +1814,40 @@ void BitVibeEditor::showPresetMenu()
         if (safe != nullptr)
             safe->presetMenuChosen(result);
     });
+}
+
+void BitVibeEditor::openPresetSearch()
+{
+    if (drumsShown)
+        showDrums(false);
+    if (presetSearch == nullptr)
+    {
+        presetSearch = std::make_unique<PresetSearch>(proc);
+        content.addChildComponent(*presetSearch);
+        presetSearch->onAudition = [this](int slot)
+        {
+            if (slot != proc.getCurrentProgram())
+            {
+                proc.setCurrentProgram(slot);
+                refreshPresetName();
+            }
+        };
+        presetSearch->onClose = [this](bool keep)
+        {
+            if (!keep && proc.getCurrentProgram() != searchStartSlot)
+            {
+                proc.setCurrentProgram(searchStartSlot);
+                refreshPresetName();
+            }
+            presetSearch->setVisible(false);
+            if (isShowing())
+                grabKeyboardFocus();
+        };
+    }
+    proc.getUndo().remember(); // one undo brings back the sound from before the search, unsaved edits and all
+    searchStartSlot = proc.getCurrentProgram();
+    presetSearch->setBounds(Rectangle<int>(16, 40, 448, 476).translated(0, kFaceDy)); // over the pedal, clear of the preset bar
+    presetSearch->open();
 }
 
 void BitVibeEditor::undoOrRedo(bool undo)
@@ -1827,6 +1871,11 @@ bool BitVibeEditor::keyPressed(const KeyPress& key)
     if (key == KeyPress('z', ModifierKeys::commandModifier | ModifierKeys::shiftModifier, 0) || key == KeyPress('y', ModifierKeys::commandModifier, 0))
     {
         undoOrRedo(false);
+        return true;
+    }
+    if (key == KeyPress('f', ModifierKeys::commandModifier, 0))
+    {
+        openPresetSearch();
         return true;
     }
     return false; // the host's own keys (play, stop) go on to the host
@@ -2228,6 +2277,8 @@ void BitVibeEditor::setTooltips()
                           "Plate is dense and bright, Shimmer climbs an octave as it fades, Gated is a big room chopped off short.");
     mixSlider.setTooltip("DRY/WET: blends your clean input (left) with the effect (right). Fully right = effect only.");
     outSlider.setTooltip("OUTPUT: the overall output level.");
+    levelSlider.setTooltip("LEVEL: this preset's own volume, saved with it, so presets sit at the same loudness (the pack's are "
+                           "already matched). It sets the effect side only; OUTPUT is your overall level.");
     trigSlider.setTooltip("TRIGGER: how easily picked notes start the stutter and sequencer. Turn right if it misses notes, left if it fires too often.");
     syncButton.setTooltip("SYNC: follow the tempo of your DAW instead of the tempo set here.");
     hearBox.setTooltip("HEAR: what comes out. GUITAR + EFFECT: both, blended with DRY/WET. CLEAN IN BETWEEN: the crush and filter act only "
@@ -2514,8 +2565,9 @@ void BitVibeEditor::resized()
     inSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 50, gy + 46 })));
     trigSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 112, gy + 46 })));
     triggerMeter.setBounds(side({ 146, gy + 16, 82, 86 }));
-    mixSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 300, gy + 46 })));
-    outSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 390, gy + 46 })));
+    mixSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 282, gy + 46 })));
+    levelSlider.setBounds(side(Rectangle<int>(44, 44).withCentre({ 344, gy + 46 })));
+    outSlider.setBounds(side(Rectangle<int>(52, 52).withCentre({ 406, gy + 46 })));
     outputMeter.setBounds(side({ 434, gy + 12, 14, 88 }));
     headroomBox.setBounds(side({ 98, gy + 110, 128, 24 }));
     hearBox.setBounds(side({ 296, gy + 110, 160, 24 }));
@@ -2700,8 +2752,9 @@ void BitVibeEditor::paintContent(Graphics& g)
         const bool seqOnly = rawValue(ids::seqOnly) > 0.5f;
         pedalstyle::drawControlLabel(g, 50, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
         pedalstyle::drawControlLabel(g, 112, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");
-        pedalstyle::drawControlLabel(g, 300, gy + 76, "DRY/WET", seqOnly ? String("EFFECT ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet");
-        pedalstyle::drawControlLabel(g, 390, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
+        pedalstyle::drawControlLabel(g, 344, gy + 76, "LEVEL", (rawValue(ids::soundLevel) > 0.04f ? "+" : "") + String(rawValue(ids::soundLevel), 1) + " dB");
+        pedalstyle::drawControlLabel(g, 282, gy + 76, "DRY/WET", seqOnly ? String("EFFECT ONLY") : String(roundToInt(rawValue(ids::mix) * 100.0f)) + "% wet");
+        pedalstyle::drawControlLabel(g, 406, gy + 76, "OUTPUT", String(rawValue(ids::outputGain), 1) + " dB");
         g.setColour(kInkDim);
         g.setFont(bold(9.5f));
         g.drawText("HEADROOM", Rectangle<int>(24, gy + 110, 72, 24), Justification::centredLeft);

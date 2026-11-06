@@ -865,6 +865,58 @@ inline const std::vector<Preset>& presets()
 }
 
 // The preset as a file: what Export writes, without the picked sounds (loading it leaves the player's own).
+// The pack's level check: a guitar-like pluck every second for four seconds (a few harmonics of G3, dying away).
+// The pack is levelled on it, and the snapshot tests play it.
+inline juce::AudioBuffer<float> pluckTestSignal()
+{
+    constexpr int fs = 48000, seconds = 4;
+    juce::AudioBuffer<float> dry(2, fs * seconds);
+    dry.clear();
+    for (int start = fs / 4; start < fs * seconds; start += fs)
+        for (int n = 0; start + n < fs * seconds; ++n)
+        {
+            const double t = (double) n / fs, env = std::exp(-3.0 * t);
+            const float v = (float) (0.35 * env * (std::sin(juce::MathConstants<double>::twoPi * 196.0 * t)
+                                                   + 0.5 * std::sin(juce::MathConstants<double>::twoPi * 392.0 * t)
+                                                   + 0.25 * std::sin(juce::MathConstants<double>::twoPi * 588.0 * t)));
+            dry.setSample(0, start + n, v);
+            dry.setSample(1, start + n, v);
+        }
+    return dry;
+}
+
+// Plays a signal through the processor in 512-sample blocks, as a host would, and returns what comes out.
+inline juce::AudioBuffer<float> playThrough(BitVibeProcessor& p, const juce::AudioBuffer<float>& in)
+{
+    juce::AudioBuffer<float> wet(in);
+    juce::MidiBuffer midi;
+    for (int pos = 0; pos < wet.getNumSamples(); pos += 512)
+    {
+        juce::AudioBuffer<float> block(wet.getArrayOfWritePointers(), 2, pos, juce::jmin(512, wet.getNumSamples() - pos));
+        p.processBlock(block, midi);
+    }
+    return wet;
+}
+
+// The SOUND LEVEL that brings what the processor makes of the test pluck to the pluck's own loudness (its RMS),
+// without letting its peak above kLevelPeakCeiling, in half-dB steps.
+inline constexpr float kLevelPeakCeiling = 0.9f;
+inline float matchedLevelDb(BitVibeProcessor& p)
+{
+    const auto dry = pluckTestSignal();
+    const auto wet = playThrough(p, dry);
+    const int n = dry.getNumSamples();
+    const double ratio = wet.getRMSLevel(0, 0, n) / dry.getRMSLevel(0, 0, n);
+    const float peak = wet.getMagnitude(0, n); // both channels: the stereo effects peak differently on each side
+    if (!(ratio > 1.0e-6))
+        return 0.0f;
+    double db = -20.0 * std::log10(ratio);
+    if (peak > 1.0e-6f)
+        db = std::min(db, 20.0 * std::log10((double) kLevelPeakCeiling / (double) peak));
+    db = juce::jlimit(-18.0, 12.0, db);
+    return (float) (std::floor(db * 2.0) / 2.0); // rounded down, so the peak ceiling holds
+}
+
 inline std::unique_ptr<juce::XmlElement> build(const Preset& preset)
 {
     BitVibeProcessor p;
@@ -878,6 +930,9 @@ inline std::unique_ptr<juce::XmlElement> build(const Preset& preset)
             if (ranged->paramID.startsWith("sample") && ranged->paramID != ids::sampleRate)
                 ranged->setValueNotifyingHost(ranged->getDefaultValue());
     preset.build(b);
+    // every pack preset plays at the loudness of the dry pluck (or as near as its peaks allow); playing the pluck
+    // changes no parameter, so the file is written as the table says, with its level
+    b.set(ids::soundLevel, matchedLevelDb(p));
     p.changeProgramName(p.getCurrentProgram(), preset.name);
     auto xml = p.exportPreset();
     for (const char* tag : { "SOUNDS", "LOOP_SOUNDS" })

@@ -87,6 +87,9 @@ struct Params
     // Global settings (extras that suit a plugin; the hardware has equivalents in its global menu).
     float inputGainDb = 0.0f;
     float outputGainDb = 0.0f;
+    // The preset's own level (dB, -18..+12): a gain on the sequenced sound before the dry/wet blend, so presets can
+    // be matched in loudness. The pack's presets are levelled on a test pluck when they are written.
+    float soundLevelDb = 0.0f;
     bool lineHeadroom = false;       // false = instrument level, true = line/synth level
     float triggerSensitivity = 0.5f; // attack detector
     int stutterDivision = 1;         // snippet length: 0 = 1/4 note, 1 = 1/8, 2 = 1/16
@@ -497,6 +500,7 @@ public:
                 muteGain = mute ? 0.0f : 1.0f;
 
             const float outGain = outGainSm.next(outGainTarget);
+            const float soundGain = soundLevelSm.next(blk.soundGain);
             const float mixAmount = mixSm.next(blk.mix);
             const float reverbOnGain = reverbOnSm.next(blk.reverbOn ? 1.0f : 0.0f);
             const float delayOnGain = delayOnSm.next(blk.delayOn ? 1.0f : 0.0f);
@@ -671,6 +675,7 @@ public:
                     ch.ladder.reset();
                 }
 
+                y *= soundGain; // the preset's own level, on everything the sequenced sound has become
                 if (!audition) // the clip is heard on its own, without the clean signal
                     y = lerpExact(dry[(size_t) c], y, wetAmount);
                 y *= outGain;
@@ -793,6 +798,7 @@ private:
         TremoloSettings trem;
         bool ringOn = false;
         float ringHz = 440.0f, ringMix = 1.0f;
+        float soundGain = 1.0f;
         bool modOn = false;
         int modType = 0;
         float modRateBeats = 4.0f, modDepth = 0.7f, modFeedback = 0.5f, modMix = 1.0f;
@@ -869,6 +875,7 @@ private:
         blk.modDepth = std::isfinite(p.modDepth) ? std::clamp(p.modDepth, 0.0f, 1.0f) : 0.7f;
         blk.modFeedback = std::isfinite(p.modFeedback) ? std::clamp(p.modFeedback, 0.0f, 0.9f) : 0.5f;
         blk.modMix = std::isfinite(p.modMix) ? std::clamp(p.modMix, 0.0f, 1.0f) : 1.0f;
+        blk.soundGain = dbToGain(std::isfinite(p.soundLevelDb) ? std::clamp(p.soundLevelDb, -18.0f, 12.0f) : 0.0f);
         blk.swing = std::isfinite(p.swing) ? std::clamp(p.swing, 0.0f, 1.0f) : 0.0f;
         blk.pingOn = p.pingOn;
         blk.pingLevel = std::isfinite(p.pingLevel) ? std::clamp(p.pingLevel, 0.0f, 1.0f) : 0.7f;
@@ -935,6 +942,7 @@ private:
             modTypeSm.snap(blk.modType == 1 ? 1.0f : 0.0f);
             modDepthSm.snap(blk.modDepth);
             modFeedbackSm.snap(blk.modFeedback);
+            soundLevelSm.snap(blk.soundGain);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
             delayOnSm.snap(blk.delayOn ? 1.0f : 0.0f);
             delayMixSm.snap(blk.delayMix);
@@ -1278,7 +1286,7 @@ private:
     // smoothers
     FilterType filterShown = FilterType::Ladder; // the filter in use (the type changes once the old one has faded out)
     EnvelopeFollower filterEnvelope;
-    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, ringOnSm, ringMixSm, ringHzSm, modOnSm, modMixSm, modTypeSm, modDepthSm, modFeedbackSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
+    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, ringOnSm, ringMixSm, ringHzSm, modOnSm, modMixSm, modTypeSm, modDepthSm, modFeedbackSm, soundLevelSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
     Tremolo tremolo;
     bool tremWasActive = false;
