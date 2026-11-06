@@ -171,7 +171,7 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 64 && p->getCurrentProgram() == 0,
+    check(p->getNumPrograms() == slotCount && slotCount == 66 && p->getCurrentProgram() == 0,
           "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack), starts on slot 1");
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
@@ -1902,7 +1902,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 784, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 818, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -1963,7 +1963,7 @@ void testRightModes(const File& outDir)
     save(*ed, outDir.getChildFile("editor_simple.png"));
     ed->setRightMode(true);
     const int advanced = countRight(*ed);
-    check(advanced == simple + 5, "ADVANCED shows the stutter's length, type and hold, and the filter's type and resonance (" + String(simple) + " then " + String(advanced) + ")");
+    check(advanced == simple + 6, "ADVANCED shows the stutter's length, type and hold, the filter's type and resonance, and SWING (" + String(simple) + " then " + String(advanced) + ")");
     check(ed->getEffectTab() == BitVibeEditor::kTabSamples, "the sample blend is the effect panel showing first");
     {
         // the effect tabs: one panel at a time, ADVANCED adds the extra controls of the one showing
@@ -1974,7 +1974,7 @@ void testRightModes(const File& outDir)
             ed->setEffectTab(tab);
             const int few = countRight(*ed);
             ed->setRightMode(true);
-            extra += countRight(*ed) - few == more + 5 ? 1 : 0;
+            extra += countRight(*ed) - few == more + 6 ? 1 : 0;
         }
         check(extra == 3, "each of the distortion, delay and reverb tabs shows its extra controls in ADVANCED (" + String(extra) + " of 3)");
         ed->setEffectTab(BitVibeEditor::kTabEq);
@@ -2728,7 +2728,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 64 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 64 and 0)");
+    check(controls == 68 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 68 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2874,7 +2874,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 348, "348 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 352, "352 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

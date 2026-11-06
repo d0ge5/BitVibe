@@ -111,6 +111,10 @@ inline constexpr const char* seqLength = "seqLength";
 inline constexpr const char* stutterType = "stutterType";
 inline constexpr const char* filterType = "filterType";
 inline constexpr const char* filterRes = "filterRes";
+inline constexpr const char* swing = "swing";
+inline constexpr const char* ringOn = "ringOn";
+inline constexpr const char* ringHz = "ringHz";
+inline constexpr const char* ringMix = "ringMix";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
@@ -183,10 +187,11 @@ public:
     enum PresetFeature
     {
         featPitchSteps, featFilterSteps, featRateSteps, featOnItsOwn, featAfterPicks, featLongSequence, featLanes, featLoop,
+        featSwing,
         featBeatPattern,
         featStutter, featStutterTypes,
         featCrush, featFilterTypes,
-        featDistortion, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
+        featDistortion, featRingMod, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
         kNumPresetFeatures
     };
@@ -446,6 +451,10 @@ private:
     std::atomic<float>* pStutterType = nullptr;
     std::atomic<float>* pFilterType = nullptr;
     std::atomic<float>* pFilterRes = nullptr;
+    std::atomic<float>* pSwing = nullptr;
+    std::atomic<float>* pRingOn = nullptr;
+    std::atomic<float>* pRingHz = nullptr;
+    std::atomic<float>* pRingMix = nullptr;
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
     mutable juce::SpinLock morphLock;

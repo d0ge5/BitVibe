@@ -56,6 +56,9 @@ struct Params
     float filterRes = mapping::kDefaultFilterRes;
     int seqPlay = 5;   // 0..5  (off, once, twice, 4, 8, continuous)
     int seqMult = 1;   // 0..7  (x1 .. x128)
+    // Swing, 0..1: the odd steps (the 1st, 3rd, ...) lengthen and the even ones shorten by up to a third
+    // (kMaxSwingRatio, a 2:1 triplet feel at full), so each pair of steps keeps the tempo. 0 = straight.
+    float swing = 0.0f;
 
     // Second layer (Alt): the sequencer steps, normalised 0..1. The first seqLength of them play.
     std::array<float, kNumSteps> steps = mapping::defaultStepKnobs();
@@ -130,6 +133,12 @@ struct Params
     // Its rate curve starts again with each sequence or stutter. Off by default.
     bool tremOn = false;
     TremoloSettings trem;
+
+    // The ring mod on the sequenced sound, after the distortion and before the tremolo (so the delay's echoes carry
+    // it too): the sound times a sine at its frequency; MIX blends it in. Off by default.
+    bool ringOn = false;
+    float ringHz = 440.0f;
+    float ringMix = 1.0f;
 
     // On / off switches (both on by default): with the reverb off nothing is fed to it and nothing is added; with the
     // sample blend off no random sounds start (the preview of the volume range still plays).
@@ -492,6 +501,12 @@ public:
             const float tremAmount = tremOnSm.next(blk.tremOn ? 1.0f : 0.0f) * reverbSend * laneTrem;
             const float tremLevel = tremolo.next(blk.trem, fs, beatSamples);
             const float tremGain = 1.0f - (1.0f - tremLevel) * tremAmount;
+            // the ring mod, gated the same way: the sound times a sine, blended in by its MIX
+            ringPhase += (double) ringHzSm.next(blk.ringHz) / fs;
+            if (ringPhase >= 1.0)
+                ringPhase -= std::floor(ringPhase);
+            const float ringAmount = ringOnSm.next(blk.ringOn ? 1.0f : 0.0f) * reverbSend * ringMixSm.next(blk.ringMix);
+            const float ringGain = 1.0f + (std::sin(2.0f * kPi * (float) ringPhase) - 1.0f) * ringAmount;
             const auto heard = samplePlayer.process();
             const float sampleSignal = (heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.loopSequence * loopSampleMixSm.next(blk.loopSampleGain))
                                            * sampleOnGain + heard.preview;
@@ -552,6 +567,7 @@ public:
                     const float distorted = blk.distType == 1 ? ch.fuzz.process(y) : ch.dist.process(y);
                     y += (distorted - y) * distGate;
                 }
+                y *= ringGain;
                 y *= tremGain;
                 y *= muteGain * seqGate * laneLevel;
                 // the delay: echoes of the sequenced sound (after the distortion), which ring on after the sequence stops
@@ -699,6 +715,9 @@ private:
         bool distOn = false, distReverb = false;
         bool tremOn = false;
         TremoloSettings trem;
+        bool ringOn = false;
+        float ringHz = 440.0f, ringMix = 1.0f;
+        float swing = 0.0f;
         bool reverbOn = true, sampleOn = true, eqOn = false;
         int distType = 0;
         bool patternOn = false;
@@ -760,6 +779,10 @@ private:
         blk.trem.rateHz = std::clamp(p.trem.rateHz, kTremoloMinHz, kTremoloMaxHz);
         blk.trem.endOctaves = std::clamp(p.trem.endOctaves, -kTremoloMaxOctaves, kTremoloMaxOctaves);
         blk.trem.rampBeats = std::max(1, p.trem.rampBeats);
+        blk.ringOn = p.ringOn;
+        blk.ringHz = std::isfinite(p.ringHz) ? std::clamp(p.ringHz, kRingMinHz, kRingMaxHz) : 440.0f;
+        blk.ringMix = std::isfinite(p.ringMix) ? std::clamp(p.ringMix, 0.0f, 1.0f) : 1.0f;
+        blk.swing = std::isfinite(p.swing) ? std::clamp(p.swing, 0.0f, 1.0f) : 0.0f;
         blk.reverbOn = p.reverbOn;
         blk.eqOn = p.eqOn;
         blk.sampleOn = p.sampleOn;
@@ -815,6 +838,9 @@ private:
             loopSampleMixSm.snap(blk.loopSampleGain);
             distOnSm.snap(blk.distOn ? 1.0f : 0.0f);
             tremOnSm.snap(blk.tremOn ? 1.0f : 0.0f);
+            ringOnSm.snap(blk.ringOn ? 1.0f : 0.0f);
+            ringMixSm.snap(blk.ringMix);
+            ringHzSm.snap(blk.ringHz);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
             delayOnSm.snap(blk.delayOn ? 1.0f : 0.0f);
             delayMixSm.snap(blk.delayMix);
@@ -1091,12 +1117,25 @@ private:
             return;
 
         seqPhase += 1.0;
-        for (int guard = 0; seqPhase >= stepLength && guard < 8; ++guard)
+        for (int guard = 0; guard < 8; ++guard)
         {
-            seqPhase -= stepLength;
+            const double length = currentStepLength();
+            if (seqPhase < length)
+                break;
+            seqPhase -= length;
             if (!stepForward())
                 break;
         }
+    }
+
+    // The playing step's length: SWING stretches the odd steps (the 1st, 3rd, ..., even indices) and shortens the
+    // even ones by the same amount, so each pair of steps keeps the tempo.
+    double currentStepLength() const
+    {
+        if (blk.swing <= 0.0f)
+            return stepLength;
+        const double amount = (double) blk.swing * (double) kMaxSwingRatio;
+        return std::max(1.0, stepLength * ((seqIdx & 1) == 0 ? 1.0 + amount : 1.0 - amount));
     }
 
     void updateGate(float mono, float bitsF)
@@ -1142,10 +1181,11 @@ private:
     // smoothers
     FilterType filterShown = FilterType::Ladder; // the filter in use (the type changes once the old one has faded out)
     EnvelopeFollower filterEnvelope;
-    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
+    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, ringOnSm, ringMixSm, ringHzSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
     Tremolo tremolo;
     bool tremWasActive = false;
+    double ringPhase = 0.0; // the ring mod's sine, shared by the channels
     ScopeFeed scope;
     double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on
     std::atomic<float> tremRampOut { -1.0f };

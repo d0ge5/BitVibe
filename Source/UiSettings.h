@@ -121,12 +121,12 @@ inline void setBeatDogShown(bool shown)
 inline int beatDogFps() { return read()->getIntAttribute("beatDogFps", 60); }
 
 // The effect panel showing on the right-hand side (0 = the sample blend .. 5 = the EQ).
-inline int effectTab() { return juce::jlimit(0, 5, read()->getIntAttribute("effectTab", 0)); }
+inline int effectTab() { return juce::jlimit(0, 6, read()->getIntAttribute("effectTab", 0)); }
 
 inline void setEffectTab(int tab)
 {
     auto xml = read();
-    xml->setAttribute("effectTab", juce::jlimit(0, 5, tab));
+    xml->setAttribute("effectTab", juce::jlimit(0, 6, tab));
     write(*xml);
 }
 

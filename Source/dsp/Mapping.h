@@ -54,6 +54,11 @@ inline constexpr float kMinTempoBpm = 23.4f;
 inline constexpr float kMaxTempoBpm = 6000.0f;     // what the engine can run (host sync, audio-rate sequencing)
 inline constexpr float kMaxTempoKnobBpm = 240.0f;  // the TEMPO knob and the typed tempo stop here
 
+// SWING at full stretches every other step to twice its partner (a 2:1 triplet feel); each pair of steps keeps the tempo.
+inline constexpr float kMaxSwingRatio = 1.0f / 3.0f;
+// The ring mod's frequency; at the bottom it is slow enough to hear as a wobble rather than a new tone.
+inline constexpr float kRingMinHz = 1.0f, kRingMaxHz = 6000.0f;
+
 enum class SeqType
 {
     Pitch = 0,

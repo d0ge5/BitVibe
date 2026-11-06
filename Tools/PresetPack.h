@@ -594,6 +594,27 @@ inline const std::vector<Preset>& presets()
              b.lane(Lane::Stutter, { 1, 0, 0, 0, 0, 0, 0, 0 });
              b.reverb(kShimmer, 0.4f, 0.7f);
          } },
+        { "Swing Thing", [](Builder& b) {
+             // a swung pitch line on eighth notes, every second step late, the backbeats a little softer
+             b.set(ids::tempo, 104.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::swing, 1.0f);
+             b.steps({ P(0), P(12), P(3), P(12), P(5), P(15), P(3), P(10) });
+             b.lane(Lane::Level, { 1.0f, 0.7f });
+             b.reverb(kRoom, 0.2f, 0.4f);
+         } },
+        { "Bell Ringer", [](Builder& b) {
+             // octaves rung against an 850 Hz sine: metal bells from any guitar, with a plate behind them
+             b.set(ids::tempo, 96.0f);
+             b.sequence(4, 5, 0);
+             b.freeRunning();
+             b.steps({ P(0), P(12), P(7), P(12) });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 850.0f);
+             b.set(ids::ringMix, 0.85f);
+             b.reverb(kPlate, 0.35f, 0.6f);
+         } },
     };
     return list;
 }

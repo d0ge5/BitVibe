@@ -101,6 +101,14 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // how many of the steps play, and each step's lanes (stored in the preset slots; the lanes are hidden from the host's
     // automation, as there are so many)
     add(std::make_unique<AudioParameterInt>(id(ids::seqLength), "Sequence Length", 1, kNumSteps, kDefaultSeqLength));
+    // swing on the step clock (stored in the preset slots): the odd steps stretch, the even ones shorten, so each
+    // pair keeps the tempo. Shown the usual way: 50% = straight, 67% = a 2:1 triplet feel.
+    add(std::make_unique<AudioParameterFloat>(id(ids::swing), "Swing", NormalisableRange<float>(0.0f, 1.0f), 0.0f,
+                                              AudioParameterFloatAttributes()
+                                                  .withStringFromValueFunction([](float v, int)
+                                                                               { return String(roundToInt(50.0f + v * 100.0f / 6.0f)) + "%"; })
+                                                  .withValueFromStringFunction([](const String& t)
+                                                                               { return jlimit(0.0f, 1.0f, (t.getFloatValue() - 50.0f) * 0.06f); })));
     // what the stutter does with its slice (StutterKind; stored in the preset slots)
     add(std::make_unique<AudioParameterChoice>(id(ids::stutterType), "Stutter Type",
                                                StringArray { "Repeat", "Reverse", "Rise", "Tape Stop", "Scratch", "Freeze" }, 0));
@@ -241,6 +249,29 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
             ramps.add(String(beats) + (beats == 1 ? " beat" : " beats"));
         add(std::make_unique<AudioParameterChoice>(id(ids::tremRamp), "Tremolo Change Time", ramps, bitvibe::kDefaultTremoloRamp));
     }
+
+    // ---- ring mod on the sequenced sound (rig settings): the sound times a sine, after the distortion ----
+    inGroup("ring", "Ring Mod");
+    add(std::make_unique<AudioParameterBool>(id(ids::ringOn), "Ring Mod On", false));
+    {
+        NormalisableRange<float> hzRange(bitvibe::kRingMinHz, bitvibe::kRingMaxHz, 0.01f);
+        hzRange.setSkewForCentre(200.0f);
+        add(std::make_unique<AudioParameterFloat>(id(ids::ringHz), "Ring Mod Frequency", hzRange, 440.0f,
+                                                  AudioParameterFloatAttributes()
+                                                      .withLabel("Hz")
+                                                      .withStringFromValueFunction([](float v, int)
+                                                                                   {
+                                                                                       if (v >= 1000.0f)
+                                                                                           return String(v / 1000.0f, 2) + " kHz";
+                                                                                       return String(v, v < 10.0f ? 2 : (v < 100.0f ? 1 : 0)) + " Hz";
+                                                                                   })
+                                                      .withValueFromStringFunction([](const String& t)
+                                                                                   {
+                                                                                       const float v = t.getFloatValue();
+                                                                                       return t.containsIgnoreCase("k") ? v * 1000.0f : v;
+                                                                                   })));
+    }
+    add(std::make_unique<AudioParameterFloat>(id(ids::ringMix), "Ring Mod Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
 
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     inGroup("samples", "Sample Blend");
@@ -408,7 +439,7 @@ std::vector<String> presetParameterIds()
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             list.push_back(ids::stepMem(t, i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats,
-                            ids::seqLength, ids::stutterType })
+                            ids::seqLength, ids::stutterType, ids::swing })
         list.emplace_back(id);
     for (int l = 0; l < bitvibe::kNumLanes; ++l)
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -420,7 +451,7 @@ std::vector<String> presetParameterIds()
 // effects, and a slot as its effects.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "trem", "delay", "sample", "eq" })
+    for (const char* prefix : { "reverb", "dist", "trem", "ring", "delay", "sample", "eq" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
@@ -586,6 +617,9 @@ BitVibeProcessor::BitVibeProcessor()
     pTremEnd = raw(ids::tremEnd);
     pTremBend = raw(ids::tremBend);
     pTremRamp = raw(ids::tremRamp);
+    pRingOn = raw(ids::ringOn);
+    pRingHz = raw(ids::ringHz);
+    pRingMix = raw(ids::ringMix);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
@@ -615,6 +649,7 @@ BitVibeProcessor::BitVibeProcessor()
     pStutterType = raw(ids::stutterType);
     pFilterType = raw(ids::filterType);
     pFilterRes = raw(ids::filterRes);
+    pSwing = raw(ids::swing);
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -772,6 +807,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.delayWobble = pDelayWobble->load();
     p.filterType = roundToInt(pFilterType->load());
     p.filterRes = pFilterRes->load();
+    p.swing = pSwing->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
@@ -805,6 +841,9 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.trem.endOctaves = pTremEnd->load();
     p.trem.bend = pTremBend->load();
     p.trem.rampBeats = bitvibe::kTremoloRampBeats[(size_t) jlimit(0, (int) bitvibe::kTremoloRampBeats.size() - 1, roundToInt(pTremRamp->load()))];
+    p.ringOn = pRingOn->load() > 0.5f;
+    p.ringHz = pRingHz->load();
+    p.ringMix = pRingMix->load();
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
     p.sampleBaseDb = pSampleBase->load();
@@ -1405,10 +1444,12 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "SEQUENCER", "Sample-rate steps" },    { "SEQUENCER", "Plays on its own" },
     { "SEQUENCER", "Plays after each pick" }, { "SEQUENCER", "Long sequences (7 to 16 steps)" },
     { "SEQUENCER", "Step lanes" },           { "SEQUENCER", "Sequence loop" },
+    { "SEQUENCER", "Swing" },
     { "SEQUENCER", "Beat pattern" },
     { "STUTTER", "Stutter" },                { "STUTTER", "Stutter types" },
     { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
-    { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Tremolo" },
+    { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Ring mod" },
+    { "EFFECTS", "Tremolo" },
     { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
     { "EFFECTS", "Reverb" },                 { "EFFECTS", "EQ" },
     { "MORPH", "Expression morph" },
@@ -1486,6 +1527,7 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     mark(featLongSequence, running && length > kDefaultSeqLength);
     mark(featLanes, lanes);
     mark(featLoop, running && plain(ids::loopOn) > 0.5f);
+    mark(featSwing, running && plain(ids::swing) > 0.005f);
     mark(featBeatPattern, s.hasEffects() && s.pattern.action != DrumAction::Off && s.pattern.steps != 0);
 
     const bool stutter = roundToInt(plain(ids::stutter)) > 0 || laneUsed(Lane::Stutter);
@@ -1498,6 +1540,7 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
                                           || std::abs(plain(ids::filterRes) - mapping::kDefaultFilterRes) > 0.02f));
 
     mark(featDistortion, effect(ids::distOn) > 0.5f);
+    mark(featRingMod, effect(ids::ringOn) > 0.5f && effect(ids::ringMix) > 0.005f);
     mark(featTremolo, effect(ids::tremOn) > 0.5f);
     mark(featDelay, effect(ids::delayOn) > 0.5f);
     mark(featTapeWobble, effect(ids::delayOn) > 0.5f && effect(ids::delayWobble) > 0.005f);

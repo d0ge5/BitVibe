@@ -27,11 +27,11 @@
           stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0" stepMem2_16="0.0"
           seqType="0.5" tempo="0.4556995928287506" stutterLen="0.5" morph="0.0"
           loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
-          loopRepeats="0.0" seqLength="1.0" stutterType="0.0" laneCrush1="0.1000000014901161"
-          laneCrush2="0.300000011920929" laneCrush3="0.0" laneCrush4="0.2000000029802322"
-          laneCrush5="0.4000000059604645" laneCrush6="0.05000000074505806"
-          laneCrush7="0.25" laneCrush8="0.1500000059604645" laneCrush9="0.0"
-          laneCrush10="0.3499999940395355" laneCrush11="0.1000000014901161"
+          loopRepeats="0.0" seqLength="1.0" stutterType="0.0" swing="0.0"
+          laneCrush1="0.1000000014901161" laneCrush2="0.300000011920929"
+          laneCrush3="0.0" laneCrush4="0.2000000029802322" laneCrush5="0.4000000059604645"
+          laneCrush6="0.05000000074505806" laneCrush7="0.25" laneCrush8="0.1500000059604645"
+          laneCrush9="0.0" laneCrush10="0.3499999940395355" laneCrush11="0.1000000014901161"
           laneCrush12="0.449999988079071" laneCrush13="0.05000000074505806"
           laneCrush14="0.2000000029802322" laneCrush15="0.300000011920929"
           laneCrush16="0.0" laneLevel1="1.0" laneLevel2="1.0" laneLevel3="1.0"
@@ -100,6 +100,9 @@
     <PARAM id="tremEnd" value="0.0"/>
     <PARAM id="tremBend" value="0.0"/>
     <PARAM id="tremRamp" value="2.0"/>
+    <PARAM id="ringOn" value="0.0"/>
+    <PARAM id="ringHz" value="440.0"/>
+    <PARAM id="ringMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

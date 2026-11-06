@@ -26,20 +26,20 @@
           stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0" stepMem2_16="0.0"
           seqType="0.0" tempo="0.5430670380592346" stutterLen="0.5" morph="0.0"
           loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
-          loopRepeats="0.0" seqLength="1.0" stutterType="0.0" laneCrush1="0.0"
-          laneCrush2="0.0" laneCrush3="0.0" laneCrush4="0.0" laneCrush5="0.0"
-          laneCrush6="0.0" laneCrush7="0.0" laneCrush8="0.0" laneCrush9="0.0"
-          laneCrush10="0.0" laneCrush11="0.0" laneCrush12="0.0" laneCrush13="0.0"
-          laneCrush14="0.0" laneCrush15="0.0" laneCrush16="0.0" laneLevel1="1.0"
-          laneLevel2="1.0" laneLevel3="1.0" laneLevel4="1.0" laneLevel5="1.0"
-          laneLevel6="1.0" laneLevel7="1.0" laneLevel8="1.0" laneLevel9="1.0"
-          laneLevel10="1.0" laneLevel11="1.0" laneLevel12="1.0" laneLevel13="1.0"
-          laneLevel14="1.0" laneLevel15="1.0" laneLevel16="1.0" laneTrem1="1.0"
-          laneTrem2="1.0" laneTrem3="1.0" laneTrem4="1.0" laneTrem5="1.0"
-          laneTrem6="1.0" laneTrem7="1.0" laneTrem8="1.0" laneTrem9="1.0"
-          laneTrem10="1.0" laneTrem11="1.0" laneTrem12="1.0" laneTrem13="1.0"
-          laneTrem14="1.0" laneTrem15="1.0" laneTrem16="1.0" laneDelay1="0.0"
-          laneDelay2="0.07000000029802322" laneDelay3="0.1299999952316284"
+          loopRepeats="0.0" seqLength="1.0" stutterType="0.0" swing="0.0"
+          laneCrush1="0.0" laneCrush2="0.0" laneCrush3="0.0" laneCrush4="0.0"
+          laneCrush5="0.0" laneCrush6="0.0" laneCrush7="0.0" laneCrush8="0.0"
+          laneCrush9="0.0" laneCrush10="0.0" laneCrush11="0.0" laneCrush12="0.0"
+          laneCrush13="0.0" laneCrush14="0.0" laneCrush15="0.0" laneCrush16="0.0"
+          laneLevel1="1.0" laneLevel2="1.0" laneLevel3="1.0" laneLevel4="1.0"
+          laneLevel5="1.0" laneLevel6="1.0" laneLevel7="1.0" laneLevel8="1.0"
+          laneLevel9="1.0" laneLevel10="1.0" laneLevel11="1.0" laneLevel12="1.0"
+          laneLevel13="1.0" laneLevel14="1.0" laneLevel15="1.0" laneLevel16="1.0"
+          laneTrem1="1.0" laneTrem2="1.0" laneTrem3="1.0" laneTrem4="1.0"
+          laneTrem5="1.0" laneTrem6="1.0" laneTrem7="1.0" laneTrem8="1.0"
+          laneTrem9="1.0" laneTrem10="1.0" laneTrem11="1.0" laneTrem12="1.0"
+          laneTrem13="1.0" laneTrem14="1.0" laneTrem15="1.0" laneTrem16="1.0"
+          laneDelay1="0.0" laneDelay2="0.07000000029802322" laneDelay3="0.1299999952316284"
           laneDelay4="0.2000000029802322" laneDelay5="0.2700000107288361"
           laneDelay6="0.3300000131130219" laneDelay7="0.4000000059604645"
           laneDelay8="0.4699999988079071" laneDelay9="0.5299999713897705"
@@ -100,6 +100,9 @@
     <PARAM id="tremEnd" value="0.0"/>
     <PARAM id="tremBend" value="0.0"/>
     <PARAM id="tremRamp" value="2.0"/>
+    <PARAM id="ringOn" value="0.0"/>
+    <PARAM id="ringHz" value="440.0"/>
+    <PARAM id="ringMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

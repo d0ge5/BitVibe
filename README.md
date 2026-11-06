@@ -42,8 +42,9 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   it plays: crush the bits further, set its level, its share of the tremolo, the delay and the reverb, or fire the
   stutter. Speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
+  **SWING** delays every second step, from straight up to a triplet shuffle, saved with the preset.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **one bank of 64 preset slots** with editable names,
+- **Expression morph** between two stored sets of knobs, and **one bank of 66 preset slots** with editable names,
   grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
@@ -51,6 +52,7 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
 **The right-hand side** (works only on the sequenced and stuttered sound; your clean signal is left alone)
 
 - **Distortion / fuzz:** an overdrive and a fuzz, each with its own knobs.
+- **Ring mod:** multiplies the sound by a sine tone (1 Hz to 6 kHz) for metallic, bell-like overtones, with a mix knob.
 - **Tremolo:** cuts the sound in and out, smooth or choppy, at a rate that can stay the same or speed up or slow down
   while the sequence plays, drawn and edited as a curve.
 - **Delay:** echoes in time with the tempo (1/32 to a bar, with triplets and dotted notes), 1 to 16 repeats or
@@ -203,7 +205,7 @@ crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes do
 the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **OUTPUT** with an
 output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
 out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
-and a **FILTER** row: the filter's type and its **RESONANCE**:
+a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row with **SWING**:
 
 - **HEAR** is what comes out. **Guitar + effect**: both, blended with DRY/WET. **Clean in between**: the crush and
   filter act only while a stutter or sequence plays, so your playing stays clean in between. **Effect only**: your
@@ -229,6 +231,9 @@ and a **FILTER** row: the filter's type and its **RESONANCE**:
   just short of whistling by itself and the others peak hard. Its middle setting (37%, double-click to get back
   to it) is the resonance the pedal always had. Both are saved with the preset, and in SIMPLE a type other than
   LADDER or a changed RESONANCE is listed under "Also on".
+- **SWING** makes every second step wait a little, like a drum machine's shuffle: 50% is straight, 67% a full
+  triplet feel, and each pair of steps keeps the tempo, so nothing drifts. It is part of the sequence (saved with
+  the preset), it works at any speed and length, and in SIMPLE a swing above 50% is listed under "Also on".
 
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
@@ -256,13 +261,13 @@ step going flat, the crush, the tremolo cutting, the echoes trailing on.
 
 At the top, the **beat pattern** decides when the sequence fires; it has a power button like the effects and folds to
 its title row while it is off. Below it, the effects are **numbered tabs** in the order the sequenced sound goes
-through them: **1** sample blend, **2** distortion / fuzz, **3** tremolo, **4** delay, **5** reverb, **6** EQ
-(ADVANCED). One panel shows at a time; click a tab to see it (the choice is remembered). They hear only the
+through them: **1** sample blend, **2** distortion / fuzz, **3** ring mod, **4** tremolo, **5** delay, **6** reverb,
+**7** EQ (ADVANCED). One panel shows at a time; click a tab to see it (the choice is remembered). They hear only the
 sequenced and stuttered sound. Each tab has a light that is on when its effect is on and glows while the sequence or
 stutter plays (which is when the effect acts); each panel has the same power button next to its title, and a
 switched-off panel is dimmed.
 
-<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the six numbered tabs, the reverb's graph and six knobs, DOG5 and the in / out panel"></p>
+<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the seven numbered tabs, the reverb's graph and six knobs, DOG5 and the in / out panel"></p>
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 The distortion, delay and reverb panels each have a small graph on the left of what the effect does, worked out by
 running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and
@@ -290,6 +295,10 @@ keeps them with it.
   VOLUME, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well.
+- **Ring mod:** multiplies the sequenced sound by a sine tone, the classic way to make it metallic and bell-like.
+  **FREQUENCY** is the tone, 1 Hz to 6 kHz: very low it wobbles like a tremolo, higher it turns clangorous and
+  inharmonic, and it is worth tuning near a note of the song. **MIX** blends it in, up to only the rung sound.
+  It sits after the distortion and before the tremolo, so the delay's echoes carry it too.
 - **Tremolo:** cuts the sequenced sound in and out while a sequence or stutter plays. **RATE** is how fast (0.5 to
   20 times a second), **DEPTH** how far the volume drops (fully right, it cuts right out), **EDGE** how hard: a
   smooth swell to the left, a hard on/off chop to the right. The graph shows the rate over the **CHANGE OVER** time
@@ -349,8 +358,8 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **one bank of 64 preset slots** (they also appear as programs in your DAW). `<` and `>`
-  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 64 are the preset
+- The bar at the top holds **one bank of 66 preset slots** (they also appear as programs in your DAW). `<` and `>`
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 66 are the preset
   pack. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
@@ -359,15 +368,15 @@ Only record what you have the right to use.
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
   rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 64 in order
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 66 in order
   and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** forty-four sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble and the filter types, in slots 21 to 64 (your picked sounds stay as they are). Save over
+- **Preset pack:** forty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
+  the delay's tape wobble, the filter types, swing and the ring mod, in slots 21 to 66 (your picked sounds stay as they are). Save over
   one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 

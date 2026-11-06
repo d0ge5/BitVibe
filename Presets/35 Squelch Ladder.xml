@@ -27,7 +27,7 @@
           seqType="0.5" tempo="0.5345441699028015" stutterLen="0.5" morph="0.0"
           loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
           loopRepeats="0.0" seqLength="0.4666666686534882" stutterType="0.0"
-          laneCrush1="0.0" laneCrush2="0.300000011920929" laneCrush3="0.0"
+          swing="0.0" laneCrush1="0.0" laneCrush2="0.300000011920929" laneCrush3="0.0"
           laneCrush4="0.300000011920929" laneCrush5="0.0" laneCrush6="0.300000011920929"
           laneCrush7="0.0" laneCrush8="0.300000011920929" laneCrush9="0.0"
           laneCrush10="0.300000011920929" laneCrush11="0.0" laneCrush12="0.300000011920929"
@@ -98,6 +98,9 @@
     <PARAM id="tremEnd" value="0.0"/>
     <PARAM id="tremBend" value="0.0"/>
     <PARAM id="tremRamp" value="2.0"/>
+    <PARAM id="ringOn" value="0.0"/>
+    <PARAM id="ringHz" value="440.0"/>
+    <PARAM id="ringMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

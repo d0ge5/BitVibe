@@ -406,7 +406,7 @@ private:
 class EffectTabs : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    static constexpr int kCount = 6, kHeight = 26;
+    static constexpr int kCount = 7, kHeight = 26;
     std::function<void(int tab)> onPick;
 
     void set(int chosen, int shownCount, const std::array<bool, kCount>& on, bool active); // repaints only on a change
@@ -495,7 +495,7 @@ public:
     bool isBeatDogShown() const { return beatDogShown; }
 
     // The effect panel showing on the right-hand side (one at a time, picked with the tabs above it). Remembered.
-    static constexpr int kTabSamples = 0, kTabDist = 1, kTabTremolo = 2, kTabDelay = 3, kTabReverb = 4, kTabEq = 5;
+    static constexpr int kTabSamples = 0, kTabDist = 1, kTabRing = 2, kTabTremolo = 3, kTabDelay = 4, kTabReverb = 5, kTabEq = 6;
     void setEffectTab(int tab);
     int getEffectTab() const { return effectTab; }
 
@@ -538,6 +538,7 @@ private:
     juce::Rectangle<int> effectsArea() const;
     void applyEffectTab(); // shows the chosen panel's controls and hides the others
     juce::Rectangle<int> distArea() const;
+    juce::Rectangle<int> ringArea() const;
     juce::Rectangle<int> tremoloArea() const;
     juce::Rectangle<int> delayArea() const;
     juce::Rectangle<int> reverbArea() const;
@@ -619,6 +620,9 @@ private:
     std::unique_ptr<APVTS::ComboBoxAttachment> filterTypeAtt;
     KnobSlider filterResSlider;
     std::unique_ptr<APVTS::SliderAttachment> filterResAtt;
+    // the SEQ row (ADVANCED): swing on the step clock
+    KnobSlider swingSlider;
+    std::unique_ptr<APVTS::SliderAttachment> swingAtt;
 
     // the delay on the sequenced sound: time, mix, decay, repeats, low and high cut, and its power button
     KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayWobbleSlider, delayLowSlider, delayHighSlider;
@@ -643,6 +647,12 @@ private:
     juce::ComboBox distTypeBox; // overdrive or fuzz
     std::unique_ptr<APVTS::ComboBoxAttachment> distTypeAtt;
     std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
+
+    // ring mod on the sequenced sound: its frequency and mix, and its power button
+    KnobSlider ringHzSlider, ringMixSlider;
+    std::unique_ptr<APVTS::SliderAttachment> ringHzAtt, ringMixAtt;
+    juce::ToggleButton ringOnButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> ringOnAtt;
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;
     std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open

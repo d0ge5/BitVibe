@@ -791,6 +791,99 @@ void testSequencer()
     CHECK(rms(out, 0.5, 2.5) < 0.7 * rms(tone, 0.5, 2.5), "audio-rate muting should reduce level");
 }
 
+void testSwing()
+{
+    std::puts("swing");
+    const Signal tone = sine(440.0, 3.0, 0.5f);
+    // A dry / mute / dry / mute sequence: how long each loud stretch lasts, and how far apart they start.
+    auto measure = [&](float swing)
+    {
+        Params p;
+        p.seqPlay = 5;
+        p.tempoBpm = 600.0f; // 100 ms per step at x1
+        p.seqMult = 0;
+        p.swing = swing;
+        p.steps.fill(1.0f); // mute
+        for (size_t i = 0; i < p.steps.size(); i += 2)
+            p.steps[i] = 0.5f; // dry on the odd steps
+        const Signal out = render(p, tone);
+        // loud while a sample above the threshold was heard in the last 3 ms (the tone crosses zero every ~1 ms)
+        const int hold = (int) (0.003 * kFs);
+        int sinceLoud = 1000000;
+        bool loud = false;
+        size_t start = 0, lastStart = 0;
+        std::vector<double> lengths, spacings;
+        for (size_t i = (size_t) (0.25 * kFs); i < out.size(); ++i)
+        {
+            sinceLoud = std::abs(out[i]) > 0.2f ? 0 : sinceLoud + 1;
+            if (!loud && sinceLoud == 0)
+            {
+                loud = true;
+                if (lastStart > 0)
+                    spacings.push_back((double) (i - lastStart) / kFs);
+                lastStart = start = i;
+            }
+            else if (loud && sinceLoud > hold)
+            {
+                loud = false;
+                lengths.push_back((double) (i - sinceLoud - start) / kFs);
+            }
+        }
+        auto mean = [](const std::vector<double>& v)
+        {
+            double acc = 0;
+            for (double d : v)
+                acc += d;
+            return v.empty() ? 0.0 : acc / (double) v.size();
+        };
+        return std::pair { mean(lengths), mean(spacings) };
+    };
+    const auto straight = measure(0.0f), swung = measure(1.0f), half = measure(0.5f);
+    CHECK(std::abs(straight.first - 0.100) < 0.012, "no swing: each dry step lasts ~100 ms (got %g s)", straight.first);
+    CHECK(std::abs(swung.first - 0.1333) < 0.012, "full swing: the odd steps stretch to ~133 ms (got %g s)", swung.first);
+    CHECK(std::abs(half.first - 0.1167) < 0.012, "half swing sits in between (~117 ms, got %g s)", half.first);
+    CHECK(std::abs(straight.second - 0.200) < 0.012 && std::abs(swung.second - 0.200) < 0.012,
+          "each pair of steps keeps the tempo (spacing %g and %g s)", straight.second, swung.second);
+}
+
+void testRingMod()
+{
+    std::puts("ring mod");
+    const Signal tone = sine(440.0, 3.0, 0.5f);
+    Params p; // a continuous sequence of dry steps, so the effect side is active
+    p.seqPlay = 5;
+    p.tempoBpm = 600.0f;
+    p.seqMult = 0;
+    p.steps.fill(0.5f);
+    p.ringOn = true;
+    p.ringHz = 1000.0f;
+    p.ringMix = 1.0f;
+    const Signal out = render(p, tone);
+    // y * sin(1 kHz) moves a 440 Hz tone to 560 and 1440 Hz
+    const double side = tonePower(out, 0.5, 2.5, 560.0) + tonePower(out, 0.5, 2.5, 1440.0);
+    const double carrier = tonePower(out, 0.5, 2.5, 440.0);
+    CHECK(side > 100.0 * carrier, "full ring mod: sidebands at 560 / 1440 Hz, the 440 Hz tone gone (ratio %g)", side / std::max(carrier, 1.0e-12));
+
+    // at MIX 0 the sound passes as it is
+    p.ringMix = 0.0f;
+    const Signal dry = render(p, tone);
+    double diff = 0.0;
+    for (size_t i = (size_t) (0.5 * kFs); i < dry.size(); ++i)
+        diff = std::max(diff, (double) std::abs(dry[i] - tone[i]));
+    CHECK(diff < 0.02, "ring mod at MIX 0 leaves the sound alone (diff %g)", diff);
+
+    // while nothing plays, the clean signal is never rung
+    Params idle = neutral();
+    idle.ringOn = true;
+    idle.ringHz = 1000.0f;
+    idle.ringMix = 1.0f;
+    const Signal clean = render(idle, tone);
+    diff = 0.0;
+    for (size_t i = (size_t) (0.5 * kFs); i < clean.size(); ++i)
+        diff = std::max(diff, (double) std::abs(clean[i] - tone[i]));
+    CHECK(diff < 0.02, "ring mod never touches the signal while no sequence or stutter plays (diff %g)", diff);
+}
+
 void testRobustness()
 {
     std::puts("robustness: random parameters and input must never produce NaN/Inf or runaway levels");
@@ -3763,6 +3856,8 @@ int main(int argc, char** argv)
     testSampleBlend();
     testDistortion();
     testTremolo();
+    testSwing();
+    testRingMod();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

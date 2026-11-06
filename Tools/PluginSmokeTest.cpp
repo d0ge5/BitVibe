@@ -157,7 +157,7 @@ int main(int argc, char** argv)
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 349 && findParam(*plugin, "Program") != nullptr
+    check(plugin->getParameters().size() == 353 && findParam(*plugin, "Program") != nullptr
               && findParam(*plugin, "Dry/Wet") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
               && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
               && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr
@@ -317,13 +317,13 @@ int main(int argc, char** argv)
             return d;
         };
 
-        check(plugin->getNumPrograms() == 64, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack)");
+        check(plugin->getNumPrograms() == 66, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack)");
         StringArray names;
         for (int i = 0; i < plugin->getNumPrograms(); ++i)
             names.add(plugin->getProgramName(i));
         StringArray unique(names);
         unique.removeDuplicates(false);
-        check(names.size() == 64 && unique.size() == 64 && !names.contains(""), "preset names are set and unique");
+        check(names.size() == 66 && unique.size() == 66 && !names.contains(""), "preset names are set and unique");
         check(names[0] == "Pitch Sequence", "slot 1 is '" + names[0] + "'");
         std::printf("    presets: %s\n", names.joinIntoString(" | ").toRawUTF8());
         check(plugin->getCurrentProgram() == 0, "starts on slot 1");
