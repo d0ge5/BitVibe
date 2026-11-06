@@ -396,6 +396,126 @@ void testStutter()
     CHECK(rms(held, 1.8, 2.0) < 1.0e-4, "released hold should stop (rms %g)", rms(held, 1.8, 2.0));
 }
 
+// The stutter types, on one channel: a 100 ms slice of a rising tone (so forwards and backwards differ), four repeats.
+void testStutterKinds()
+{
+    std::puts("stutter types");
+    constexpr int len = 4800, repeats = 4;
+    struct Run
+    {
+        Signal in, out;
+        std::vector<float> speed;
+        int activeFor = 0;
+    };
+    auto run = [&](StutterKind kind, bool hold = false, int samples = 48000)
+    {
+        StutterChannel st;
+        st.prepare(kFs, 48000);
+        Run r;
+        r.in.resize((size_t) samples);
+        double phase = 0.0;
+        for (int n = 0; n < samples; ++n)
+        {
+            phase += (200.0 + 4.0 * (double) n / 48.0) / kFs; // a sweep, 200 Hz up
+            r.in[(size_t) n] = 0.5f * (float) std::sin(6.283185307179586 * phase);
+        }
+        for (int n = 0; n < samples; ++n)
+        {
+            if (n == 1000)
+                st.trigger(len, 0, 1.0f, repeats, false, hold, kind);
+            r.out.push_back(st.process(r.in[(size_t) n]));
+            r.speed.push_back(st.isPlaying() ? st.getSpeed() : 0.0f);
+            r.activeFor += st.isActive() ? 1 : 0;
+        }
+        return r;
+    };
+    const int recordEnd = 1000 + len;
+    auto sliceRms = [](const Signal& s, int from, int to)
+    {
+        double acc = 0.0;
+        for (int i = from; i < to; ++i)
+            acc += (double) s[(size_t) i] * s[(size_t) i];
+        return std::sqrt(acc / std::max(1, to - from));
+    };
+    auto maxJump = [](const Signal& s, int from, int to)
+    {
+        float most = 0.0f;
+        for (int i = from + 1; i < to; ++i)
+            most = std::max(most, std::abs(s[(size_t) i] - s[(size_t) i - 1]));
+        return most;
+    };
+
+    const Run repeat = run(StutterKind::Repeat);
+    CHECK(std::abs(repeat.activeFor - (len + repeats * len)) < 8, "REPEAT: the slice and four repeats (%d samples)", repeat.activeFor);
+    float diff = 0.0f;
+    for (int k = 200; k < len - 200; ++k)
+        diff = std::max(diff, std::abs(repeat.out[(size_t) (recordEnd + k)] - repeat.in[(size_t) (1000 + k)]));
+    CHECK(diff < 1.0e-4f, "REPEAT plays the slice as it was (%g)", (double) diff);
+
+    const Run reverse = run(StutterKind::Reverse);
+    diff = 0.0f;
+    for (int k = 200; k < len - 200; ++k)
+        diff = std::max(diff, std::abs(reverse.out[(size_t) (recordEnd + k)] - reverse.in[(size_t) (1000 + len - 1 - k)]));
+    CHECK(diff < 0.02f && std::abs(reverse.activeFor - repeat.activeFor) < 8, "REVERSE plays it backwards, as many times (%g)", (double) diff);
+
+    const Run rise = run(StutterKind::Rise);
+    const float lastSpeed = rise.speed[(size_t) (1000 + rise.activeFor - 2)];
+    CHECK(std::abs(lastSpeed - std::pow(StutterChannel::kRiseStep, 3.0f)) < 1.0e-3f && rise.activeFor < repeat.activeFor,
+          "RISE: each repeat a tone higher (the fourth at %gx), so it is over sooner", (double) lastSpeed);
+
+    const Run stop = run(StutterKind::TapeStop);
+    bool slowing = true;
+    for (int n = recordEnd + 1; n < recordEnd + repeats * len - 1; ++n)
+        slowing = slowing && stop.speed[(size_t) n] <= stop.speed[(size_t) n - 1] + 1.0e-6f;
+    CHECK(slowing && stop.speed[(size_t) (recordEnd + 10)] > 0.99f && stop.speed[(size_t) (recordEnd + repeats * len - 10)] < 0.01f,
+          "TAPE STOP slows from full speed to a stop");
+    CHECK(std::abs(stop.activeFor - repeat.activeFor) < 8 && sliceRms(stop.out, recordEnd + repeats * len - 300, recordEnd + repeats * len) < 0.02,
+          "over four slices, fading as it stops (%g)", sliceRms(stop.out, recordEnd + repeats * len - 300, recordEnd + repeats * len));
+    const Run stopHeld = run(StutterKind::TapeStop, true);
+    CHECK(stopHeld.activeFor > 40000, "held, it stops and starts again for as long as the hold lasts");
+
+    const Run scratch = run(StutterKind::Scratch);
+    float lowest = 1.0f, highest = 0.0f;
+    for (int n = recordEnd; n < recordEnd + repeats * len; ++n)
+    {
+        lowest = std::min(lowest, scratch.speed[(size_t) n]);
+        highest = std::max(highest, scratch.speed[(size_t) n]);
+    }
+    CHECK(lowest < -1.5f && highest > 1.5f && std::abs(scratch.activeFor - repeat.activeFor) < 8,
+          "SCRATCH pushes the slice forwards and pulls it back (%g to %g)", (double) lowest, (double) highest);
+    CHECK(maxJump(scratch.out, recordEnd, recordEnd + repeats * len) < 0.2f, "without clicks (%g)",
+          (double) maxJump(scratch.out, recordEnd, recordEnd + repeats * len));
+
+    const Run freeze = run(StutterKind::Freeze);
+    const double q1 = sliceRms(freeze.out, recordEnd + 1000, recordEnd + 1000 + len), q2 = sliceRms(freeze.out, recordEnd + 2 * len, recordEnd + 3 * len);
+    CHECK(q1 > 0.15 && std::abs(q1 / q2 - 1.0) < 0.25 && std::abs(freeze.activeFor - repeat.activeFor) < 8,
+          "FREEZE holds a steady sound for four slices (%g, %g)", q1, q2);
+    CHECK(maxJump(freeze.out, recordEnd, recordEnd + repeats * len) < 0.15f, "without clicks (%g)",
+          (double) maxJump(freeze.out, recordEnd, recordEnd + repeats * len));
+
+    for (const Run* r : { &stop, &scratch, &freeze })
+        CHECK(maxJump(r->out, 1000 + r->activeFor - 50, 1000 + r->activeFor + 400) < 0.2f, "and back to the live sound smoothly");
+
+    // through the engine: the type is what Params says
+    Params p = neutral();
+    p.tempoBpm = 120.0f;
+    p.stutter = 2;
+    const Signal in = singleBurst(1.0);
+    Params rev = p;
+    rev.stutterKind = StutterKind::Reverse;
+    auto differ = [](const Signal& a, const Signal& b, double t0, double t1)
+    {
+        double acc = 0.0;
+        const size_t from = (size_t) (t0 * kFs), to = std::min(a.size(), (size_t) (t1 * kFs));
+        for (size_t i = from; i < to; ++i)
+            acc += (double) (a[i] - b[i]) * (a[i] - b[i]);
+        return std::sqrt(acc / (double) std::max<size_t>(1, to - from));
+    };
+    const Signal plainOut = render(p, in), revOut = render(rev, in);
+    CHECK(differ(plainOut, revOut, 0.33, 0.62) > 0.01 && differ(plainOut, revOut, 0.0, 0.3) < 1.0e-6,
+          "the engine plays the stutter type it is given");
+}
+
 double dominantRatio(const Signal& s, double t0, double t1, double lo, double hi)
 {
     // power at hi / power at lo
@@ -3449,6 +3569,7 @@ int main(int argc, char** argv)
     testDistortion();
     testTremolo();
     testSeqLengthAndLanes();
+    testStutterKinds();
     testFuzz();
     testEqualizer();
     testTriggerEvents();

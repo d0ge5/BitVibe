@@ -581,7 +581,7 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt, fxTrigAtt;
     juce::ToggleButton seqOnlyButton { "SEQ ONLY" };
     std::unique_ptr<APVTS::ButtonAttachment> seqOnlyAtt;
-    juce::ComboBox headroomBox, stutterLenBox;
+    juce::ComboBox headroomBox, stutterLenBox, stutterTypeBox;
     juce::ToggleButton loopButton { "LOOP" };
     std::unique_ptr<APVTS::ButtonAttachment> loopAtt;
     juce::ComboBox loopFromBox, loopToBox, loopRepeatsBox;
@@ -621,7 +621,7 @@ private:
     std::unique_ptr<ReverbGraph> reverbGraph;
     static constexpr int kGraphX = 10, kGraphW = 120, kKnobsX = 136; // in a panel
     std::unique_ptr<PatternPanel> patternPanel;
-    std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt;
+    std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt, stutterTypeAtt;
 
     // footswitches and buttons
     FootSwitch bypassSwitch, tapSwitch;

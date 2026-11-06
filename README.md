@@ -32,7 +32,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 
 - **Sample-rate reduction** (48 kHz down to 48 Hz) and **bit-depth reduction** (24 bit down to 1 bit).
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
-- **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random) and a hold to freeze it.
+- **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random), a hold to freeze it, and six **stutter
+  types**: repeat, reverse, rise (each repeat a tone higher), tape stop, scratch and freeze.
 - **Step sequencer of up to 16 steps** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole
   sequence or for each step on its own. Each step can be skipped or muted, and has **lanes** for what else it does while
   it plays: crush the bits further, set its level, its share of the tremolo, the delay and the reverb, or fire the
@@ -191,8 +192,16 @@ sequencer) with the last three seconds of your playing scrolling past the trigge
 caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over the line; and
 **HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an output meter
 (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it out),
-**SEQ ONLY** and, in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, **STUTTER HOLD** (freezes the stutter until you
+**SEQ ONLY** and, in ADVANCED, **FX ON TRIGGERS**. ADVANCED adds the stutter length, the stutter type, **STUTTER HOLD** (freezes the stutter until you
 switch it off) and the sequence loop:
+
+- **STUTTER TYPE** is what the stutter does with the slice it catches. The STUTTER knob's repeats and speed still
+  count: **REPEAT** plays the slice that many times (as before), **REVERSE** plays it backwards, **RISE** plays each
+  repeat a whole tone higher than the last (up to two octaves), **TAPE STOP** slows it down to a stop like a tape
+  machine switched off (taking that many slices to stop), **SCRATCH** pushes it back and forth like a record under a
+  hand (one push and pull per slice), and **FREEZE** holds the end of it as a steady cloud of tiny overlapping grains
+  for that many slices. With STUTTER HOLD each of them goes on until you let go. The knob's read-out names the type,
+  it is saved with the preset, and in SIMPLE a type other than REPEAT is listed under "Also on".
 
 - **SEQUENCE LOOP** repeats part of the sequence. Choose its first and last step and how often it
   plays (2 to 16 times, or forever), or drag across the step strip; the looped steps are framed on it. Each time the sequence

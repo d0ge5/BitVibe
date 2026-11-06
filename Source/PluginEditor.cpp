@@ -818,8 +818,8 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
     // what it starts
     const Rectangle<float> stutter(c2, y, cw, 96.0f), sequencer(c2, y + 108.0f, cw, 124.0f), sounds(c2, y + 252.0f, cw, 72.0f);
     chartBox(g, stutter, "STUTTER",
-             "Repeats a slice of what you just played: STUTTER sets 1 to 16 repeats at normal, fast or slow speed, or random. "
-             "STUTTER HOLD freezes it.", true);
+             "Repeats a slice of what you just played: STUTTER sets 1 to 16 repeats at normal, fast or slow speed, or random; "
+             "STUTTER TYPE plays it reversed, rising, tape-stopped, scratched or frozen. STUTTER HOLD holds it.", true);
     chartBox(g, sequencer, "SEQUENCER",
              "Plays its steps (LENGTH, 1 to 16) from step 1, SEQUENCER times (once to 8 times, or continuously). Skipped steps are "
              "left out and the SEQUENCE LOOP repeats its steps. Each step, plus its lanes:", true);
@@ -1252,6 +1252,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     fillCombo(stutterLenBox, ids::stutterLen);
     headroomAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::headroom, headroomBox);
     stutterLenAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stutterLen, stutterLenBox);
+    fillCombo(stutterTypeBox, ids::stutterType);
+    stutterTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stutterType, stutterTypeBox);
 
     // the loop section: the items are listed in the parameters' order, so the attachments match them up
     loopButton.setLookAndFeel(&laf);
@@ -1397,7 +1399,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(),
+                        &headroomBox, &stutterLenBox, &stutterTypeBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(),
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
         pedalComponents.push_back(&k.front);
@@ -1502,6 +1504,7 @@ BitVibeEditor::~BitVibeEditor()
     tempoLabel.setLookAndFeel(nullptr);
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
+    stutterTypeBox.setLookAndFeel(nullptr);
     loopButton.setLookAndFeel(nullptr);
     loopFromBox.setLookAndFeel(nullptr);
     loopToBox.setLookAndFeel(nullptr);
@@ -1805,7 +1808,7 @@ void BitVibeEditor::applyRightMode()
     const bool show = advancedRight && !drumsShown;
     for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton, &reverbToneSlider, &reverbLevelSlider,
                                                             &reverbLowSlider, &reverbHighSlider, &delayLowSlider, &delayHighSlider,
-                                                            &fxTrigButton, &holdButton, &stutterLenBox, &loopButton, &loopFromBox,
+                                                            &fxTrigButton, &holdButton, &stutterLenBox, &stutterTypeBox, &loopButton, &loopFromBox,
                                                             &loopToBox, &loopRepeatsBox })
         c->setVisible(show);
     samplePanel->setAdvanced(advancedRight);
@@ -1909,9 +1912,15 @@ String BitVibeEditor::readoutText(int i) const
                 return "OFF";
             if (m.random)
                 return "RANDOM";
-            // how many repeats, and how fast they play (normal, twice as fast, half as fast)
-            const String repeats = String(m.repeats) + (m.repeats == 1 ? " REPEAT" : " REPEATS");
-            return m.speed > 1.5f ? repeats + ", FAST" : (m.speed < 0.75f ? repeats + ", SLOW" : repeats);
+            // how many repeats, and how fast they play (normal, twice as fast, half as fast); another STUTTER TYPE goes first
+            const int type = jlimit(0, kNumStutterKinds - 1, roundToInt(rawValue(ids::stutterType)));
+            const String speed = m.speed > 1.5f ? ", FAST" : (m.speed < 0.75f ? ", SLOW" : "");
+            if (type != 0)
+            {
+                static const char* typeNames[kNumStutterKinds] { "REPEAT", "REVERSE", "RISE", "TAPE STOP", "SCRATCH", "FREEZE" };
+                return String(typeNames[type]) + " x" + String(m.repeats) + speed;
+            }
+            return String(m.repeats) + (m.repeats == 1 ? " REPEAT" : " REPEATS") + speed;
         }
         case 4:
         {
@@ -2008,6 +2017,8 @@ void BitVibeEditor::setTooltips()
     loopRepeatsBox.setTooltip("LOOP REPEATS: how many times the loop section plays in a row each time the sequence reaches it; forever keeps it "
                               "going until the sequence restarts.");
     stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
+    stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE (backwards), RISE (each repeat a tone "
+                              "higher), TAPE STOP (slows to a stop), SCRATCH (back and forth), FREEZE (holds it as a cloud).");
 
     // preset bar and expression morph strip
     prevButton.setTooltip("Previous preset.");
@@ -2247,8 +2258,9 @@ void BitVibeEditor::resized()
     headroomBox.setBounds(face({ 98, gy + 110, 128, 24 }));
     seqOnlyButton.setBounds(face({ 252, gy + 110, 84, 24 }));
     fxTrigButton.setBounds(face({ 340, gy + 110, 116, 24 }));
-    stutterLenBox.setBounds(face({ 98, gy + 144, 128, 24 }));
-    holdButton.setBounds(face({ 252, gy + 144, 120, 24 }));
+    stutterLenBox.setBounds(face({ 98, gy + 144, 96, 24 }));
+    stutterTypeBox.setBounds(face({ 200, gy + 144, 110, 24 }));
+    holdButton.setBounds(face({ 318, gy + 144, 120, 24 }));
     loopButton.setBounds(face({ 116, gy + 178, 60, 24 }));
     loopFromBox.setBounds(face({ 182, gy + 178, 52, 24 })); // "TO" is painted between the two step boxes
     loopToBox.setBounds(face({ 256, gy + 178, 52, 24 }));
@@ -2427,6 +2439,8 @@ void BitVibeEditor::paintContent(Graphics& g)
                 on.add("STUTTER HOLD");
             if (roundToInt(rawValue(ids::stutterLen)) != 1)
                 on.add("STUTTER " + stutterLenBox.getText().toUpperCase());
+            if (roundToInt(rawValue(ids::stutterType)) != 0)
+                on.add("STUTTER TYPE " + stutterTypeBox.getText().toUpperCase());
             if (!on.isEmpty())
             {
                 g.setColour(kAccent);

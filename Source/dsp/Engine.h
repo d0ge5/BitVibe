@@ -80,6 +80,7 @@ struct Params
     bool lineHeadroom = false;       // false = instrument level, true = line/synth level
     float triggerSensitivity = 0.5f; // attack detector
     int stutterDivision = 1;         // snippet length: 0 = 1/4 note, 1 = 1/8, 2 = 1/16
+    StutterKind stutterKind = StutterKind::Repeat; // what the stutter does with its slice
 
     // Blend between the clean input (0) and the effect (1). The clean signal is the input as it
     // arrives, before the input gain; the output gain applies to the blend.
@@ -677,6 +678,7 @@ private:
         int sampleMaxSamples = 0; // the length limit in samples (0 = none)
         const SampleSet* loopSampleSet = nullptr;
         int stutterLength = 0;
+        StutterKind stutterKind = StutterKind::Repeat;
     };
 
     void beginBlock(const Params& p)
@@ -844,6 +846,7 @@ private:
         static constexpr float kDivision[3] { 1.0f, 0.5f, 0.25f };
         const int div = std::clamp(p.stutterDivision, 0, 2);
         blk.stutterLength = (int) (beatSamples * kDivision[div]);
+        blk.stutterKind = (StutterKind) std::clamp((int) p.stutterKind, 0, kNumStutterKinds - 1);
 
         if (p.hostPpq >= 0.0)
             followHost(p.hostPpq);
@@ -911,7 +914,7 @@ private:
             }
             const int preRoll = (int) (0.008 * fs);
             for (int c = 0; c < kMaxChannels; ++c)
-                channels[(size_t) c].stutter.trigger(blk.stutterLength, preRoll, speed, repeats, reversed, holdNow);
+                channels[(size_t) c].stutter.trigger(blk.stutterLength, preRoll, speed, repeats, reversed, holdNow, blk.stutterKind);
         }
     }
 

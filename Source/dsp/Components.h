@@ -224,9 +224,29 @@ private:
 // passes the live signal through while recording, then repeats the snippet N times at 1x, 2x or
 // 0.5x speed (forward or reversed) and returns to the live signal. Hold keeps repeating the
 // snippet until released.
+// What the stutter does with the slice it has caught. The STUTTER knob's repeat count and speed mean, for each:
+//   Repeat    plays the slice that many times, at that speed (what the pedal does)
+//   Reverse   the same, backwards
+//   Rise      each repeat a whole tone higher than the one before (up to two octaves)
+//   TapeStop  the slice slows down to a stop, like a tape machine switched off; it takes that many slices to stop
+//   Scratch   the slice pushed back and forth like a record under a hand, one push and pull per slice
+//   Freeze    the end of the slice held as a steady cloud of tiny overlapping grains, for that many slices
+enum class StutterKind
+{
+    Repeat = 0,
+    Reverse,
+    Rise,
+    TapeStop,
+    Scratch,
+    Freeze
+};
+inline constexpr int kNumStutterKinds = 6;
+
 class StutterChannel
 {
 public:
+    static constexpr float kRiseStep = 1.122462048f; // a whole tone
+    static constexpr float kRiseMost = 4.0f;          // two octaves above the start
     void prepare(double sampleRate, int snippetCapacity)
     {
         capacity = snippetCapacity;
@@ -238,6 +258,7 @@ public:
         ringMask = n - 1;
         fadeLen = std::max(8, (int) (0.001 * sampleRate));
         xfadeLen = std::max(16, (int) (0.003 * sampleRate));
+        grainMax = std::max(64, (int) (0.06 * sampleRate));
         reset();
     }
 
@@ -254,9 +275,17 @@ public:
     bool isHeld() const { return heldByUser && state != State::Idle; }
     bool isActive() const { return state != State::Idle; }
 
+    bool isPlaying() const { return state == State::Playing; }
+    float getSpeed() const { return speed; } // the playback rate now (for the tests)
+
     // repeats < 0 means "until released".
-    void trigger(int length, int preRoll, float speedRatio, int repeats, bool reversed, bool hold)
+    void trigger(int length, int preRoll, float speedRatio, int repeats, bool reversed, bool hold, StutterKind newKind = StutterKind::Repeat)
     {
+        kind = newKind;
+        if (kind == StutterKind::Reverse)
+            reversed = !reversed;
+        else if (kind != StutterKind::Repeat && kind != StutterKind::Rise)
+            reversed = false;
         length = std::clamp(length, 32, capacity);
         preRoll = std::clamp(preRoll, 0, length / 4);
         for (int i = 0; i < preRoll; ++i)
@@ -264,8 +293,9 @@ public:
 
         recPos = preRoll;
         snippetLen = length;
-        speed = speedRatio;
-        repeatsTotal = repeats;
+        speed = baseSpeed = speedRatio;
+        repeatsTotal = std::max(1, repeats);
+        elapsed = 0;
         infinite = repeats < 0 || hold;
         heldByUser = hold;
         reverse = reversed;
@@ -315,11 +345,19 @@ public:
                     state = State::Playing;
                     pos = reverse ? (float) (snippetLen - 1) : 0.0f;
                     passes = 0;
+                    elapsed = 0;
+                    grainPhase = 0.0f;
                 }
                 break;
 
             case State::Playing:
-                out = playbackSample();
+                switch (kind)
+                {
+                    case StutterKind::TapeStop: out = tapeStopSample(); break;
+                    case StutterKind::Scratch: out = scratchSample(); break;
+                    case StutterKind::Freeze: out = freezeSample(); break;
+                    default: out = playbackSample(); break;
+                }
                 break;
         }
 
@@ -342,12 +380,88 @@ private:
         xfadeLeft = xfadeLen;
     }
 
+    float readAt(float at) const
+    {
+        const int i0 = std::clamp((int) at, 0, snippetLen - 1);
+        const int i1 = std::min(i0 + 1, snippetLen - 1);
+        const float frac = std::clamp(at - (float) i0, 0.0f, 1.0f);
+        return snippet[(size_t) i0] + (snippet[(size_t) i1] - snippet[(size_t) i0]) * frac;
+    }
+
+    // The effect has run its course (Tape stop, Scratch, Freeze): back to the live sound, crossfaded.
+    void finish()
+    {
+        startXfade();
+        state = State::Idle;
+    }
+
+    // How long a Tape stop, Scratch or Freeze lasts, in samples: the repeat count in slices played at the speed.
+    double runLength() const { return (double) repeatsTotal * (double) snippetLen / (double) std::max(0.05f, baseSpeed); }
+
+    float tapeStopSample()
+    {
+        const double total = runLength();
+        const double u = std::min(1.0, (double) elapsed / total);
+        speed = baseSpeed * (float) ((1.0 - u) * (1.0 - u)); // slows quickly at first, then crawls to a stop
+        float s = readAt(pos);
+        const float edge = std::min(pos, (float) snippetLen - pos);
+        s *= std::clamp(edge / (float) fadeLen, 0.0f, 1.0f);
+        const double tail = std::clamp((1.0 - u) / 0.2, 0.0, 1.0);
+        s *= (float) (tail * tail); // the last moments fade out, as a stopping tape does
+        pos += speed;
+        if (pos >= (float) snippetLen)
+            pos -= (float) snippetLen;
+        if (++elapsed >= (std::int64_t) total)
+        {
+            if (infinite)
+            {
+                elapsed = 0; // held: stop, then start again
+                pos = 0.0f;
+            }
+            else
+                finish();
+        }
+        return s;
+    }
+
+    float scratchSample()
+    {
+        // one push and pull per slice: the position swings from a tenth of the way in to eight tenths and back
+        const double cycle = (double) snippetLen / (double) std::max(0.05f, baseSpeed);
+        const double phase = (double) elapsed / cycle;
+        const float swing = 0.35f * (float) snippetLen;
+        const float at = 0.1f * (float) snippetLen + swing * (1.0f - (float) std::cos(6.283185307179586 * phase));
+        speed = baseSpeed * 2.2f * (float) std::sin(6.283185307179586 * phase); // the record's speed, backwards on the pull
+        const float s = readAt(at);
+        if (++elapsed >= (std::int64_t) runLength() && !infinite)
+            finish();
+        return s;
+    }
+
+    float freezeSample()
+    {
+        // two grains half a grain apart, each faded in and out (Hann), read from the end of the slice
+        const int grain = std::min(grainMax, std::max(32, snippetLen / 2));
+        const float start = (float) (snippetLen - grain);
+        float s = 0.0f;
+        for (int g = 0; g < 2; ++g)
+        {
+            float phase = grainPhase + 0.5f * (float) g;
+            phase -= std::floor(phase);
+            const float window = 0.5f - 0.5f * (float) std::cos(6.283185307179586 * phase);
+            s += window * readAt(start + phase * (float) (grain - 1));
+        }
+        grainPhase += baseSpeed / (float) grain;
+        grainPhase -= std::floor(grainPhase);
+        speed = baseSpeed;
+        if (++elapsed >= (std::int64_t) runLength() && !infinite)
+            finish();
+        return s;
+    }
+
     float playbackSample()
     {
-        const int i0 = std::clamp((int) pos, 0, snippetLen - 1);
-        const int i1 = std::min(i0 + 1, snippetLen - 1);
-        const float frac = pos - (float) i0;
-        float s = snippet[(size_t) i0] + (snippet[(size_t) i1] - snippet[(size_t) i0]) * frac;
+        float s = readAt(pos);
 
         // Short fades at both ends of every pass stop each repeat from clicking.
         const float edge = std::min(pos, (float) snippetLen - pos);
@@ -363,6 +477,8 @@ private:
             }
             else
             {
+                if (kind == StutterKind::Rise) // each repeat a whole tone higher, up to two octaves
+                    speed = std::min(speed * kRiseStep, baseSpeed * kRiseMost);
                 pos = reverse ? pos + (float) snippetLen : pos - (float) snippetLen;
                 pos = std::clamp(pos, 0.0f, (float) (snippetLen - 1));
             }
@@ -373,8 +489,10 @@ private:
     std::vector<float> snippet, ring;
     int capacity = 0, ringMask = 0, ringPos = 0;
     int snippetLen = 0, recPos = 0, passes = 0, repeatsTotal = 1;
-    int fadeLen = 48, xfadeLen = 144, xfadeLeft = 0;
-    float pos = 0.0f, speed = 1.0f, xfadeFrom = 0.0f, lastOut = 0.0f;
+    int fadeLen = 48, xfadeLen = 144, xfadeLeft = 0, grainMax = 2880;
+    float pos = 0.0f, speed = 1.0f, baseSpeed = 1.0f, xfadeFrom = 0.0f, lastOut = 0.0f, grainPhase = 0.0f;
+    std::int64_t elapsed = 0;
+    StutterKind kind = StutterKind::Repeat;
     bool reverse = false, infinite = false, heldByUser = false;
     State state = State::Idle;
 };

@@ -90,6 +90,9 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // how many of the steps play, and each step's lanes (stored in the preset slots; the lanes are hidden from the host's
     // automation, as there are so many)
     add(std::make_unique<AudioParameterInt>(id(ids::seqLength), "Sequence Length", 1, kNumSteps, kDefaultSeqLength));
+    // what the stutter does with its slice (StutterKind; stored in the preset slots)
+    add(std::make_unique<AudioParameterChoice>(id(ids::stutterType), "Stutter Type",
+                                               StringArray { "Repeat", "Reverse", "Rise", "Tape Stop", "Scratch", "Freeze" }, 0));
     {
         static const char* laneTitles[kNumLanes] { "Crush", "Level", "Tremolo", "Delay Send", "Reverb Send", "Stutter" };
         for (int l = 0; l < kNumLanes; ++l)
@@ -392,7 +395,7 @@ std::vector<String> presetParameterIds()
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             list.push_back(ids::stepMem(t, i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats,
-                            ids::seqLength })
+                            ids::seqLength, ids::stutterType })
         list.emplace_back(id);
     for (int l = 0; l < bitvibe::kNumLanes; ++l)
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -545,6 +548,7 @@ BitVibeProcessor::BitVibeProcessor()
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             pLanes[(size_t) l][(size_t) i] = apvts.getRawParameterValue(ids::lane(l, i));
     pSeqLength = raw(ids::seqLength);
+    pStutterType = raw(ids::stutterType);
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -681,6 +685,7 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.lineHeadroom = roundToInt(pHeadroom->load()) == 1;
     p.triggerSensitivity = pSensitivity->load();
     p.stutterDivision = roundToInt(pStutterLen->load());
+    p.stutterKind = (bitvibe::StutterKind) jlimit(0, bitvibe::kNumStutterKinds - 1, roundToInt(pStutterType->load()));
     p.mix = pMix->load();
     p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
     p.seqOnly = pSeqOnly->load() > 0.5f;
