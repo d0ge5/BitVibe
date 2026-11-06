@@ -1043,8 +1043,8 @@ void testMorphThroughEngine()
 
 void testPresets()
 {
-    std::puts("presets: sixteen factory slots");
-    CHECK(kNumPresets == 16, "expected 16 preset slots");
+    std::puts("presets: twelve factory sounds and eight empty slots, then the pack");
+    CHECK(kNumFactoryPresets == 12 && kNumUserSlots == 8 && kFirstPackSlot == 20, "expected 12 + 8 slots before the pack");
 
     // Slot 1 is the sound the plug-in has always started with.
     const FactoryPreset first = factoryPreset(0);
@@ -1066,7 +1066,7 @@ void testPresets()
 
     // Every slot is valid, named, and (unless it uses the morph) has matching toe snapshots.
     bool valid = true, named = true, unique = true;
-    for (int i = 0; i < kNumPresets; ++i)
+    for (int i = 0; i < kFirstPackSlot; ++i)
     {
         const FactoryPreset f = factoryPreset(i);
         valid = valid && morph::sanitise(f.knobs) == f.knobs && morph::sanitise(f.toeUp) == f.toeUp &&
@@ -1084,7 +1084,7 @@ void testPresets()
 
     // The morph presets really use two different sets, starting at toe up.
     int morphing = 0;
-    for (int i = 0; i < kNumPresets; ++i)
+    for (int i = 0; i < kFirstPackSlot; ++i)
     {
         const FactoryPreset f = factoryPreset(i);
         if (f.morphOn)
@@ -1098,7 +1098,8 @@ void testPresets()
 
     // Out-of-range slot numbers are clamped, not undefined.
     CHECK(std::string(factoryPreset(-4).name) == "Pitch Sequence" &&
-              std::string(factoryPreset(99).name) == std::string(factoryPreset(kNumPresets - 1).name),
+              std::string(factoryPreset(99).name) == std::string(factoryPreset(kFirstPackSlot - 1).name)
+                  && std::string(factoryPreset(kFirstPackSlot - 1).name) == "Init 20",
           "slot numbers must be clamped");
 }
 } // namespace

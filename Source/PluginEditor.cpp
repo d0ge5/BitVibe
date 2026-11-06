@@ -1621,17 +1621,60 @@ void BitVibeEditor::showDrums(bool on)
 }
 
 // The arrow in the preset name box: what can be done with the preset that is showing.
-// The preset menu: every slot to jump to, then undo and redo, save and rename, export and import.
+// The preset menu: the presets by what they use (a preset is in every group it uses), all of them in order and your
+// own slots, then undo and redo, save and rename, export and import.
 PopupMenu BitVibeEditor::presetMenu()
 {
     PopupMenu menu;
     const int current = proc.getCurrentProgram();
-    menu.addSectionHeader("PRESETS");
-    for (int i = 0; i < proc.getNumPrograms(); ++i)
+    const int count = proc.getNumPrograms();
+    auto item = [&](PopupMenu& m, int i) { m.addItem(kMenuSlot + i, String(i + 1).paddedLeft('0', 2) + "   " + proc.getProgramName(i), true, i == current); };
+
+    // what each slot uses
+    std::vector<uint32_t> features((size_t) count);
+    for (int i = 0; i < count; ++i)
+        features[(size_t) i] = proc.presetFeatures(i);
+
+    menu.addSectionHeader("PRESETS   " + String(current + 1).paddedLeft('0', 2) + "  " + proc.getProgramName(current));
+    PopupMenu all;
+    for (int i = 0; i < count; ++i)
     {
-        if (i == bitvibe::kNumFactoryPresets)
-            menu.addSeparator(); // the factory sounds, then the blank slots
-        menu.addItem(kMenuSlot + i, String(i + 1).paddedLeft('0', 2) + "   " + proc.getProgramName(i), true, i == current);
+        if (i == 0)
+            all.addSectionHeader("FACTORY");
+        else if (i == bitvibe::kNumFactoryPresets)
+            all.addSectionHeader("YOUR SLOTS");
+        else if (i == bitvibe::kFirstPackSlot)
+            all.addSectionHeader("PRESET PACK");
+        item(all, i);
+    }
+    menu.addSubMenu("All presets (" + String(count) + ")", all);
+    PopupMenu own;
+    for (int i = bitvibe::kNumFactoryPresets; i < bitvibe::kFirstPackSlot; ++i)
+        item(own, i);
+    menu.addSubMenu("Your slots (" + String(bitvibe::kNumFactoryPresets + 1) + " to " + String(bitvibe::kFirstPackSlot) + ")", own);
+
+    // a group per feature, under its section; a feature no preset uses is left out
+    String section;
+    for (int f = 0; f < BitVibeProcessor::kNumPresetFeatures; ++f)
+    {
+        PopupMenu group;
+        int n = 0;
+        bool holdsCurrent = false;
+        for (int i = 0; i < count; ++i)
+            if ((features[(size_t) i] >> f) & 1u)
+            {
+                item(group, i);
+                ++n;
+                holdsCurrent = holdsCurrent || i == current;
+            }
+        if (n == 0)
+            continue;
+        if (const String header = BitVibeProcessor::presetFeatureGroup(f); header != section)
+        {
+            section = header;
+            menu.addSectionHeader(header);
+        }
+        menu.addSubMenu(String(BitVibeProcessor::presetFeatureName(f)) + "  (" + String(n) + ")", group, true, nullptr, holdsCurrent);
     }
     menu.addSeparator();
     auto& undo = proc.getUndo();
@@ -1643,14 +1686,6 @@ PopupMenu BitVibeEditor::presetMenu()
     menu.addSeparator();
     menu.addItem(kMenuExport, "Export to a file...");
     menu.addItem(kMenuImport, "Import from a file...");
-    if (const int packSize = BitVibeProcessor::numPackPresets(); packSize > 0)
-    {
-        PopupMenu pack;
-        pack.addSectionHeader("LOADS INTO SLOT " + String(current + 1).paddedLeft('0', 2));
-        for (int i = 0; i < packSize; ++i)
-            pack.addItem(kMenuPack + i, BitVibeProcessor::packPresetName(i));
-        menu.addSubMenu("Preset pack", pack);
-    }
     return menu;
 }
 
@@ -1677,15 +1712,6 @@ void BitVibeEditor::presetMenuChosen(int result)
         exportPresetFile();
     else if (result == kMenuImport)
         importPresetFile();
-    else if (result >= kMenuPack && result < kMenuPack + BitVibeProcessor::numPackPresets())
-    {
-        proc.getUndo().remember();
-        String message;
-        if (!proc.loadPackPreset(result - kMenuPack, message))
-            AlertWindow::showMessageBoxAsync(MessageBoxIconType::WarningIcon, "Could not load the preset", message);
-        refreshPresetName();
-        repaint();
-    }
 }
 
 void BitVibeEditor::showPresetMenu()
@@ -2120,8 +2146,8 @@ void BitVibeEditor::setTooltips()
                           "to type one, tap the TAP switch, or turn on SYNC to follow your DAW (the number then shows the host tempo).");
     presetLabel.setTooltip("The preset name: click it (or the arrow) for the list of presets, undo and redo (Ctrl+Z, Ctrl+Shift+Z), save, "
                            "rename, export and import. An orange dot means the sound has unsaved changes.");
-    presetMenuButton.setTooltip("PRESET MENU: save to this slot, rename, export the sound as a file to give to other players, or import "
-                                "a file someone gave you (it replaces the slot that is showing).");
+    presetMenuButton.setTooltip("PRESET MENU: the presets grouped by what they use (pitch steps, filter types, delay...), all of them in "
+                                "order, save, rename, export to a file or import one (it replaces the slot that is showing).");
     setUpButton.setTooltip("STORE A: keep the knobs as they are now as sound A, the 'toe up' end (expression slider fully left).");
     setDownButton.setTooltip("STORE B: keep the knobs as they are now as sound B, the 'toe down' end (expression slider fully right).");
     expressionSlider.setTooltip("EXPRESSION: sweeps from sound A to sound B. Needs MORPH switched on.");

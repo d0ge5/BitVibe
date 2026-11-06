@@ -6,6 +6,7 @@
 // is installed) and prints what was found.
 // Exit code 0 means every check passed.
 
+#include <set>
 #include "PluginEditor.h"
 #include "EqPanel.h"
 #include "PatternPanel.h"
@@ -169,9 +170,13 @@ void testPresetsAndMorph()
 
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
-    check(p->getNumPrograms() == 16 && p->getCurrentProgram() == 0, "16 slots, starts on slot 1");
-    check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(15) == "Init 16" && p->getProgramName(16).isEmpty(),
-          "slot names (first '" + p->getProgramName(0) + "', last '" + p->getProgramName(15) + "')");
+    const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
+    check(p->getNumPrograms() == slotCount && slotCount == 64 && p->getCurrentProgram() == 0,
+          "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack), starts on slot 1");
+    check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
+              && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
+              && p->getProgramName(slotCount).isEmpty(),
+          "slot names (first '" + p->getProgramName(0) + "', 20th '" + p->getProgramName(19) + "', 21st '" + p->getProgramName(20) + "')");
     check(!p->isCurrentPresetModified(), "a fresh plug-in matches slot 1");
 
     const auto factoryValues = allValues(*p);
@@ -227,6 +232,78 @@ void testPresetsAndMorph()
     p->setCurrentProgram(1);
     p->setCurrentProgram(7);
     check(std::abs(getValue(*p, ids::filter) - 0.123f) < 1.0e-4f, "a saved slot comes back with the stored value");
+
+    // A slot holds the effects and the beat pattern too: a pack slot brings its delay, a factory slot puts the
+    // effects back to off, and SAVE keeps the effects of the slot it writes.
+    {
+        auto q = makeProcessor();
+        int dub = -1, acid = -1, underwater = -1;
+        for (int i = 0; i < q->getNumPrograms(); ++i)
+        {
+            dub = q->getProgramName(i) == "Dub Throws" ? i : dub;
+            acid = q->getProgramName(i) == "Acid Walk" ? i : acid;
+            underwater = q->getProgramName(i) == "Underwater" ? i : underwater;
+        }
+        q->setCurrentProgram(dub);
+        const bool dubDelay = dub >= bitvibe::kFirstPackSlot && getValue(*q, ids::delayOn) > 0.5f && getValue(*q, ids::reverbOn) > 0.5f;
+        q->setCurrentProgram(0);
+        check(dubDelay && getValue(*q, ids::delayOn) < 0.5f && getValue(*q, ids::reverbOn) < 0.5f && !q->isCurrentPresetModified(),
+              "a pack slot brings its effects (Dub Throws: delay and reverb), slot 1 puts them back off");
+        q->setCurrentProgram(12);
+        setValue(*q, ids::tremOn, 1.0f);
+        setValue(*q, ids::tremRate, 5.0f);
+        check(q->isCurrentPresetModified(), "switching an effect on marks the slot modified");
+        q->saveCurrentPreset();
+        q->setCurrentProgram(0);
+        q->setCurrentProgram(12);
+        check(getValue(*q, ids::tremOn) > 0.5f && std::abs(getValue(*q, ids::tremRate) - 5.0f) < 0.01f, "SAVE keeps the effects with the slot");
+
+        // the project state keeps only the slots that changed, and a fresh plug-in gets them back
+        MemoryBlock state;
+        q->getStateInformation(state);
+        auto xml = AudioProcessor::getXmlFromBinary(state.getData(), (int) state.getSize());
+        const auto* bank = xml != nullptr ? xml->getChildByName("PRESETS") : nullptr;
+        check(bank != nullptr && bank->getNumChildElements() == 1 && bank->getChildElement(0)->getIntAttribute("slot", -1) == 12,
+              "the state holds only the one slot that changed (" + String(bank != nullptr ? bank->getNumChildElements() : -1) + ")");
+        auto r = makeProcessor();
+        r->setStateInformation(state.getData(), (int) state.getSize());
+        r->setCurrentProgram(0);
+        r->setCurrentProgram(12);
+        check(getValue(*r, ids::tremOn) > 0.5f && r->getProgramName(dub) == "Dub Throws", "and a fresh plug-in gets it back");
+
+        // a state from before the bank grew: sixteen slots, in order, without effects; recalling one leaves the effects alone
+        auto old = AudioProcessor::getXmlFromBinary(state.getData(), (int) state.getSize());
+        if (auto* oldBank = old != nullptr ? old->getChildByName("PRESETS") : nullptr)
+        {
+            oldBank->deleteAllChildElements();
+            oldBank->removeAttribute("version");
+            for (int i = 0; i < 16; ++i)
+            {
+                auto* e = oldBank->createNewChildElement("PRESET");
+                e->setAttribute("name", i == 13 ? String("Old Mine") : r->getProgramName(i));
+                e->setAttribute(ids::filter, i == 13 ? 0.25 : 1.0);
+            }
+        }
+        MemoryBlock oldState;
+        if (old != nullptr)
+            AudioProcessor::copyXmlToBinary(*old, oldState);
+        auto o = makeProcessor();
+        o->setStateInformation(oldState.getData(), (int) oldState.getSize());
+        setValue(*o, ids::delayOn, 1.0f);
+        o->setCurrentProgram(13);
+        check(o->getProgramName(13) == "Old Mine" && std::abs(getValue(*o, ids::filter) - 0.25f) < 1.0e-3f && getValue(*o, ids::delayOn) > 0.5f
+                  && o->getProgramName(20) == BitVibeProcessor::packPresetName(0),
+              "an older project keeps its slots in place; recalling one leaves the effects alone; the pack follows");
+
+        // what each slot uses, for the menu's groups
+        auto uses = [&](int slot, int feature) { return slot >= 0 && ((q->presetFeatures(slot) >> feature) & 1u) != 0; };
+        check(uses(0, BitVibeProcessor::featPitchSteps) && uses(0, BitVibeProcessor::featAfterPicks) && !uses(0, BitVibeProcessor::featDelay)
+                  && uses(acid, BitVibeProcessor::featFilterTypes) && uses(acid, BitVibeProcessor::featFilterSteps)
+                  && uses(acid, BitVibeProcessor::featOnItsOwn) && uses(underwater, BitVibeProcessor::featTapeWobble)
+                  && uses(underwater, BitVibeProcessor::featTremolo) && q->presetFeatures(14) == 0,
+              "presets are grouped by what they use (slot 1 pitch steps after each pick; Acid Walk filter types; Underwater tape wobble; "
+              "an empty slot nothing)");
+    }
 
     // ---- expression morph -----------------------------------------------------------------------
     p = makeProcessor();
@@ -330,6 +407,7 @@ void testPresetsAndMorph()
                     bank->removeChildElement(bank->getChildElement(bank->getNumChildElements() - 1), true);
                 if (auto* first = bank->getFirstChildElement())
                 {
+                    first->setAttribute("slot", 0);
                     first->setAttribute(ids::sampleRate, 7.5);
                     first->setAttribute(ids::stutter, 400);
                     first->setAttribute("name", String::repeatedString("n", 200));
@@ -342,7 +420,7 @@ void testPresetsAndMorph()
             AudioProcessor::copyXmlToBinary(*xml, damaged);
             auto d = makeProcessor();
             d->setStateInformation(damaged.getData(), (int) damaged.getSize());
-            check(d->getCurrentProgram() >= 0 && d->getCurrentProgram() < 16, "an out-of-range program number is clamped");
+            check(d->getCurrentProgram() >= 0 && d->getCurrentProgram() < d->getNumPrograms(), "an out-of-range program number is clamped");
             check(d->getProgramName(10) == bitvibe::factoryPreset(10).name, "slots missing from the state keep their factory sound");
             d->setCurrentProgram(1);
             d->setCurrentProgram(0);
@@ -955,17 +1033,35 @@ void testPageTools()
     ed->setRightMode(true);
     check(dog->isVisible() && ed->getHeight() == fullHeight && input->getY() == inputY, "and on again: as it was");
 
-    // the preset list
+    // the preset list: groups by feature (as submenus), all of them, your slots
     {
-        int slots = 0;
+        std::set<int> listed;
         bool currentTicked = false;
-        for (const auto& i : items(ed->presetMenu()))
-            if (i.id >= BitVibeEditor::kMenuSlot && i.id < BitVibeEditor::kMenuSlot + 16)
+        StringArray groups;
+        const auto menu = ed->presetMenu();
+        PopupMenu::MenuItemIterator it(menu, true);
+        while (it.next())
+        {
+            const auto& i = it.getItem();
+            if (i.subMenu != nullptr)
+                groups.add(i.text);
+            if (i.itemID >= BitVibeEditor::kMenuSlot && i.itemID < BitVibeEditor::kMenuSlot + p->getNumPrograms())
             {
-                ++slots;
-                currentTicked = currentTicked || (i.ticked && i.id == BitVibeEditor::kMenuSlot + p->getCurrentProgram());
+                listed.insert(i.itemID - BitVibeEditor::kMenuSlot);
+                currentTicked = currentTicked || (i.isTicked && i.itemID == BitVibeEditor::kMenuSlot + p->getCurrentProgram());
             }
-        check(slots == 16 && currentTicked, "the preset menu lists all 16 slots, the one showing ticked");
+        }
+        auto hasGroup = [&](const String& start)
+        {
+            for (const auto& g : groups)
+                if (g.startsWith(start))
+                    return true;
+            return false;
+        };
+        check((int) listed.size() == p->getNumPrograms() && currentTicked, "the preset menu lists all " + String((int) listed.size()) + " slots, the one showing ticked");
+        check(hasGroup("All presets") && hasGroup("Your slots") && hasGroup("Pitch steps") && hasGroup("Filter types and resonance")
+                  && hasGroup("Tape wobble") && hasGroup("Stutter types") && hasGroup("Expression morph"),
+              "and groups them by feature (" + String(groups.size()) + " groups: " + groups.joinIntoString(", ").substring(0, 120) + "...)");
     }
 
     // undo and redo
@@ -995,7 +1091,7 @@ void testPageTools()
           "Ctrl+Shift+Z and Ctrl+Y redo both");
     const auto beforePreset = allValues(*p);
     const int program = p->getCurrentProgram();
-    ed->presetMenuChosen(BitVibeEditor::kMenuSlot + (program + 4) % 16);
+    ed->presetMenuChosen(BitVibeEditor::kMenuSlot + (program + 4) % 12);
     undo.endStep();
     auto sameValues = [](const std::vector<float>& a, const std::vector<float>& b)
     {
@@ -1006,7 +1102,7 @@ void testPageTools()
                 return false;
         return true;
     };
-    check(p->getCurrentProgram() == (program + 4) % 16 && !sameValues(allValues(*p), beforePreset), "picking a slot from the preset menu recalls it");
+    check(p->getCurrentProgram() == (program + 4) % 12 && !sameValues(allValues(*p), beforePreset), "picking a slot from the preset menu recalls it");
     ed->presetMenuChosen(BitVibeEditor::kMenuUndo);
     check(sameValues(allValues(*p), beforePreset), "and one undo brings back the sound from before it");
     ed->keyPressed(KeyPress('z', ModifierKeys::commandModifier, 0));
@@ -1626,8 +1722,8 @@ void testPresetPack(const File& outDir)
     for (int i = 0; i < BitVibeProcessor::numPackPresets(); ++i)
     {
         auto p = makeProcessor();
-        String message;
-        const bool loaded = p->loadPackPreset(i, message);
+        p->setCurrentProgram(bitvibe::kFirstPackSlot + i);
+        const bool loaded = p->getCurrentProgram() == bitvibe::kFirstPackSlot + i;
         const bool named = p->getProgramName(p->getCurrentProgram()) == BitVibeProcessor::packPresetName(i);
         bool usesNew = roundToInt(getValue(*p, ids::seqLength)) != bitvibe::kDefaultSeqLength || roundToInt(getValue(*p, ids::stutterType)) != 0
                        || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f

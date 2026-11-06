@@ -147,11 +147,15 @@ public:
     // A held or long stutter keeps playing after the input stops.
     double getTailLengthSeconds() const override { return 10.0; }
 
-    // Sixteen preset slots. A slot holds the sound (knobs, tempo, stutter length, morph set-up) but not
-    // the settings that belong to the player's rig or the moment: bypass, stutter hold, host sync, the
-    // expression position, input / output gain, headroom, trigger sensitivity, the dry/wet mix, the reverb and the
-    // "effects only on triggers" option keep their values when a preset is recalled.
-    int getNumPrograms() override { return bitvibe::kNumPresets; }
+    // One bank of preset slots: the twelve factory sounds, eight empty slots for the player's own (13 to 20), then the
+    // preset pack (from slot 21), as many slots as the pack has presets. A slot holds the whole sound, as a preset file
+    // does: the knobs, steps, lanes, tempo and morph sets, the effects on the right-hand side (distortion, tremolo,
+    // delay, reverb, the sample blend switch, EQ) and the beat pattern. What belongs to the player's rig or the moment is
+    // left alone when a slot is recalled: bypass, stutter hold, host sync, the expression position, input / output
+    // gain, headroom, trigger sensitivity, dry/wet, HEAR and the sample blend's levels (remembered per player). (A slot saved by an older version holds no effects; recalling
+    // it leaves the effects as they are, as it did then.)
+    static int numSlots() { return bitvibe::kFirstPackSlot + numPackPresets(); }
+    int getNumPrograms() override { return numSlots(); }
     int getCurrentProgram() override { return currentProgram.load(); }
     void setCurrentProgram(int index) override;
     const juce::String getProgramName(int index) override;
@@ -171,12 +175,24 @@ public:
     bool importPreset(const juce::XmlElement&, juce::String& message);
     static juce::File presetFolder(); // Documents/BitVibe/Presets
 
-    // The preset pack that ships inside the plug-in (the files in Presets/), in file-name order. Loading one works like
-    // importing its file: into the selected slot, the shared effects and the beat pattern too (the picked sounds are
-    // left as they are).
+    // The preset pack that ships inside the plug-in (the files in Presets/), in file-name order: slots kFirstPackSlot on.
     static int numPackPresets();
     static juce::String packPresetName(int index);
-    bool loadPackPreset(int index, juce::String& message);
+
+    // What the sound in a slot makes use of, for the preset menu's groups: a bit per feature (1u << feature).
+    enum PresetFeature
+    {
+        featPitchSteps, featFilterSteps, featRateSteps, featOnItsOwn, featAfterPicks, featLongSequence, featLanes, featLoop,
+        featBeatPattern,
+        featStutter, featStutterTypes,
+        featCrush, featFilterTypes,
+        featDistortion, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
+        featMorph,
+        kNumPresetFeatures
+    };
+    static const char* presetFeatureName(int feature);  // "Pitch steps", "Tape wobble", ...
+    static const char* presetFeatureGroup(int feature); // "SEQUENCER", "STUTTER", "SOUND", "EFFECTS" or "MORPH"
+    uint32_t presetFeatures(int slot) const;
 
     // ---- the sampler ----------------------------------------------------------------------------------------
     // Records programs on this computer (see AppAudioCapture).
@@ -263,12 +279,16 @@ private:
     ParamUndo undo { *this, juce::StringArray { ids::hold } };
 
     // Everything a preset slot remembers: the normalised value of each preset parameter (in the order
-    // of presetParams) and the two morph sets.
+    // of presetParams), the two morph sets, and the effects (normalised, in the order of effectParams) and beat pattern.
+    // A slot saved before the slots held the effects has none: recalling it leaves the effects and pattern alone.
     struct PresetSlot
     {
         juce::String name;
         std::vector<float> values;
         bitvibe::KnobSet toeUp, toeDown;
+        std::vector<float> effects;
+        bitvibe::DrumPattern pattern;
+        bool hasEffects() const { return !effects.empty(); }
     };
 
     struct PresetParam
@@ -283,12 +303,20 @@ private:
     void refreshMorphCache();
 
     int presetIndex(const juce::String& id) const;
-    PresetSlot makeFactorySlot(int index) const;
+    PresetSlot makeFactorySlot(int index) const; // the slot as it ships (from the cache once it is built)
+    PresetSlot buildFactorySlot(int index) const;
     PresetSlot snapshotCurrent() const;
     void applySlot(const PresetSlot&);
     void recallProgram(int index);
-    juce::ValueTree slotToTree(const PresetSlot&) const;
+    // withEffects: also the effects and the pattern, as children (the project state); a preset file keeps them apart.
+    juce::ValueTree slotToTree(const PresetSlot&, bool withEffects = true) const;
     PresetSlot slotFromTree(const juce::ValueTree&, int index) const;
+    void readSlotValues(const juce::ValueTree&, PresetSlot&) const;
+    // A preset file (BITVIBE_PRESET) as a slot, on top of base: its name, sound, effects (plain values; those it does
+    // not mention at their defaults) and pattern.
+    PresetSlot slotFromFile(const juce::XmlElement&, PresetSlot base) const;
+    // The same sound (the effects only when the slot holds some).
+    static bool sameSound(const PresetSlot& slot, const PresetSlot& other);
     void resetToFactoryBank();
 
     bitvibe::Engine engine;
@@ -427,7 +455,9 @@ private:
     // Preset bank (message thread; the audio thread never touches it).
     mutable juce::CriticalSection presetLock;
     std::vector<PresetParam> presetParams;
-    std::array<PresetSlot, bitvibe::kNumPresets> slots;
+    std::vector<PresetParam> effectParams; // the shared effects a slot holds (see isSharedEffect)
+    std::vector<PresetSlot> slots;
+    std::vector<PresetSlot> factoryBank;   // every slot as it ships, built once
     std::atomic<int> currentProgram { 0 };
 
     std::atomic<float> effectiveBpm { 120.0f };

@@ -1,6 +1,7 @@
 #pragma once
 
-// The sixteen preset slots as they ship. Each slot is a complete sound: the twelve knobs, the tempo,
+// The preset slots defined here: twelve factory sounds, then eight empty slots for the player's own. The preset pack
+// (the files in Presets/, built into the plug-in) follows them in the bank, from slot 21. Each slot is a complete sound: the twelve knobs, the tempo,
 // the stutter length and the expression-morph set-up (the toe-up / toe-down knob sets and whether the
 // morph is on; the expression position itself is a performance control and is not stored). Slot 1 is the sound the plug-in has always started with.
 // Header-only and free of JUCE so the factory data can be checked by the offline tests.
@@ -9,8 +10,9 @@
 
 namespace bitvibe
 {
-inline constexpr int kNumPresets = 16;
-inline constexpr int kNumFactoryPresets = 12; // slots 1 to 12 hold factory sounds, the rest start blank
+inline constexpr int kNumFactoryPresets = 12; // slots 1 to 12 hold factory sounds
+inline constexpr int kNumUserSlots = 8;       // slots 13 to 20 start empty, for the player's own sounds
+inline constexpr int kFirstPackSlot = kNumFactoryPresets + kNumUserSlots; // the preset pack starts at slot 21
 
 struct FactoryPreset
 {
@@ -47,7 +49,7 @@ inline FactoryPreset factoryPreset(int slot)
     f.knobs = clean();
     f.name = "Init";
 
-    switch (std::clamp(slot, 0, kNumPresets - 1))
+    switch (std::clamp(slot, 0, kFirstPackSlot - 1))
     {
         case 0: // the default sound: the pitch sequence, played four times after each picked note
             f.name = "Pitch Sequence";
@@ -126,10 +128,11 @@ inline FactoryPreset factoryPreset(int slot)
             f.toeDown.steps = pitchSteps(12, 7, 12, 5, 0, -12);
             f.knobs = f.toeUp;
             break;
-        default: // slots 13 to 16: clean and unnamed, ready to be overwritten
+        default: // slots 13 to 20: clean and unnamed, ready to be overwritten
         {
-            static constexpr const char* names[] = { "Init 13", "Init 14", "Init 15", "Init 16" };
-            f.name = names[std::clamp(slot, 12, kNumPresets - 1) - 12];
+            static constexpr const char* names[kNumUserSlots] = { "Init 13", "Init 14", "Init 15", "Init 16",
+                                                                  "Init 17", "Init 18", "Init 19", "Init 20" };
+            f.name = names[std::clamp(slot, kNumFactoryPresets, kFirstPackSlot - 1) - kNumFactoryPresets];
             break;
         }
     }

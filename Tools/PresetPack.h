@@ -3,7 +3,7 @@
 // The preset pack: sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo and the delay's
 // tape wobble.
 // BitVibeEditorSnapshot --write-presets <folder> writes them as preset files (Presets/ in the repository, which the
-// plug-in embeds and lists under Preset pack); the snapshot tests check that the files still match this table and
+// plug-in embeds as slots 21 on); the snapshot tests check that the files still match this table and
 // that every preset loads and sounds.
 //
 // Each preset starts from a fresh plug-in (every setting at its default) and says only what it changes. A picked note

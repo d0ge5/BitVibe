@@ -416,6 +416,56 @@ std::vector<String> presetParameterIds()
     return list;
 }
 
+// The parameters outside the preset slots' own list that are part of a shared sound: what a preset file holds as its
+// effects, and a slot as its effects.
+bool isSharedEffect(const String& id)
+{
+    for (const char* prefix : { "reverb", "dist", "trem", "delay", "sample", "eq" })
+        if (id.startsWith(prefix))
+            return true;
+    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
+}
+
+// Of those, the ones a preset file carries but a slot leaves as they are: how the plug-in sits in the player's rig
+// (dry/wet and HEAR), and the sample blend's levels, which each player's machine remembers for its own sounds.
+bool isRigSetting(const String& id)
+{
+    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly
+           || (id.startsWith("sample") && id != ids::sampleOn && id != ids::sampleRate);
+}
+
+struct PackPreset
+{
+    String file, name;
+    const char* data = nullptr;
+    int size = 0;
+};
+
+const std::vector<PackPreset>& presetPack()
+{
+    static const std::vector<PackPreset> pack = []
+    {
+        std::vector<PackPreset> list;
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+        {
+            const String file = BinaryData::originalFilenames[i];
+            if (!file.endsWithIgnoreCase(".xml"))
+                continue;
+            int size = 0;
+            const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+            if (data == nullptr)
+                continue;
+            String name = file.upToLastOccurrenceOf(".", false, false);
+            if (auto xml = XmlDocument::parse(String::fromUTF8(data, size)))
+                name = xml->getStringAttribute("name", name);
+            list.push_back({ file, name, data, size });
+        }
+        std::sort(list.begin(), list.end(), [](const PackPreset& a, const PackPreset& b) { return a.file.compareNatural(b.file) < 0; });
+        return list;
+    }();
+    return pack;
+}
+
 constexpr int kMaxPresetNameLength = 32;
 
 String cleanPresetName(const String& name, const String& fallback)
@@ -587,6 +637,13 @@ BitVibeProcessor::BitVibeProcessor()
     for (const auto& id : presetParameterIds())
         presetParams.push_back({ id, apvts.getParameter(id) });
     jassert(std::none_of(presetParams.begin(), presetParams.end(), [](const PresetParam& p) { return p.param == nullptr; }));
+    for (auto* p : getParameters())
+        if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p);
+            ranged != nullptr && isSharedEffect(ranged->paramID) && !isRigSetting(ranged->paramID) && presetIndex(ranged->paramID) < 0)
+            effectParams.push_back({ ranged->paramID, ranged }); // (the SAMPLE RATE knob's id is "sample": a slot value already)
+    factoryBank.reserve((size_t) numSlots());
+    for (int i = 0; i < numSlots(); ++i)
+        factoryBank.push_back(buildFactorySlot(i));
     resetToFactoryBank();
 }
 
@@ -926,6 +983,25 @@ int BitVibeProcessor::presetIndex(const String& id) const
 
 BitVibeProcessor::PresetSlot BitVibeProcessor::makeFactorySlot(int index) const
 {
+    if (index >= 0 && index < (int) factoryBank.size())
+        return factoryBank[(size_t) index];
+    return buildFactorySlot(index);
+}
+
+BitVibeProcessor::PresetSlot BitVibeProcessor::buildFactorySlot(int index) const
+{
+    // the preset pack: its file, on top of an empty slot
+    if (index >= bitvibe::kFirstPackSlot)
+    {
+        auto base = buildFactorySlot(bitvibe::kFirstPackSlot - 1);
+        const auto& pack = presetPack();
+        const int i = index - bitvibe::kFirstPackSlot;
+        if (i < (int) pack.size())
+            if (const auto xml = XmlDocument::parse(String::fromUTF8(pack[(size_t) i].data, pack[(size_t) i].size)))
+                return slotFromFile(*xml, base);
+        return base;
+    }
+
     const auto f = bitvibe::factoryPreset(index);
 
     PresetSlot s;
@@ -955,6 +1031,9 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::makeFactorySlot(int index) const
     set(ids::tempo, f.tempoBpm);
     set(ids::stutterLen, (float) f.stutterDivision);
     set(ids::morph, f.morphOn ? 1.0f : 0.0f);
+    // the effects all at their defaults (off), and no beat pattern
+    for (const auto& ep : effectParams)
+        s.effects.push_back(ep.param->getDefaultValue());
     return s;
 }
 
@@ -966,6 +1045,9 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::snapshotCurrent() const
         s.values.push_back(pp.param->getValue());
     s.toeUp = getToeUp();
     s.toeDown = getToeDown();
+    for (const auto& ep : effectParams)
+        s.effects.push_back(ep.param->getValue());
+    s.pattern = drumBeat.getPattern();
     return s;
 }
 
@@ -978,13 +1060,34 @@ void BitVibeProcessor::applySlot(const PresetSlot& s)
     }
     for (size_t i = 0; i < presetParams.size() && i < s.values.size(); ++i)
         presetParams[i].param->setValueNotifyingHost(s.values[i]);
+    if (s.hasEffects())
+    {
+        for (size_t i = 0; i < effectParams.size() && i < s.effects.size(); ++i)
+            effectParams[i].param->setValueNotifyingHost(s.effects[i]);
+        drumBeat.setPattern(s.pattern);
+    }
+}
+
+bool BitVibeProcessor::sameSound(const PresetSlot& slot, const PresetSlot& other)
+{
+    auto same = [](const std::vector<float>& a, const std::vector<float>& b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (size_t i = 0; i < a.size(); ++i)
+            if (std::abs(a[i] - b[i]) > 1.0e-4f)
+                return false;
+        return true;
+    };
+    if (!(slot.toeUp == other.toeUp) || !(slot.toeDown == other.toeDown) || !same(slot.values, other.values))
+        return false;
+    return !slot.hasEffects() || (same(slot.effects, other.effects) && slot.pattern == other.pattern);
 }
 
 void BitVibeProcessor::resetToFactoryBank()
 {
     const ScopedLock lock(presetLock);
-    for (int i = 0; i < bitvibe::kNumPresets; ++i)
-        slots[(size_t) i] = makeFactorySlot(i);
+    slots = factoryBank;
     currentProgram = 0;
     // The plug-in starts on slot 1, which is the default sound the parameters already have.
     applySlot(slots[0]);
@@ -1004,7 +1107,7 @@ void BitVibeProcessor::recallProgram(int index)
 
 void BitVibeProcessor::setCurrentProgram(int index)
 {
-    index = jlimit(0, bitvibe::kNumPresets - 1, index);
+    index = jlimit(0, numSlots() - 1, index);
 
     // Some hosts select the current program again right after restoring the plug-in state. Honouring
     // that would throw away knob changes that the state has just brought back, so it is ignored; the
@@ -1016,7 +1119,7 @@ void BitVibeProcessor::setCurrentProgram(int index)
 
 const String BitVibeProcessor::getProgramName(int index)
 {
-    if (index < 0 || index >= bitvibe::kNumPresets)
+    if (index < 0 || index >= (int) slots.size())
         return {};
     const ScopedLock lock(presetLock);
     return slots[(size_t) index].name;
@@ -1024,7 +1127,7 @@ const String BitVibeProcessor::getProgramName(int index)
 
 void BitVibeProcessor::changeProgramName(int index, const String& newName)
 {
-    if (index < 0 || index >= bitvibe::kNumPresets)
+    if (index < 0 || index >= (int) slots.size())
         return;
     {
         const ScopedLock lock(presetLock);
@@ -1047,13 +1150,7 @@ bool BitVibeProcessor::isCurrentPresetModified() const
 {
     const auto now = snapshotCurrent();
     const ScopedLock lock(presetLock);
-    const auto& slot = slots[(size_t) currentProgram.load()];
-    if (!(now.toeUp == slot.toeUp) || !(now.toeDown == slot.toeDown) || now.values.size() != slot.values.size())
-        return true;
-    for (size_t i = 0; i < now.values.size(); ++i)
-        if (std::abs(now.values[i] - slot.values[i]) > 1.0e-4f)
-            return true;
-    return false;
+    return !sameSound(slots[(size_t) currentProgram.load()], now);
 }
 
 // ------------------------------------------------------------------------------------------
@@ -1066,17 +1163,6 @@ bool BitVibeProcessor::isCurrentPresetModified() const
 //     <SOUNDS> <FILE name="snare.wav"/> ... </SOUNDS>
 //   </BITVIBE_PRESET>
 
-namespace
-{
-// The parameters outside the preset slots that are part of a shared sound.
-bool isSharedEffect(const String& id)
-{
-    for (const char* prefix : { "reverb", "dist", "trem", "delay", "sample", "eq" })
-        if (id.startsWith(prefix))
-            return true;
-    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
-}
-} // namespace
 
 // ------------------------------------------------------------------------------------------
 // The sampler
@@ -1304,42 +1390,122 @@ File BitVibeProcessor::presetFolder()
     return File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Presets");
 }
 
-namespace
-{
-struct PackPreset
-{
-    String file, name;
-    const char* data = nullptr;
-    int size = 0;
-};
-
-const std::vector<PackPreset>& presetPack()
-{
-    static const std::vector<PackPreset> pack = []
-    {
-        std::vector<PackPreset> list;
-        for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
-        {
-            const String file = BinaryData::originalFilenames[i];
-            if (!file.endsWithIgnoreCase(".xml"))
-                continue;
-            int size = 0;
-            const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
-            if (data == nullptr)
-                continue;
-            String name = file.upToLastOccurrenceOf(".", false, false);
-            if (auto xml = XmlDocument::parse(String::fromUTF8(data, size)))
-                name = xml->getStringAttribute("name", name);
-            list.push_back({ file, name, data, size });
-        }
-        std::sort(list.begin(), list.end(), [](const PackPreset& a, const PackPreset& b) { return a.file.compareNatural(b.file) < 0; });
-        return list;
-    }();
-    return pack;
-}
-} // namespace
 
 int BitVibeProcessor::numPackPresets() { return (int) presetPack().size(); }
+
+namespace
+{
+struct FeatureText
+{
+    const char* group;
+    const char* name;
+};
+constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
+    { "SEQUENCER", "Pitch steps" },          { "SEQUENCER", "Filter steps" },
+    { "SEQUENCER", "Sample-rate steps" },    { "SEQUENCER", "Plays on its own" },
+    { "SEQUENCER", "Plays after each pick" }, { "SEQUENCER", "Long sequences (7 to 16 steps)" },
+    { "SEQUENCER", "Step lanes" },           { "SEQUENCER", "Sequence loop" },
+    { "SEQUENCER", "Beat pattern" },
+    { "STUTTER", "Stutter" },                { "STUTTER", "Stutter types" },
+    { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
+    { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Tremolo" },
+    { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
+    { "EFFECTS", "Reverb" },                 { "EFFECTS", "EQ" },
+    { "MORPH", "Expression morph" },
+};
+} // namespace
+
+const char* BitVibeProcessor::presetFeatureName(int feature)
+{
+    return feature >= 0 && feature < kNumPresetFeatures ? kFeatureText[feature].name : "";
+}
+
+const char* BitVibeProcessor::presetFeatureGroup(int feature)
+{
+    return feature >= 0 && feature < kNumPresetFeatures ? kFeatureText[feature].group : "";
+}
+
+uint32_t BitVibeProcessor::presetFeatures(int index) const
+{
+    using namespace bitvibe;
+    PresetSlot s;
+    {
+        const ScopedLock lock(presetLock);
+        if (index < 0 || index >= (int) slots.size())
+            return 0;
+        s = slots[(size_t) index];
+    }
+    // plain values of the slot's own parameters and of its effects (an effect the slot does not hold reads as off)
+    auto plain = [&](const String& id)
+    {
+        const int i = presetIndex(id);
+        return i >= 0 && (size_t) i < s.values.size() ? presetParams[(size_t) i].param->convertFrom0to1(s.values[(size_t) i]) : 0.0f;
+    };
+    auto effect = [&](const String& id)
+    {
+        for (size_t i = 0; i < effectParams.size() && i < s.effects.size(); ++i)
+            if (effectParams[i].id == id)
+                return effectParams[i].param->convertFrom0to1(s.effects[i]);
+        return 0.0f;
+    };
+    uint32_t f = 0;
+    auto mark = [&f](int feature, bool on) { if (on) f |= 1u << feature; };
+
+    const int seqPlay = roundToInt(plain(ids::seqPlay));
+    const bool running = seqPlay > 0;
+    const int length = jlimit(1, kNumSteps, roundToInt(plain(ids::seqLength)));
+    const int seqType = roundToInt(plain(ids::seqType));
+    bool pitch = false, filter = false, rate = false;
+    for (int i = 0; i < length && running; ++i)
+    {
+        const int own = roundToInt(plain(ids::stepType(i)));
+        const auto type = (SeqType) jlimit(0, 2, own == 0 ? seqType : own - 1);
+        const auto step = mapping::decodeStep(plain(ids::step(i)), type);
+        if (step.kind != mapping::Step::Kind::Active)
+            continue;
+        pitch = pitch || (type == SeqType::Pitch && step.semitones != 0.0f);
+        filter = filter || (type == SeqType::Filter && step.factor < 0.995f);
+        rate = rate || (type == SeqType::SampleRate && step.factor < 0.995f);
+    }
+    auto laneUsed = [&](Lane lane)
+    {
+        for (int i = 0; i < length && running; ++i)
+            if (std::abs(plain(ids::lane((int) lane, i)) - kLaneNeutral[(size_t) lane]) > 0.005f)
+                return true;
+        return false;
+    };
+    bool lanes = false;
+    for (int l = 0; l < kNumLanes; ++l)
+        lanes = lanes || laneUsed((Lane) l);
+
+    mark(featPitchSteps, pitch);
+    mark(featFilterSteps, filter);
+    mark(featRateSteps, rate);
+    mark(featOnItsOwn, seqPlay >= mapping::kSeqPlayPositions - 1);
+    mark(featAfterPicks, running && seqPlay < mapping::kSeqPlayPositions - 1);
+    mark(featLongSequence, running && length > kDefaultSeqLength);
+    mark(featLanes, lanes);
+    mark(featLoop, running && plain(ids::loopOn) > 0.5f);
+    mark(featBeatPattern, s.hasEffects() && s.pattern.action != DrumAction::Off && s.pattern.steps != 0);
+
+    const bool stutter = roundToInt(plain(ids::stutter)) > 0 || laneUsed(Lane::Stutter);
+    mark(featStutter, stutter);
+    mark(featStutterTypes, stutter && roundToInt(plain(ids::stutterType)) != 0);
+
+    mark(featCrush, plain(ids::bits) < 0.99f || plain(ids::sampleRate) < 0.99f || laneUsed(Lane::Crush) || rate);
+    const bool filterHeard = plain(ids::filter) < 0.99f || filter;
+    mark(featFilterTypes, filterHeard && (roundToInt(plain(ids::filterType)) != 0
+                                          || std::abs(plain(ids::filterRes) - mapping::kDefaultFilterRes) > 0.02f));
+
+    mark(featDistortion, effect(ids::distOn) > 0.5f);
+    mark(featTremolo, effect(ids::tremOn) > 0.5f);
+    mark(featDelay, effect(ids::delayOn) > 0.5f);
+    mark(featTapeWobble, effect(ids::delayOn) > 0.5f && effect(ids::delayWobble) > 0.005f);
+    mark(featReverb, effect(ids::reverbOn) > 0.5f && effect(ids::reverbMix) > 0.005f);
+    mark(featEq, effect(ids::eqOn) > 0.5f);
+    mark(featMorph, plain(ids::morph) > 0.5f);
+    return f;
+}
 
 String BitVibeProcessor::packPresetName(int index)
 {
@@ -1347,22 +1513,6 @@ String BitVibeProcessor::packPresetName(int index)
     return index >= 0 && index < (int) pack.size() ? pack[(size_t) index].name : String();
 }
 
-bool BitVibeProcessor::loadPackPreset(int index, String& message)
-{
-    const auto& pack = presetPack();
-    if (index < 0 || index >= (int) pack.size())
-    {
-        message = "There is no such preset in the pack.";
-        return false;
-    }
-    const auto xml = XmlDocument::parse(String::fromUTF8(pack[(size_t) index].data, pack[(size_t) index].size));
-    if (xml == nullptr)
-    {
-        message = "The preset could not be read.";
-        return false;
-    }
-    return importPreset(*xml, message);
-}
 
 std::unique_ptr<XmlElement> BitVibeProcessor::exportPreset() const
 {
@@ -1374,7 +1524,7 @@ std::unique_ptr<XmlElement> BitVibeProcessor::exportPreset() const
     auto xml = std::make_unique<XmlElement>("BITVIBE_PRESET");
     xml->setAttribute("version", 1);
     xml->setAttribute("name", slot.name);
-    xml->addChildElement(slotToTree(slot).createXml().release());
+    xml->addChildElement(slotToTree(slot, false).createXml().release());
 
     auto* effects = xml->createNewChildElement("EFFECTS");
     for (auto* p : getParameters())
@@ -1413,42 +1563,28 @@ bool BitVibeProcessor::importPreset(const XmlElement& xml, String& message)
         return false;
     }
 
-    // the slot: name and sound, into the selected slot
+    // the slot: name, sound, effects and beat pattern, into the selected slot
     const int program = currentProgram.load();
-    auto slot = slotFromTree(ValueTree::fromXml(*slotXml), program);
-    slot.name = cleanPresetName(xml.getStringAttribute("name", slot.name), slot.name);
+    const auto slot = slotFromFile(xml, makeFactorySlot(program));
     {
         const ScopedLock lock(presetLock);
         slots[(size_t) program] = slot;
     }
     applySlot(slot);
-
-    // the effects: everything shared starts from its default, then takes what the file says (so a file from an older
-    // version of BitVibe sounds the way it did there)
-    std::map<String, double> values;
-    if (const auto* effects = xml.getChildByName("EFFECTS"))
-        for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
-            values[e->getStringAttribute("id")] = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN());
+    // dry/wet, HEAR and the sample levels, which a file carries but a slot does not: as the file says, or their defaults
     for (auto* p : getParameters())
-        if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p); ranged != nullptr && isSharedEffect(ranged->paramID))
+        if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p);
+            ranged != nullptr && isRigSetting(ranged->paramID) && presetIndex(ranged->paramID) < 0)
         {
             float normalised = ranged->getDefaultValue();
-            if (const auto it = values.find(ranged->paramID); it != values.end() && std::isfinite(it->second))
-                normalised = ranged->convertTo0to1((float) jlimit((double) ranged->getNormalisableRange().start,
-                                                                  (double) ranged->getNormalisableRange().end, it->second));
+            if (const auto* effects = xml.getChildByName("EFFECTS"))
+                for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
+                    if (e->getStringAttribute("id") == ranged->paramID)
+                        if (const double v = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN()); std::isfinite(v))
+                            normalised = ranged->convertTo0to1((float) jlimit((double) ranged->getNormalisableRange().start,
+                                                                              (double) ranged->getNormalisableRange().end, v));
             ranged->setValueNotifyingHost(normalised);
         }
-
-    // the beat pattern
-    bitvibe::DrumPattern pattern;
-    if (const auto* pat = xml.getChildByName("PATTERN"))
-    {
-        pattern.action = (bitvibe::DrumAction) jlimit(0, bitvibe::kNumDrumActions - 1, pat->getIntAttribute("action", 0));
-        pattern.steps = (uint32_t) pat->getIntAttribute("steps", 0) & bitvibe::kPatternMask;
-        pattern.randomBeats = (uint32_t) pat->getIntAttribute("randomBeats", 0x1F) & 0x1Fu;
-        pattern.signature = jlimit(0, bitvibe::kNumTimeSignatures - 1, pat->getIntAttribute("signature", 0));
-    }
-    drumBeat.setPattern(pattern);
 
     // the sounds: those this player has
     int missing = 0;
@@ -1492,11 +1628,13 @@ bool BitVibeProcessor::importPreset(const XmlElement& xml, String& message)
 //   <BitVibe program="0">
 //     <PARAM id="sample" value="1.0"/> ...                  all parameters (the value tree of the APVTS)
 //     <MORPH> <UP sample=".." .../> <DOWN .../> </MORPH>     the two expression-morph knob sets
-//     <PRESETS> <PRESET name=".." sample=".." ...> <UP/> <DOWN/> </PRESET> x16 </PRESETS>
+//     <PRESETS version="2"> <PRESET slot="20" name=".." sample=".." ...> <UP/> <DOWN/> <EFFECTS/> <PATTERN/> </PRESET>
+//       ... </PRESETS>                                      the slots that differ from the bank as it ships
+// A state from before version 2 holds all sixteen slots of the time in order, without effects.
 //   </BitVibe>
 // A state saved before the presets existed has neither MORPH nor PRESETS and loads with the factory bank.
 
-ValueTree BitVibeProcessor::slotToTree(const PresetSlot& s) const
+ValueTree BitVibeProcessor::slotToTree(const PresetSlot& s, bool withEffects) const
 {
     ValueTree t("PRESET");
     t.setProperty("name", s.name, nullptr);
@@ -1504,12 +1642,88 @@ ValueTree BitVibeProcessor::slotToTree(const PresetSlot& s) const
         t.setProperty(Identifier(presetParams[i].id), (double) s.values[i], nullptr);
     t.appendChild(knobsToTree(s.toeUp, "UP"), nullptr);
     t.appendChild(knobsToTree(s.toeDown, "DOWN"), nullptr);
+    if (withEffects && s.hasEffects())
+    {
+        ValueTree fx("EFFECTS"); // normalised, like the slot's own values
+        for (size_t i = 0; i < effectParams.size() && i < s.effects.size(); ++i)
+            fx.setProperty(Identifier(effectParams[i].id), (double) s.effects[i], nullptr);
+        t.appendChild(fx, nullptr);
+        ValueTree pat("PATTERN");
+        pat.setProperty("action", (int) s.pattern.action, nullptr);
+        pat.setProperty("steps", (int) s.pattern.steps, nullptr);
+        pat.setProperty("randomBeats", (int) s.pattern.randomBeats, nullptr);
+        pat.setProperty("signature", s.pattern.signature, nullptr);
+        t.appendChild(pat, nullptr);
+    }
     return t;
 }
 
+namespace
+{
+bitvibe::DrumPattern patternFrom(int action, int steps, int randomBeats, int signature)
+{
+    bitvibe::DrumPattern pattern;
+    pattern.action = (bitvibe::DrumAction) jlimit(0, bitvibe::kNumDrumActions - 1, action);
+    pattern.steps = (uint32_t) steps & bitvibe::kPatternMask;
+    pattern.randomBeats = (uint32_t) randomBeats & 0x1Fu;
+    pattern.signature = jlimit(0, bitvibe::kNumTimeSignatures - 1, signature);
+    return pattern;
+}
+} // namespace
+
 BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromTree(const ValueTree& t, int index) const
 {
-    PresetSlot s = makeFactorySlot(index); // anything the file does not say stays as shipped
+    PresetSlot s = makeFactorySlot(index); // anything the state does not say stays as shipped
+    readSlotValues(t, s);
+    // the effects and pattern, or none for a slot saved before the slots held them
+    const auto fx = t.getChildWithName("EFFECTS");
+    if (!fx.isValid())
+    {
+        s.effects.clear();
+        return s;
+    }
+    for (size_t i = 0; i < effectParams.size() && i < s.effects.size(); ++i)
+    {
+        const Identifier key(effectParams[i].id);
+        const double v = fx.hasProperty(key) ? (double) fx[key] : (double) effectParams[i].param->getDefaultValue();
+        s.effects[i] = std::isfinite(v) ? (float) jlimit(0.0, 1.0, v) : effectParams[i].param->getDefaultValue();
+    }
+    const auto pat = t.getChildWithName("PATTERN");
+    s.pattern = patternFrom(pat["action"], pat["steps"], pat.getProperty("randomBeats", 0x1F), pat["signature"]);
+    return s;
+}
+
+BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromFile(const XmlElement& xml, PresetSlot s) const
+{
+    if (const auto* slotXml = xml.getChildByName("PRESET"))
+        readSlotValues(ValueTree::fromXml(*slotXml), s);
+    s.name = cleanPresetName(xml.getStringAttribute("name", s.name), s.name);
+
+    // the effects: everything starts from its default, then takes what the file says (so a file from an older
+    // version of BitVibe sounds the way it did there)
+    std::map<String, double> values;
+    if (const auto* effects = xml.getChildByName("EFFECTS"))
+        for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
+            values[e->getStringAttribute("id")] = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN());
+    s.effects.clear();
+    for (const auto& ep : effectParams)
+    {
+        float normalised = ep.param->getDefaultValue();
+        if (const auto it = values.find(ep.id); it != values.end() && std::isfinite(it->second))
+            normalised = ep.param->convertTo0to1((float) jlimit((double) ep.param->getNormalisableRange().start,
+                                                                (double) ep.param->getNormalisableRange().end, it->second));
+        s.effects.push_back(normalised);
+    }
+
+    s.pattern = {};
+    if (const auto* pat = xml.getChildByName("PATTERN"))
+        s.pattern = patternFrom(pat->getIntAttribute("action", 0), pat->getIntAttribute("steps", 0),
+                                pat->getIntAttribute("randomBeats", 0x1F), pat->getIntAttribute("signature", 0));
+    return s;
+}
+
+void BitVibeProcessor::readSlotValues(const ValueTree& t, PresetSlot& s) const
+{
     s.name = cleanPresetName(t["name"].toString(), s.name);
     // A slot saved before the sequence could be longer than six steps has no length; its loop steps were stored as a
     // fraction of six choices (step 1 .. step 6), which now has sixteen.
@@ -1528,7 +1742,6 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromTree(const ValueTree& t, 
     }
     s.toeUp = knobsFromTree(t.getChildWithName("UP"), s.toeUp);
     s.toeDown = knobsFromTree(t.getChildWithName("DOWN"), s.toeDown);
-    return s;
 }
 
 void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
@@ -1541,11 +1754,21 @@ void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
     morphNode.appendChild(knobsToTree(getToeDown(), "DOWN"), nullptr);
     state.appendChild(morphNode, nullptr);
 
+    // only the slots that are not as they ship, each with its number
     ValueTree bank("PRESETS");
+    bank.setProperty("version", 2, nullptr);
     {
         const ScopedLock lock(presetLock);
-        for (const auto& slot : slots)
-            bank.appendChild(slotToTree(slot), nullptr);
+        for (size_t i = 0; i < slots.size(); ++i)
+        {
+            const auto& slot = slots[i];
+            const auto& shipped = factoryBank[i];
+            if (slot.name == shipped.name && slot.hasEffects() == shipped.hasEffects() && sameSound(slot, shipped))
+                continue;
+            auto t = slotToTree(slot);
+            t.setProperty("slot", (int) i, nullptr);
+            bank.appendChild(t, nullptr);
+        }
     }
     state.appendChild(bank, nullptr);
     state.appendChild(drumBeat.toState(), nullptr);
@@ -1566,7 +1789,7 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     const auto bank = state.getChildWithName("PRESETS");
     const auto drums = state.getChildWithName("DRUMS");
     const auto samples = state.getChildWithName("SAMPLES");
-    const int program = jlimit(0, bitvibe::kNumPresets - 1, (int) state.getProperty("program", 0));
+    const int program = jlimit(0, numSlots() - 1, (int) state.getProperty("program", 0));
     state.removeChild(morphNode, nullptr); // keep the parameter tree free of the extra nodes
     state.removeChild(bank, nullptr);
     state.removeChild(drums, nullptr);
@@ -1583,10 +1806,19 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     sampleBank.fromState(samples); // a project from before the sample blend keeps the current list
 
     const ScopedLock lock(presetLock);
-    for (int i = 0; i < bitvibe::kNumPresets; ++i)
+    slots = factoryBank;
+    if (bank.isValid() && (int) bank.getProperty("version", 1) >= 2)
     {
-        const auto node = bank.isValid() && i < bank.getNumChildren() ? bank.getChild(i) : ValueTree();
-        slots[(size_t) i] = node.isValid() ? slotFromTree(node, i) : makeFactorySlot(i);
+        // the slots that were changed, by number
+        for (const auto& node : bank)
+            if (const int i = node.getProperty("slot", -1); i >= 0 && i < (int) slots.size())
+                slots[(size_t) i] = slotFromTree(node, i);
+    }
+    else if (bank.isValid())
+    {
+        // an older state: every slot in order (sixteen of them, without effects); the rest are as they ship
+        for (int i = 0; i < bank.getNumChildren() && i < (int) slots.size(); ++i)
+            slots[(size_t) i] = slotFromTree(bank.getChild(i), i);
     }
     currentProgram = program;
 }

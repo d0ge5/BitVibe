@@ -111,7 +111,7 @@
     <PARAM id="eqOutput" value="0.0"/>
     <PARAM id="eq1On" value="0.0"/>
     <PARAM id="eq1Type" value="0.0"/>
-    <PARAM id="eq1Freq" value="39.99999237060547"/>
+    <PARAM id="eq1Freq" value="39.99998474121094"/>
     <PARAM id="eq1Gain" value="0.0"/>
     <PARAM id="eq1Q" value="0.7100000381469727"/>
     <PARAM id="eq2On" value="1.0"/>

@@ -41,7 +41,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
   stutter. Speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
+- **Expression morph** between two stored sets of knobs, and **one bank of 64 preset slots** with editable names,
+  grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
 
@@ -265,8 +266,8 @@ The distortion, delay and reverb panels each have a small graph on the left of w
 running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and
 what comes out; the delay shows a note and its echoes on the beat lines, with the time in ms; the reverb shows the
 tail after a short note, loud at the top and quiet at the bottom, and how long it rings.
-These settings belong to your rig, so they stay put when you change preset slot (an exported preset file does carry
-them).
+The effects and the beat pattern are part of a preset: recalling a slot sets them as the slot has them, and SAVE
+keeps them with it.
 
 - **Beat pattern:** click the steps of the bar where the sequence should trigger, choose a time signature and an
   action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
@@ -346,19 +347,26 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **16 preset slots** (they also appear as programs in your DAW). `<` and `>` step
-  through them. Slots 1 to 12 are factory sounds, 13 to 16 are blank. Changes are written into a slot only when
-  you press **SAVE**.
-- **Click the name** (or the arrow beside it) for the preset menu: every slot to jump straight to, **Undo** and
-  **Redo**, save, rename, **Export to a file** and **Import from a file**.
+- The bar at the top holds **one bank of 64 preset slots** (they also appear as programs in your DAW). `<` and `>`
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 64 are the preset
+  pack. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
+  the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
+  they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
+  sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then.
+- **Click the name** (or the arrow beside it) for the preset menu. The presets are **grouped by what they use**:
+  under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
+  lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
+  rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 64 in order
+  and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
+  a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
 - **Preset pack:** forty-four sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble and the filter types, in
-  the preset menu under **Preset pack**. Like an import, one loads into the slot that is showing (your picked sounds
-  stay as they are); press SAVE to keep it there. The same files are in [`Presets/`](Presets) to share or import.
+  the delay's tape wobble and the filter types, in slots 21 to 64 (your picked sounds stay as they are). Save over
+  one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 
   | | | |
