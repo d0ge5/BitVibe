@@ -981,6 +981,20 @@ void testThemes(const File& outDir)
         const int litHot = near(lit, pedalstyle::theme.accent), hotHot = near(hot, pedalstyle::theme.accent);
         check(litGlow > dimGlow + 200, "WIREFRAME: the outlines glow brighter on the beat (" + String(dimGlow) + " -> " + String(litGlow) + " edge pixels)");
         check(hotHot > litHot + 200, "and flush to the accent while the sequencer acts (" + String(litHot) + " -> " + String(hotHot) + " accent pixels)");
+        auto paintMs = [&]
+        {
+            const double t0 = Time::getMillisecondCounterHiRes();
+            for (int i = 0; i < 10; ++i)
+                snapshot(*ed, 1.0f);
+            return (Time::getMillisecondCounterHiRes() - t0) / 10.0;
+        };
+        pedalstyle::setPulse(1.0f, 1.0f);
+        const double wireMs = paintMs();
+        pedalstyle::setTheme(0);
+        const double nightMs = paintMs();
+        pedalstyle::setTheme(pedalstyle::findTheme("WIREFRAME"));
+        pedalstyle::setPulse(0.0f);
+        std::printf("    (a full-window paint: WIREFRAME %.1f ms, NIGHT %.1f ms, software renderer)\n", wireMs, nightMs);
     }
     ed->setThemeFromPage(0);
     check(pedalstyle::themeIndex() == 0 && uisettings::themeName() == "NIGHT", "and back to NIGHT");

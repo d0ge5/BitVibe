@@ -656,6 +656,7 @@ private:
     // the wireframe glow: the last step seen (a change flashes), its fading flash, and how "hot" the colour is
     int glowStep = -1;
     float stepGlow = 0.0f, glowHeat = 0.0f;
+    int shownGlowLevel = -1, shownGlowHeat = -1; // the glow as last painted, in steps (see timerCallback)
     void applyTheme(); // repaints in the theme now showing
     HelpOverlay helpOverlay;
     int seenAttacks = 0;

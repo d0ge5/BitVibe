@@ -237,6 +237,7 @@ public:
     {
         fs = sampleRate;
         pingDecay = (float) std::exp(-1.0 / (0.0015 * fs));
+        cache = ControlCache {}; // its filter coefficients belong to the old sample rate
         detector.prepare(fs);
         eqReference.prepare(fs);
 
@@ -431,7 +432,13 @@ public:
 
             // ---- derive per-sample processing values -------------------------------------
             // Sample rate
-            const float srBase = mapping::sampleRateHz(srKnobSm.next(blk.sampleRate));
+            const float srKnob = srKnobSm.next(blk.sampleRate);
+            if (!sameFloat(srKnob, cache.srKnob))
+            {
+                cache.srKnob = srKnob;
+                cache.srBase = mapping::sampleRateHz(srKnob);
+            }
+            const float srBase = cache.srBase;
             const float srEff = std::clamp(srBase * srFactor, mapping::kSampleRateMinHz,
                                            mapping::kSampleRateMaxHz);
             const bool srBypass = srEff >= 47000.0f;
@@ -448,17 +455,42 @@ public:
             const float knobBits = mapping::bitDepth(bitsKnobSm.next(blk.bits));
             const float bitsF = crush > 0.0f ? knobBits + (mapping::kMinBits - knobBits) * std::min(crush, 1.0f) : knobBits;
             const bool bitsBypass = bitsF >= 23.5f;
-            const float levels = std::exp2(bitsF - 1.0f);
+            if (!sameFloat(bitsF, cache.bits))
+            {
+                cache.bits = bitsF;
+                cache.levels = std::exp2(bitsF - 1.0f);
+            }
+            const float levels = cache.levels;
             updateGate(mono, bitsF);
 
             // Filter: the knob (by the type's range) times the step's factor is the cutoff; the ENVELOPE type opens it
             // further with each picked note. A change of type fades the filter out, swaps it and fades it back in.
             const float envelopeOpen = filterEnvelope.process(mono);
-            const float fcKnob = mapping::filterHzFor(blk.filterType, filterKnobSm.next(blk.filter)) * filterFactor;
+            const float filterKnob = filterKnobSm.next(blk.filter);
+            if (!sameFloat(filterKnob, cache.filterKnob) || blk.filterType != cache.filterType)
+            {
+                cache.filterKnob = filterKnob;
+                cache.filterType = blk.filterType;
+                cache.filterHz = mapping::filterHzFor(blk.filterType, filterKnob);
+            }
+            const float fcKnob = cache.filterHz * filterFactor;
             const float fcWanted = blk.filterType == FilterType::Envelope
                                        ? fcKnob * std::exp2(mapping::kEnvelopeOctaves * envelopeOpen) : fcKnob;
             const float fcTarget = std::clamp(fcWanted, 24.0f, mapping::kFilterMaxHz);
-            const float fc = std::exp2(cutoffLogSm.next(std::log2(fcTarget)));
+            if (!sameFloat(fcTarget, cache.fcTarget))
+            {
+                cache.fcTarget = fcTarget;
+                cache.fcTargetLog = std::log2(fcTarget);
+            }
+            const float fcLog = cutoffLogSm.next(cache.fcTargetLog);
+            if (!sameFloat(fcLog, cache.fcLog))
+            {
+                cache.fcLog = fcLog;
+                cache.fc = std::exp2(fcLog);
+                cache.g = std::tan(kPi * std::min(cache.fc, 0.45f * (float) fs) / (float) fs);
+                cache.G = cache.g / (1.0f + cache.g);
+            }
+            const float fc = cache.fc;
             const bool filterOff = fcKnob >= mapping::filterOffAboveHz(blk.filterType);
             const bool filterSwitching = blk.filterType != filterShown;
             const float filterMix = filterMixSm.next((filterOff || filterSwitching) ? 0.0f : 1.0f);
@@ -476,22 +508,43 @@ public:
             const float resKnob = filterResSm.next(blk.filterRes);
             const float resonance = blk.filterType == FilterType::Bloom
                                         ? resKnob + std::max(0.0f, mapping::kBloomMaxRes - resKnob) * envelopeOpen : resKnob;
-            const float ladderK = mapping::ladderFeedback(resonance), filterQ = mapping::filterQ(resonance);
-            const float g = std::tan(kPi * std::min(fc, 0.45f * (float) fs) / (float) fs);
-            const float G = g / (1.0f + g);
-            std::array<float, 3> formantG {};
-            float formantQ = 1.0f;
-            if (filterShown == FilterType::Formant)
+            if (!sameFloat(resonance, cache.resonance))
             {
+                cache.resonance = resonance;
+                cache.filterQ = mapping::filterQ(resonance);
+                cache.formantQ = mapping::formantQ(resonance);
+            }
+            const float ladderK = mapping::ladderFeedback(resonance), filterQ = cache.filterQ;
+            const float g = cache.g, G = cache.G;
+            const float formantQ = cache.formantQ;
+            if (filterShown == FilterType::Formant && !sameFloat(fc, cache.formantFc))
+            {
+                cache.formantFc = fc;
                 const auto vowel = mapping::vowelAt(mapping::vowelPosition(fc));
                 const float limit = 0.45f * (float) fs;
-                formantG = { std::tan(kPi * std::min(vowel.f1, limit) / (float) fs), std::tan(kPi * std::min(vowel.f2, limit) / (float) fs),
-                             std::tan(kPi * std::min(vowel.f3, limit) / (float) fs) };
-                formantQ = mapping::formantQ(resonance);
+                cache.formantG = { std::tan(kPi * std::min(vowel.f1, limit) / (float) fs), std::tan(kPi * std::min(vowel.f2, limit) / (float) fs),
+                                   std::tan(kPi * std::min(vowel.f3, limit) / (float) fs) };
             }
+            const auto& formantG = cache.formantG;
+            // a filter mixed all the way out is not worked out; it starts afresh when it comes back
+            const bool filterRun = filterMix > 0.0f;
+            if (filterRun && filterIdle)
+                for (auto& ch : channels)
+                {
+                    ch.ladder.reset();
+                    ch.svf.reset();
+                    for (auto& f : ch.formants)
+                        f.reset();
+                }
+            filterIdle = !filterRun;
 
             // Pitch
-            const float ratio = std::exp2(semitones / 12.0f);
+            if (!sameFloat(semitones, cache.semitones))
+            {
+                cache.semitones = semitones;
+                cache.ratio = std::exp2(semitones / 12.0f);
+            }
+            const float ratio = cache.ratio;
             const float pitchAmount = pitchAmountSm.next(semitones != 0.0f ? 1.0f : 0.0f);
 
             // Mute
@@ -515,6 +568,11 @@ public:
             const float delayGain = delayMixSm.next(blk.delayMix) * delayOnGain;
             const float sampleOnGain = sampleOnSm.next(blk.sampleOn ? 1.0f : 0.0f);
             const float revMix = reverbMixSm.next(blk.reverbMix) * reverbOnGain;
+            const bool reverbRun = revMix > 0.0f;
+            if (reverbRun && reverbIdle)
+                for (auto& ch : channels)
+                    ch.reverb.reset();
+            reverbIdle = !reverbRun;
             const float revTone = reverbToneSm.next(blk.reverbTone);
             const float revLevel = reverbLevelSm.next(blk.reverbLevel);
             // The random sounds belong to the sequence: they stop when it stops.
@@ -533,14 +591,14 @@ public:
                 tremolo.restart();
             tremWasActive = fxActive;
             const float tremAmount = tremOnSm.next(blk.tremOn ? 1.0f : 0.0f) * reverbSend * laneTrem;
-            const float tremLevel = tremolo.next(blk.trem, fs, beatSamples);
+            const float tremLevel = (blk.tremOn || tremAmount > 0.0f) ? tremolo.next(blk.trem, fs, beatSamples) : 1.0f;
             const float tremGain = 1.0f - (1.0f - tremLevel) * tremAmount;
             // the ring mod, gated the same way: the sound times a sine, blended in by its MIX
             ringPhase += (double) ringHzSm.next(blk.ringHz) / fs;
             if (ringPhase >= 1.0)
                 ringPhase -= std::floor(ringPhase);
             const float ringAmount = ringOnSm.next(blk.ringOn ? 1.0f : 0.0f) * reverbSend * ringMixSm.next(blk.ringMix);
-            const float ringGain = 1.0f + (std::sin(2.0f * kPi * (float) ringPhase) - 1.0f) * ringAmount;
+            const float ringGain = ringAmount > 0.0f ? 1.0f + (std::sin(2.0f * kPi * (float) ringPhase) - 1.0f) * ringAmount : 1.0f;
             // the phaser / flanger, gated the same way; its sweep follows the beat clock
             const float modOnGain = modOnSm.next(blk.modOn ? 1.0f : 0.0f);
             const bool modRun = blk.modOn || modOnGain > 1.0e-4f;
@@ -554,6 +612,17 @@ public:
             const float modAmount = modOnGain * reverbSend * modMixSm.next(blk.modMix);
             const float modFlange = modTypeSm.next(blk.modType == 1 ? 1.0f : 0.0f);
             const float modDepth = modDepthSm.next(blk.modDepth), modFeedback = modFeedbackSm.next(blk.modFeedback);
+            const bool phaserRun = modRun && modFlange < 1.0f, flangerRun = modRun && modFlange > 0.0f;
+            if ((phaserRun && phaserIdle) || (flangerRun && flangerIdle))
+                for (auto& ch : channels)
+                {
+                    if (phaserRun && phaserIdle)
+                        ch.phaser.reset();
+                    if (flangerRun && flangerIdle)
+                        ch.flanger.reset();
+                }
+            phaserIdle = !phaserRun;
+            flangerIdle = !flangerRun;
             double modPhase = ((double) beatsDone + beatPhase) / (double) blk.modRateBeats;
             modPhase -= std::floor(modPhase);
             const auto heard = samplePlayer.process();
@@ -604,25 +673,28 @@ public:
                     y = (std::floor(clipped * levels) + 0.5f) / levels * gateGain;
                 }
 
-                float filtered;
-                switch (filterShown)
+                float filtered = y;
+                if (filterRun)
                 {
-                    case FilterType::Low: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Low); break;
-                    case FilterType::Band: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Band); break;
-                    case FilterType::High: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::High); break;
-                    case FilterType::Ladder:
-                    case FilterType::Envelope:
-                    case FilterType::Bloom: filtered = ch.ladder.process(y, G, ladderK); break;
-                    case FilterType::Formant:
+                    switch (filterShown)
                     {
-                        float voiced = 0.0f;
-                        for (size_t f = 0; f < 3; ++f)
-                            voiced += mapping::kFormantGains[f]
-                                      * ch.formants[f].process(y, formantG[f], formantQ, StateVariableFilter::Mode::Band);
-                        filtered = voiced * mapping::kFormantMakeup;
-                        break;
+                        case FilterType::Low: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Low); break;
+                        case FilterType::Band: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Band); break;
+                        case FilterType::High: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::High); break;
+                        case FilterType::Ladder:
+                        case FilterType::Envelope:
+                        case FilterType::Bloom: filtered = ch.ladder.process(y, G, ladderK); break;
+                        case FilterType::Formant:
+                        {
+                            float voiced = 0.0f;
+                            for (size_t f = 0; f < 3; ++f)
+                                voiced += mapping::kFormantGains[f]
+                                          * ch.formants[f].process(y, formantG[f], formantQ, StateVariableFilter::Mode::Band);
+                            filtered = voiced * mapping::kFormantMakeup;
+                            break;
+                        }
+                        default: filtered = y; break;
                     }
-                    default: filtered = y; break;
                 }
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
@@ -640,17 +712,17 @@ public:
                     phase -= std::floor(phase);
                     const float sine = 0.5f - 0.5f * std::cos(2.0f * kPi * (float) phase);
                     const float triangle = phase < 0.5 ? 2.0f * (float) phase : 2.0f - 2.0f * (float) phase;
-                    const float phased = ch.phaser.process(y, sine, modDepth, modFeedback, fs);
-                    const float flanged = ch.flanger.process(y, triangle, modDepth, modFeedback, fs);
-                    const float swept = phased + (flanged - phased) * modFlange;
+                    const float phased = phaserRun ? ch.phaser.process(y, sine, modDepth, modFeedback, fs) : y;
+                    const float flanged = flangerRun ? ch.flanger.process(y, triangle, modDepth, modFeedback, fs) : y;
+                    const float swept = lerpExact(phased, flanged, modFlange);
                     y += (swept - y) * modAmount;
                 }
                 y *= tremGain;
                 y *= muteGain * seqGate * laneLevel;
                 // the delay: echoes of the sequenced sound (after the distortion), which ring on after the sequence stops
                 const float echoes = delayRun ? ch.delay.process(y * reverbSend * laneDelay, delaySettings) * delayGain : 0.0f;
-                float reverbOut = ch.reverb.process((cleanSequence * reverbSend * laneReverb + echoes) * reverbOnGain, revSettings);
-                if (distRun && blk.distReverb)
+                float reverbOut = reverbRun ? ch.reverb.process((cleanSequence * reverbSend * laneReverb + echoes) * reverbOnGain, revSettings) : 0.0f;
+                if (reverbRun && distRun && blk.distReverb)
                     reverbOut += ((blk.distType == 1 ? ch.fuzzReverb.process(reverbOut) : ch.distReverb.process(reverbOut)) - reverbOut) * distAmount;
                 y *= invHeadroom;
                 y += echoes * invHeadroom;
@@ -1293,6 +1365,26 @@ private:
     double ringPhase = 0.0; // the ring mod's sine, shared by the channels
     bool modIdle = true;    // the phaser / flanger was off: its state is cleared when it comes back
     float pingEnv = 0.0f, pingDecay = 0.97f; // the ping: a short noise burst, shared by the channels
+    // Parts that are not heard are not worked out: these say which were idle, so each starts afresh when it is
+    // heard again (rather than from a state that stopped where it was left).
+    bool filterIdle = true, reverbIdle = true, phaserIdle = true, flangerIdle = true;
+    // The control maths (frequencies, filter coefficients, the pitch ratio) worked out from values that only change
+    // while a knob or a step moves: the smoothers settle exactly on their targets, so each is worked out again only
+    // when what it comes from changes. The starting values match no real input.
+    struct ControlCache
+    {
+        static constexpr float kNone = -1.0e30f;
+        float srKnob = kNone, srBase = 0.0f;
+        float bits = kNone, levels = 1.0f;
+        float filterKnob = kNone, filterHz = 0.0f;
+        FilterType filterType = FilterType::Ladder;
+        float fcTarget = kNone, fcTargetLog = 0.0f;
+        float fcLog = kNone, fc = 0.0f, g = 0.0f, G = 0.0f;
+        float resonance = kNone, filterQ = 0.5f, formantQ = 1.0f;
+        float formantFc = kNone;
+        std::array<float, 3> formantG {};
+        float semitones = kNone, ratio = 1.0f;
+    } cache;
     ScopeFeed scope;
     double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on
     std::atomic<float> tremRampOut { -1.0f };

@@ -61,6 +61,16 @@ public:
         fs = sampleRate;
         buffer.assign((size_t) std::ceil(fs * kBufferSeconds) + 4, 0.0f);
         timeCoef = 1.0f - std::exp(-1.0f / (float) (fs * 0.05)); // tempo and time changes glide over about 50 ms
+        cachedHighHz = cachedLowHz = -1.0f; // the coefficients belong to the old sample rate
+        // each echo's place in the wow and flutter cycles, as a sine and cosine, so a sample needs only one sine and
+        // cosine of each (sin(a + b) = sin a cos b + cos a sin b) however many echoes there are
+        for (int k = 0; k <= kDelayMaxRepeats; ++k)
+        {
+            const double wowOffset = 6.283185307179586 * 0.17 * (double) k, flutterOffset = 2.3 * wowOffset;
+            echoWow[(size_t) k] = { std::sin(wowOffset), std::cos(wowOffset) };
+            echoFlutter[(size_t) k] = { std::sin(flutterOffset), std::cos(flutterOffset) };
+            echoSpread[(size_t) k] = std::sqrt((double) k);
+        }
         reset();
     }
 
@@ -72,6 +82,9 @@ public:
         lowState = { 0.0f, 0.0f };
         highState = { 0.0f, 0.0f };
         wowPhase = flutterPhase = 0.0;
+        wowSin = flutterSin = 0.0;
+        wowCos = flutterCos = 1.0;
+        wobbleCountdown = 0;
         drift = driftTarget = 0.0f;
         driftCount = 0;
         wobbleNow = 0.0f;
@@ -95,9 +108,10 @@ public:
         time += (target - time) * (double) timeCoef;
 
         // the tape's wobble: wow (slow, its speed and depth wandering) plus flutter (fast)
-        wobbleNow += 0.0005f * (std::clamp(s.wobble, 0.0f, 1.0f) - wobbleNow);
-        if (wobbleNow < 1.0e-5f && s.wobble <= 0.0f)
-            wobbleNow = 0.0f;
+        const float wobbleTarget = std::clamp(s.wobble, 0.0f, 1.0f);
+        wobbleNow += 0.0005f * (wobbleTarget - wobbleNow);
+        if (std::abs(wobbleTarget - wobbleNow) < 1.0e-5f) // settled exactly, so what follows from it need not be worked out again
+            wobbleNow = wobbleTarget;
         if (--driftCount <= 0) // a new place for the wander to head for, every quarter of a second
         {
             rng ^= rng << 13;
@@ -111,15 +125,33 @@ public:
         wowPhase -= std::floor(wowPhase);
         flutterPhase += kFlutterHz / fs;
         flutterPhase -= std::floor(flutterPhase);
-        auto wobbleAt = [&](double offset) // the delay change for an echo, its wow a little out of step with the others
+        // wow (0.6 Hz) and flutter (7 Hz) move slowly: their sines are worked out every kWobbleEvery samples, which
+        // moves the delay time by about a hundredth of a sample at a time, far below hearing through the interpolation
+        if (wobbleNow <= 0.0f)
+        {
+            wowSin = flutterSin = 0.0;
+            wowCos = flutterCos = 1.0;
+            wobbleCountdown = 0;
+        }
+        else if (--wobbleCountdown <= 0)
+        {
+            wobbleCountdown = kWobbleEvery;
+            wowSin = std::sin(6.283185307179586 * wowPhase);
+            wowCos = std::cos(6.283185307179586 * wowPhase);
+            flutterSin = std::sin(6.283185307179586 * flutterPhase);
+            flutterCos = std::cos(6.283185307179586 * flutterPhase);
+        }
+        auto wobbleAt = [&](int echo) // the delay change for an echo, its wow a little out of step with the others
         {
             if (wobbleNow <= 0.0f)
                 return 0.0;
-            const double wow = std::sin(6.283185307179586 * (wowPhase + offset)) * (1.0 + 0.3 * (double) drift);
-            const double flutter = std::sin(6.283185307179586 * (flutterPhase + 2.3 * offset));
+            const auto& w = echoWow[(size_t) echo];
+            const auto& f = echoFlutter[(size_t) echo];
+            const double wow = (wowSin * w.cos + wowCos * w.sin) * (1.0 + 0.3 * (double) drift);
+            const double flutter = flutterSin * f.cos + flutterCos * f.sin;
             return (double) wobbleNow * fs * (kWowSeconds * wow + kFlutterSeconds * flutter);
         };
-        lastWobble = wobbleAt(0.0);
+        lastWobble = wobbleAt(0);
 
         const float g = decayGain(s.decay);
         float out = 0.0f;
@@ -139,7 +171,7 @@ public:
                 if (d > longest)
                     break;
                 // a later echo has been round the tape more often: it wobbles more
-                out += read(std::clamp(d + wobbleAt(0.17 * (double) k) * std::sqrt((double) k), 1.0, longest)) * gain;
+                out += read(std::clamp(d + wobbleAt(k) * echoSpread[(size_t) k], 1.0, longest)) * gain;
                 gain *= g;
             }
         }
@@ -152,18 +184,35 @@ public:
         {
             const float drive = 1.0f + 2.0f * wobbleNow;
             out = std::tanh(out * drive) / drive;
-            highCut = std::min(highCut, 20000.0f * std::pow(0.3f, wobbleNow));
+            if (!same(wobbleNow, cachedWobble))
+            {
+                cachedWobble = wobbleNow;
+                cachedWobbleCut = 20000.0f * std::pow(0.3f, wobbleNow);
+            }
+            highCut = std::min(highCut, cachedWobbleCut);
         }
         if (highCut < 19900.0f) // two poles each: 12 dB per octave
         {
-            const float c = onePole(std::clamp(highCut, 200.0f, 19900.0f));
+            const float hz = std::clamp(highCut, 200.0f, 19900.0f);
+            if (!same(hz, cachedHighHz))
+            {
+                cachedHighHz = hz;
+                cachedHighCoef = onePole(hz);
+            }
+            const float c = cachedHighCoef;
             highState[0] += c * (out - highState[0]);
             highState[1] += c * (highState[0] - highState[1]);
             out = highState[1];
         }
         if (s.lowCutHz > 20.5f) // two one-pole high-passes (each the signal minus its low-pass): 12 dB per octave
         {
-            const float c = onePole(std::clamp(s.lowCutHz, 20.0f, 2000.0f));
+            const float hz = std::clamp(s.lowCutHz, 20.0f, 2000.0f);
+            if (!same(hz, cachedLowHz))
+            {
+                cachedLowHz = hz;
+                cachedLowCoef = onePole(hz);
+            }
+            const float c = cachedLowCoef;
             lowState[0] += c * (out - lowState[0]);
             out -= lowState[0];
             lowState[1] += c * (out - lowState[1]);
@@ -187,6 +236,12 @@ private:
     }
 
     float onePole(float hz) const { return 1.0f - std::exp(-6.2831853f * std::min(hz, 0.45f * (float) fs) / (float) fs); }
+    static bool same(float a, float b) { return !(a < b) && !(b < a); } // exact equality, without -Wfloat-equal
+
+    // The filters' coefficients and the wobble's darkening as last worked out (again only when what they come from
+    // changes; the starting values match no real setting)
+    float cachedWobble = -1.0f, cachedWobbleCut = 20000.0f;
+    float cachedHighHz = -1.0f, cachedHighCoef = 1.0f, cachedLowHz = -1.0f, cachedLowCoef = 0.0f;
 
     std::vector<float> buffer;
     size_t write = 0;
@@ -195,6 +250,15 @@ private:
     bool primed = false;
     std::array<float, 2> lowState {}, highState {};
     double wowPhase = 0.0, flutterPhase = 0.0, lastWobble = 0.0;
+    static constexpr int kWobbleEvery = 8;
+    double wowSin = 0.0, wowCos = 1.0, flutterSin = 0.0, flutterCos = 1.0; // the cycles' sines, as last worked out
+    int wobbleCountdown = 0;
+    struct SinCos
+    {
+        double sin = 0.0, cos = 1.0;
+    };
+    std::array<SinCos, kDelayMaxRepeats + 1> echoWow {}, echoFlutter {}; // each echo's offset in the two cycles
+    std::array<double, kDelayMaxRepeats + 1> echoSpread {};             // and how much more it wobbles (sqrt of its number)
     float drift = 0.0f, driftTarget = 0.0f, wobbleNow = 0.0f;
     int driftCount = 0;
     uint32_t rng = 0x2545F491u;

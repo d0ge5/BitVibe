@@ -295,14 +295,20 @@ public:
     {
         state.fill(0.0f);
         last = 0.0f;
+        countdown = 0;
     }
 
     // lfo 0..1, depth 0..1, feedback 0..0.9
     float process(float x, float lfo, float depth, float feedback, double fs)
     {
-        const float hz = 160.0f * std::exp2(4.6f * std::clamp(depth, 0.0f, 1.0f) * std::clamp(lfo, 0.0f, 1.0f));
-        const float g = std::tan(kPi * std::min(hz, 0.45f * (float) fs) / (float) fs);
-        const float G = g / (1.0f + g);
+        // the sweep moves slowly, so its corner is worked out every kUpdateEvery samples (6 kHz at 48 kHz), not each one
+        if (--countdown <= 0)
+        {
+            countdown = kUpdateEvery;
+            const float hz = 160.0f * std::exp2(4.6f * std::clamp(depth, 0.0f, 1.0f) * std::clamp(lfo, 0.0f, 1.0f));
+            const float g = std::tan(kPi * std::min(hz, 0.45f * (float) fs) / (float) fs);
+            G = g / (1.0f + g);
+        }
         const float fb = std::clamp(feedback, 0.0f, 0.9f);
         float v = x + fb * last;
         for (auto& s : state)
@@ -317,8 +323,10 @@ public:
     }
 
 private:
+    static constexpr int kUpdateEvery = 8;
     std::array<float, 6> state {};
-    float last = 0.0f;
+    float last = 0.0f, G = 0.0f;
+    int countdown = 0;
 };
 
 // The flanger: a short delay (a quarter of a millisecond up to about 6 ms at full depth) swept by the LFO, with

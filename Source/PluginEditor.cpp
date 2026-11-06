@@ -3047,8 +3047,17 @@ void BitVibeEditor::timerCallback()
         stepGlow *= 0.78f;
         const bool acting = engine.isEffectSideActive();
         glowHeat += ((acting ? 1.0f : 0.0f) - glowHeat) * 0.2f;
-        pedalstyle::setPulse(jmax(beatLevel * (acting ? 1.0f : 0.35f), stepGlow), glowHeat);
-        content.repaint();
+        // the whole page repaints only when the glow has moved by a step you could see (1/48 in level, 1/24 in colour),
+        // so the fading end of each beat and a settled colour cost nothing
+        const int levelStep = roundToInt(jmax(beatLevel * (acting ? 1.0f : 0.35f), stepGlow) * 48.0f);
+        const int heatStep = roundToInt(glowHeat * 24.0f);
+        if (levelStep != shownGlowLevel || heatStep != shownGlowHeat)
+        {
+            shownGlowLevel = levelStep;
+            shownGlowHeat = heatStep;
+            pedalstyle::setPulse((float) levelStep / 48.0f, (float) heatStep / 24.0f);
+            content.repaint();
+        }
     }
 
     // Holding the tap switch freezes the stutter buffer (manual, section 4).
