@@ -37,7 +37,7 @@ struct Theme
     juce::Colour pointer { 0xfff2f0e6 };    // a knob's pointer (on the knob, so it can differ from the ink)
     juce::Colour cell { 0xff1d1d21 }, cellStrong { 0xff28282d }, cellPlaying { 0xff4a4a52 }, cellEdge { 0xff0a0a0c }; // grids
     juce::Colour gridLine { 0xff222226 }, gridMajor { 0xff3a3a40 };
-    juce::Colour screen { 0xff19ff3a }, screenEdge { 0xff1f3a26 }; // BEAT DOG's screen
+    juce::Colour screen { 0xff19ff3a }, screenEdge { 0xff1f3a26 }; // DOG5's screen
     std::array<juce::Colour, 3> steps { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) }; // pitch, filter, rate
 };
 
@@ -480,11 +480,11 @@ public:
 
     // SIMPLE mode (the controls that matter most, on both sides) or ADVANCED mode (every control). Settings that SIMPLE
     // hides keep working; they are only out of the way, and the panels say when one of them is on. The window is
-    // shorter in SIMPLE (BEAT DOG moves into the room left at the bottom of the right-hand column). Remembered.
+    // shorter in SIMPLE (DOG5 moves into the room left at the bottom of the right-hand column). Remembered.
     void setRightMode(bool advanced);
     bool isAdvancedRight() const { return advancedRight; }
 
-    // The VIEW menu (top right): the theme, the window size and whether BEAT DOG is shown. All remembered; the theme
+    // The VIEW menu (top right): the theme, the window size and whether DOG5 is shown. All remembered; the theme
     // is shown in every open window.
     juce::PopupMenu viewMenu();
     void viewMenuChosen(int result);
@@ -532,7 +532,7 @@ private:
     void applyRightMode();
     // The right-hand column, top to bottom: the beat pattern (when the sequence fires; folded while it is off), the effect
     // tabs, the one effect panel showing (sample blend, distortion / fuzz, tremolo, delay, reverb or, in ADVANCED, the EQ;
-    // the area is the size of the tallest), then BEAT DOG. The pattern panel changes height, so everything below it moves.
+    // the area is the size of the tallest), then DOG5. The pattern panel changes height, so everything below it moves.
     int patternTop() const;
     int samplesTop() const; // the tab strip
     juce::Rectangle<int> effectsArea() const;
@@ -543,7 +543,7 @@ private:
     juce::Rectangle<int> reverbArea() const;
     int eqTop() const;
     int columnBottom() const;
-    // The panel under the pedal (input, output and, in ADVANCED, the stutter and loop settings), BEAT DOG (under the
+    // The panel under the pedal (input, output and, in ADVANCED, the stutter and loop settings), DOG5 (under the
     // pedal in ADVANCED, at the bottom of the right-hand column in SIMPLE), and the height of the page for the mode.
     int globalTop() const;
     int globalHeight() const;

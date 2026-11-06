@@ -12,7 +12,7 @@ namespace bitvibe
 class ScopeFeed;
 }
 
-// BEAT DOG: the green wireframe husky headbanging in time, in the pane under the pedal. Two ways to show it:
+// DOG5: the green wireframe husky headbanging in time, in the pane under the pedal. Two ways to show it:
 //  - the pre-rendered animation (the default): one beat rendered ahead of time in Blender (Tools/beatdog) as a sprite
 //    sheet of 32 frames built into the plug-in, so showing it costs one small image draw per frame;
 //  - LIVE 3D: the same head drawn in real time from its mesh (BeatDogMesh.h, exported by the same Blender script), at

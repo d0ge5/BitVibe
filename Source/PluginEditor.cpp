@@ -1491,7 +1491,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
                               "the stutter length and hold, the sequence loop and more.");
     simpleButton.onClick = [this] { setRightMode(false); };
     advancedButton.onClick = [this] { setRightMode(true); };
-    viewButton.setTooltip("VIEW: the theme (the colours of the page), the window size, and whether BEAT DOG is shown. "
+    viewButton.setTooltip("VIEW: the theme (the colours of the page), the window size, and whether DOG5 is shown. "
                           "All remembered; every open BitVibe window follows the theme.");
     viewButton.arrow = true;
     viewButton.onClick = [this]
@@ -1828,7 +1828,7 @@ PopupMenu BitVibeEditor::viewMenu()
                      std::abs(scale - wanted) < 0.005f);
     }
     menu.addSeparator();
-    menu.addItem(kViewDog, "Show BEAT DOG", true, beatDogShown);
+    menu.addItem(kViewDog, "Show DOG5", true, beatDogShown);
     return menu;
 }
 
@@ -1905,7 +1905,7 @@ void BitVibeEditor::applyRightMode()
     simpleButton.repaint();
     advancedButton.repaint();
     beatDog->setVisible(beatDogShown && !drumsShown);
-    if (!drumsShown && pedalPageHeight() != baseHeight) // SIMPLE has a shorter window, and so has a page without BEAT DOG
+    if (!drumsShown && pedalPageHeight() != baseHeight) // SIMPLE has a shorter window, and so has a page without DOG5
     {
         baseHeight = pedalPageHeight();
         constrainer.setFixedAspectRatio((double) baseWidth / (double) baseHeight);
@@ -2557,8 +2557,8 @@ void BitVibeEditor::paintContent(Graphics& g)
         g.setColour(pedalstyle::panelEdge);
         g.drawRoundedRectangle(panelArea.reduced(0.5f), 10.0f, 1.0f);
         g.drawVerticalLine(240, (float) gy + 10.0f, (float) gy + 136.0f);
-        pedalstyle::drawSectionTitle(g, 26, gy + 6, "YOUR SIGNAL IN");
-        pedalstyle::drawSectionTitle(g, 252, gy + 6, "WHAT COMES OUT");
+        pedalstyle::drawSectionTitle(g, 26, gy + 6, "IN");
+        pedalstyle::drawSectionTitle(g, 252, gy + 6, "OUT");
         const bool seqOnly = rawValue(ids::seqOnly) > 0.5f;
         pedalstyle::drawControlLabel(g, 50, gy + 76, "INPUT", String(rawValue(ids::inputGain), 1) + " dB");
         pedalstyle::drawControlLabel(g, 112, gy + 76, "TRIGGER", String(roundToInt(rawValue(ids::sensitivity) * 100.0f)) + "%");

@@ -88,7 +88,7 @@ inline void setEqClipSeconds(float seconds)
     write(*xml);
 }
 
-// BEAT DOG: the live 3D version on or off, and its frame rate (60, 30 or 15).
+// DOG5: the live 3D version on or off, and its frame rate (60, 30 or 15).
 inline bool beatDogLive() { return read()->getBoolAttribute("beatDogLive", false); }
 
 inline void setBeatDogLive(bool live)
@@ -98,7 +98,7 @@ inline void setBeatDogLive(bool live)
     write(*xml);
 }
 
-// BEAT DOG's screen showing the scope instead of the dog.
+// DOG5's screen showing the scope instead of the dog.
 inline bool beatDogScope() { return read()->getBoolAttribute("beatDogScope", false); }
 
 inline void setBeatDogScope(bool on)
@@ -108,7 +108,7 @@ inline void setBeatDogScope(bool on)
     write(*xml);
 }
 
-// BEAT DOG shown, or hidden from the VIEW menu.
+// DOG5 shown, or hidden from the VIEW menu.
 inline bool beatDogShown() { return read()->getBoolAttribute("beatDogShown", true); }
 
 inline void setBeatDogShown(bool shown)
@@ -137,7 +137,7 @@ inline void setBeatDogFps(int fps)
     write(*xml);
 }
 
-// BEAT DOG's picked beats (bit n = beat n + 1), and its SMOOTH and SWAY knobs (0..1).
+// DOG5's picked beats (bit n = beat n + 1), and its SMOOTH and SWAY knobs (0..1).
 inline int beatDogBeats() { return read()->getIntAttribute("beatDogBeats", 0x3f); }
 
 inline void setBeatDogBeats(int mask)
@@ -159,7 +159,8 @@ inline void setBeatDogKnobs(float smooth, float sway)
 }
 
 // The theme the page is drawn in, by name (so a theme can be added without changing what was picked).
-inline juce::String themeName() { return read()->getStringAttribute("theme", {}); }
+// A player who has not chosen a theme gets SYNTHWAVE.
+inline juce::String themeName() { return read()->getStringAttribute("theme", "SYNTHWAVE"); }
 
 inline void setThemeName(const juce::String& name)
 {

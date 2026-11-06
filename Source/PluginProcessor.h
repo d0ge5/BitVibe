@@ -269,7 +269,7 @@ public:
     // block; for the DRUMS tab's readout.
     bitvibe::BeatRoute getBeatRoute() const { return (bitvibe::BeatRoute) beatRoute.load(std::memory_order_relaxed); }
 
-    // The loudest output sample since the last call (the output meter under WHAT COMES OUT). Message thread.
+    // The loudest output sample since the last call (the output meter under OUT). Message thread.
     float takeOutputPeak() { return outputPeak.exchange(0.0f, std::memory_order_relaxed); }
 
     // Tempo actually in use (the host's when sync is on); for display only.

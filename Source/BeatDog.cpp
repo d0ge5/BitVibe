@@ -649,7 +649,7 @@ void BeatDog::showMenu()
 
 String BeatDog::getTooltip()
 {
-    return "BEAT DOG: headbangs in time with the tempo (or the host's, with SYNC on). SCOPE shows the sound instead. Right-click "
+    return "DOG5: headbangs in time with the tempo (or the host's, with SYNC on). SCOPE shows the sound instead. Right-click "
            "for the beats it hits, SWAY, SMOOTH, LIVE 3D and the frame rate.";
 }
 
@@ -702,7 +702,7 @@ void BeatDog::paint(Graphics& g)
     g.fillRoundedRectangle(bounds, 10.0f);
     g.setColour(panelEdge);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.0f);
-    drawSectionTitle(g, 14, 4, "BEAT DOG");
+    drawSectionTitle(g, 14, 4, "DOG5");
 
     // the screen: the live frame, or the pre-rendered frame for this moment, swayed as a picture
     const auto screen = screenArea();

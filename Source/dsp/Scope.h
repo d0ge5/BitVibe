@@ -1,6 +1,6 @@
 #pragma once
 
-// What the SCOPE on BEAT DOG's screen shows: the clean input and the sound coming out, kBucketsPerBeat buckets a beat
+// What the SCOPE on DOG5's screen shows: the clean input and the sound coming out, kBucketsPerBeat buckets a beat
 // (each one the lowest and highest sample in it, and the step that was playing), in a ring the editor reads. The
 // buckets follow the beat clock, so the screen can draw the beats where they fall. Written by the audio thread, read
 // by the editor with relaxed atomics: a bucket read while it is being written is only drawn wrong for one frame.

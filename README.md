@@ -21,7 +21,7 @@ plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from sc
 
 **New in 0.3.0:** a tempo-synced **delay** on the sequenced sound, a **sampler** that records another program on
 your PC and turns a part of it into a sound, **EFFECT ONLY** (HEAR) to hear only the sequenced sound, step knobs remembered per
-sequencer type, **MAX BEATS** for the sample blend, and **BEAT DOG**, a headbanging wireframe husky that keeps time
+sequencer type, **MAX BEATS** for the sample blend, and **DOG5**, a headbanging wireframe husky that keeps time
 under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.3.0).
 
 [Features](#features) · [Install](#install) · [Using it](#using-it) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
@@ -72,7 +72,7 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
 distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control,
 host automation sorted into groups (Pedal, Sequencer, Input and Output, each effect)
-and a quick-start help page, and **BEAT DOG**, a wireframe husky that headbangs in time. No reported latency, and
+and a quick-start help page, and **DOG5**, a wireframe husky that headbangs in time. No reported latency, and
 light on CPU.
 
 ## Install
@@ -124,14 +124,14 @@ say when a hidden setting is on. A switched-off panel dims its knobs but keeps i
 can be set up before you switch it on. Buttons with a small light on the left switch something on and off; the
 others do something once.
 
-**VIEW** (top right) holds the window size (75% to 150%), **Show BEAT DOG** (hide it and the window gets about
+**VIEW** (top right) holds the window size (75% to 150%), **Show DOG5** (hide it and the window gets about
 170 pixels shorter) and the theme:
 
-- **NIGHT**: the black pedal with orange lights (the one it starts in).
+- **NIGHT**: the black pedal with orange lights.
 - **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
-- **MIDNIGHT**: navy, with cyan lights and a cyan BEAT DOG.
-- **SYNTHWAVE**: deep purple, with hot pink lights and a cyan BEAT DOG.
-- **SURPLUS**: olive drab, with amber lights and an amber BEAT DOG screen.
+- **MIDNIGHT**: navy, with cyan lights and a cyan DOG5.
+- **SYNTHWAVE**: deep purple, with hot pink lights and a cyan DOG5 (the one it starts in).
+- **SURPLUS**: olive drab, with amber lights and an amber DOG5 screen.
 - **CONTRAST**: black and white, with yellow lights and strong outlines, the easiest to read.
 
 Only the colours change. Every open BitVibe window follows, and the choice is remembered. Every theme is checked for
@@ -195,10 +195,10 @@ on afterwards. The tempo clock sets the speed of all of it.
   **SYNC** under it follows your DAW's tempo instead. Holding TAP freezes the stutter for as long as you hold it.
 - **BYPASS** switches the effect off.
 
-At the bottom of the right-hand side, **YOUR SIGNAL IN** has **INPUT**, **TRIGGER** (how easily picked notes start the
+At the bottom of the right-hand side, **IN** has **INPUT**, **TRIGGER** (how easily picked notes start the
 stutter and sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that
 crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over
-the line; and **HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an
+the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **OUTPUT** with an
 output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
 out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
 and a **FILTER** row: the filter's type and its **RESONANCE**:
@@ -231,7 +231,7 @@ and a **FILTER** row: the filter's type and its **RESONANCE**:
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
 
-**BEAT DOG** (in the right-hand column, under the effects) is a green wireframe husky
+**DOG5** (in the right-hand column, under the effects) is a green wireframe husky
 that headbangs in time: its head nods forward on the beat and pulls back again, ears flopping, with the beat of the
 bar beside it. It follows the tempo, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
 animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
@@ -243,12 +243,12 @@ side, landing on one side at a picked beat and the other at the next. **LIVE 3D*
 its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15 FPS**:
 smoother, and still light (well under a millisecond a frame). All of it is remembered.
 
-**SCOPE** turns BEAT DOG's screen into an oscilloscope of the last two beats: your clean input on top (**IN**), what
+**SCOPE** turns DOG5's screen into an oscilloscope of the last two beats: your clean input on top (**IN**), what
 comes out below (**OUT**), a line on each beat and, along the bottom, a strip in the colour of the step that was
 playing. Side by side you can see what the sequence does to your playing: the stutter repeating a slice, a muted
 step going flat, the crush, the tremolo cutting, the echoes trailing on.
 
-<p align="center"><img src="artifacts/scope.png" width="456" alt="BEAT DOG's screen as a scope: the clean input on top, the processed sound below, the beats as lines and the steps as a coloured strip"></p>
+<p align="center"><img src="artifacts/scope.png" width="456" alt="DOG5's screen as a scope: the clean input on top, the processed sound below, the beats as lines and the steps as a coloured strip"></p>
 
 ### The right-hand side
 
@@ -260,7 +260,7 @@ sequenced and stuttered sound. Each tab has a light that is on when its effect i
 stutter plays (which is when the effect acts); each panel has the same power button next to its title, and a
 switched-off panel is dimmed.
 
-<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the six numbered tabs, the reverb's graph and six knobs, BEAT DOG and the in / out panel"></p>
+<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the six numbered tabs, the reverb's graph and six knobs, DOG5 and the in / out panel"></p>
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 The distortion, delay and reverb panels each have a small graph on the left of what the effect does, worked out by
 running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and

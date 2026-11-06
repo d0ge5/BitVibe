@@ -687,7 +687,7 @@ void testSoundBanks()
 }
 
 // The page's layout: one tempo control (drag or type), SIMPLE hides the stutter and loop settings under the pedal and
-// says when one is on, a shorter window in SIMPLE with BEAT DOG in the right-hand column, and the host sees the
+// says when one is on, a shorter window in SIMPLE with DOG5 in the right-hand column, and the host sees the
 // parameters in groups, named as on the pedal.
 void testLayout(const File& outDir)
 {
@@ -732,7 +732,7 @@ void testLayout(const File& outDir)
     }
     if (tempo == nullptr || dog == nullptr || holdBox == nullptr || input == nullptr)
     {
-        check(false, "the tempo read-out, BEAT DOG, the stutter type and the INPUT knob are on the page");
+        check(false, "the tempo read-out, DOG5, the stutter type and the INPUT knob are on the page");
         return;
     }
     check(tempoKnobs == 1, "one tempo control on the page (the read-out on the pedal)");
@@ -743,7 +743,7 @@ void testLayout(const File& outDir)
     check(std::abs(p->apvts.getRawParameterValue(ids::tempo)->load() - 130.0f) < 0.05f, "dragging the tempo up 20 pixels: 120 to 130 BPM");
     setValue(*p, ids::tempo, 120.0f);
     check(dog->getX() > 480 && input->getX() > 480 && input->getY() > dog->getBottom() && holdBox->isVisible(),
-          "ADVANCED: BEAT DOG and the in / out panel under the effects in the right-hand column, the stutter type showing");
+          "ADVANCED: DOG5 and the in / out panel under the effects in the right-hand column, the stutter type showing");
     check(ed->getHeight() <= 1040 - 90, "the window fits a 1080p screen at full size (" + String(ed->getHeight()) + " px)");
 
     ed->setRightMode(false);
@@ -793,13 +793,15 @@ void testLayout(const File& outDir)
     const auto chartCard = help->getLocalBounds().withSizeKeepingCentre(help->getWidth() - 120, jmin(help->getHeight() - 40, 700));
     check(differ > 5000, "a page of its own (" + String(differ) + " pixels differ from the quick start)");
     int orange = 0;
+    const auto accentNow = pedalstyle::accent;
     for (int yy = chartCard.getY() + 80; yy < chartCard.getBottom(); ++yy)
         for (int xx = chartCard.getX(); xx < chartCard.getRight(); ++xx)
         {
             const auto px = chart.getPixelAt(xx, yy);
-            orange += px.getRed() > 200 && px.getGreen() > 120 && px.getGreen() < 190 && px.getBlue() < 80 ? 1 : 0;
+            orange += std::abs(px.getRed() - accentNow.getRed()) < 40 && std::abs(px.getGreen() - accentNow.getGreen()) < 40
+                              && std::abs(px.getBlue() - accentNow.getBlue()) < 40 ? 1 : 0;
         }
-    check(orange > 1500, "drawn in the page's orange: the arrows and the edges of what acts while a sequence plays (" + String(orange) + " pixels)");
+    check(orange > 1500, "drawn in the theme's accent: the arrows and the edges of what acts while a sequence plays (" + String(orange) + " pixels)");
     save(*ed, outDir.getChildFile("help_triggers.png"));
     help->showPage(HelpOverlay::kQuickStart);
     save(*ed, outDir.getChildFile("help_quick_start.png"));
@@ -871,7 +873,10 @@ void testThemes(const File& outDir)
     for (auto* c : ed->getContent().getChildren())
         if (auto* b = dynamic_cast<PedalButton*>(c); b != nullptr && b->getText() == "VIEW")
             button = b;
-    check(button != nullptr && button->isVisible() && pedalstyle::themeIndex() == 0, "a VIEW button on the page, which starts in NIGHT");
+    check(button != nullptr && button->isVisible() && pedalstyle::themeIndex() == pedalstyle::findTheme("SYNTHWAVE")
+              && String(all[(size_t) pedalstyle::themeIndex()].name) == "SYNTHWAVE",
+          "a VIEW button on the page, which starts in SYNTHWAVE when no theme has been picked");
+    ed->viewMenuChosen(BitVibeEditor::kViewTheme + 0); // the contact sheet goes through them from the first, NIGHT
 
     // every theme in turn, into a contact sheet (three across)
     constexpr float kThumb = 0.5f;
@@ -925,7 +930,7 @@ void testThemes(const File& outDir)
         check(pedalstyle::themeIndex() == (int) all.size() - 1, "a window opened later opens in it");
     }
     {
-        // BEAT DOG's screen in the theme's colour: no green left in its pre-rendered frames
+        // DOG5's screen in the theme's colour: no green left in its pre-rendered frames
         BeatDog* dog = nullptr;
         for (auto* c : ed->getContent().getChildren())
             if (dog == nullptr)
@@ -944,14 +949,14 @@ void testThemes(const File& outDir)
                     green += px.getGreen() > 120 && px.getRed() < px.getGreen() / 2 ? 1 : 0;
                     amber += px.getRed() > 150 && px.getBlue() < px.getRed() / 3 ? 1 : 0;
                 }
-            check(green < 20 && amber > 300, "SURPLUS: BEAT DOG on an amber screen (" + String(amber) + " amber pixels, " + String(green) + " green)");
+            check(green < 20 && amber > 300, "SURPLUS: DOG5 on an amber screen (" + String(amber) + " amber pixels, " + String(green) + " green)");
         }
         else
-            check(false, "BEAT DOG is on the page");
+            check(false, "DOG5 is on the page");
     }
     ed->setThemeFromPage(0);
     check(pedalstyle::themeIndex() == 0 && uisettings::themeName() == "NIGHT", "and back to NIGHT");
-    uisettings::setThemeName("NIGHT");
+    uisettings::setThemeName("SYNTHWAVE"); // back to the theme a new player starts in, for the screenshots after this
     ed.reset();
 
     const File file = outDir.getChildFile("themes.png");
@@ -962,7 +967,7 @@ void testThemes(const File& outDir)
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
 }
 
-// The VIEW menu (window size, BEAT DOG), the preset list, undo and redo, Shift for fine settings, the output meter, and
+// The VIEW menu (window size, DOG5), the preset list, undo and redo, Shift for fine settings, the output meter, and
 // the names a screen reader hears.
 void testPageTools()
 {
@@ -1008,23 +1013,23 @@ void testPageTools()
             dog = dog || (i.id == BitVibeEditor::kViewDog && i.ticked);
         }
         check(themes == (int) pedalstyle::themes().size() && ticked == 1 && hundred && dog,
-              "VIEW lists the themes (the one showing ticked), the window sizes (100% ticked) and Show BEAT DOG (ticked)");
+              "VIEW lists the themes (the one showing ticked), the window sizes (100% ticked) and Show DOG5 (ticked)");
     }
     ed->viewMenuChosen(BitVibeEditor::kViewSize + 125);
     check(ed->getWidth() == roundToInt(948.0f * 1.25f) && std::abs(uisettings::loadWindowScale() - 1.25f) < 0.01f,
           "VIEW > 125%: the window is a quarter bigger (" + String(ed->getWidth()) + " wide), and remembered");
     ed->setWindowScale(1.0f);
-    auto* dog = dynamic_cast<BeatDog*>(find("BEAT DOG"));
+    auto* dog = dynamic_cast<BeatDog*>(find("DOG5"));
     auto* input = find("INPUT:");
     if (dog == nullptr || input == nullptr)
     {
-        check(false, "BEAT DOG and the INPUT knob are on the page");
+        check(false, "DOG5 and the INPUT knob are on the page");
         return;
     }
     const int fullHeight = ed->getHeight(), inputY = input->getY();
     ed->viewMenuChosen(BitVibeEditor::kViewDog);
     check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() < fullHeight && input->getY() < inputY,
-          "VIEW > Show BEAT DOG off: it is hidden (remembered), the in / out panel moves up and the window gets shorter");
+          "VIEW > Show DOG5 off: it is hidden (remembered), the in / out panel moves up and the window gets shorter");
     ed->setRightMode(false);
     const int simpleWithout = ed->getHeight();
     ed->setBeatDogShown(true);
@@ -1282,7 +1287,7 @@ void testTremoloPanel(const File& outDir)
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
 }
 
-// The pictures of the sound: the input history beside TRIGGER, the SCOPE on BEAT DOG's screen and the graphs of the
+// The pictures of the sound: the input history beside TRIGGER, the SCOPE on DOG5's screen and the graphs of the
 // distortion, the delay and the reverb.
 void testVisuals(const File& outDir)
 {
@@ -1305,7 +1310,7 @@ void testVisuals(const File& outDir)
     }
     if (history == nullptr || dog == nullptr || distGraph == nullptr || delayGraph == nullptr || reverbGraph == nullptr)
     {
-        check(false, "the input history, BEAT DOG and the three effect graphs are on the page");
+        check(false, "the input history, DOG5 and the three effect graphs are on the page");
         return;
     }
 
@@ -1322,11 +1327,13 @@ void testVisuals(const File& outDir)
     {
         const auto shot = snapshot(*history, 1.0f);
         int lit = 0;
+        const auto accentNow = pedalstyle::accent; // the picks are lit in the theme's accent
         for (int y = 0; y < shot.getHeight(); ++y)
             for (int x = 0; x < shot.getWidth(); ++x)
             {
                 const auto px = shot.getPixelAt(x, y);
-                lit += px.getRed() > 200 && px.getGreen() > 120 && px.getBlue() < 90 ? 1 : 0;
+                lit += std::abs(px.getRed() - accentNow.getRed()) < 40 && std::abs(px.getGreen() - accentNow.getGreen()) < 40
+                               && std::abs(px.getBlue() - accentNow.getBlue()) < 40 ? 1 : 0;
             }
         check(lit > 40 && history->getWidth() > 60,
               "and draws them lit, in a strip " + String(history->getWidth()) + " px wide (" + String(lit) + " lit pixels)");
@@ -2427,7 +2434,7 @@ void testSampler(const File& outDir)
     ed->showSampler(false);
 }
 
-// BEAT DOG: the sprite sheet is built in, and the frame follows the beat phase (the head nods forward on the beat).
+// DOG5: the sprite sheet is built in, and the frame follows the beat phase (the head nods forward on the beat).
 void testBeatDog()
 {
     std::puts("beat dog");
