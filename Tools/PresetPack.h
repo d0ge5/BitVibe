@@ -117,7 +117,7 @@ constexpr float kSkip = 0.0f, kMute = 1.0f;
 // stutter types
 constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5;
 // filter types
-constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4;
+constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4, kBloom = 5;
 // delay times (kDelayDivisions)
 constexpr int k32nd = 0, k16th = 2, k16thDotted = 3, k8th = 5, k8thDotted = 6, kQuarter = 8, kQuarterDotted = 9;
 // reverb types
@@ -614,6 +614,31 @@ inline const std::vector<Preset>& presets()
              b.set(ids::ringHz, 850.0f);
              b.set(ids::ringMix, 0.85f);
              b.reverb(kPlate, 0.35f, 0.6f);
+         } },
+        { "Kick the Filter", [](Builder& b) {
+             // the PING plays the filter as a drum synth: filter steps tune each ring, swing gives it bounce
+             b.set(ids::tempo, 112.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.on(ids::pingOn);
+             b.set(ids::pingLevel, 0.8f);
+             b.set(ids::swing, 0.6f);
+             b.set(ids::filterType, (float) kLadder);
+             b.set(ids::filterRes, 0.93f);
+             b.set(ids::filter, 0.35f);
+             b.steps({ pct(0.12f), pct(0.5f), pct(0.3f), pct(0.5f), pct(0.12f), pct(0.6f), pct(0.3f), pct(0.8f) });
+             b.reverb(kRoom, 0.15f, 0.35f);
+         } },
+        { "Blooming Lead", [](Builder& b) {
+             // RES BLOOM: every pick starts vocal and relaxes as the note dies, over a slow spring
+             b.set(ids::tempo, 92.0f);
+             b.sequence(4, 2, 0);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.set(ids::filterType, (float) kBloom);
+             b.set(ids::filterRes, 0.2f);
+             b.set(ids::filter, 0.5f);
+             b.reverb(kSpring, 0.3f, 0.5f);
          } },
     };
     return list;

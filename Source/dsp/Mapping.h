@@ -72,15 +72,17 @@ enum class SeqType
 //   Band      the same filter's band-pass: only the sound around the cutoff is left
 //   High      its high-pass: the sound above the cutoff is left, thin
 //   Envelope  the ladder, opened up to three octaves by each picked note (an auto-wah); the knob is where it rests
+//   Bloom     the ladder again, but each picked note pushes the RESONANCE up instead, relaxing as the note dies
 enum class FilterType
 {
     Ladder = 0,
     Low,
     Band,
     High,
-    Envelope
+    Envelope,
+    Bloom
 };
-inline constexpr int kNumFilterTypes = 5;
+inline constexpr int kNumFilterTypes = 6;
 
 namespace mapping
 {
@@ -122,6 +124,8 @@ namespace mapping
     inline float filterQ(float res) { return 0.5f * std::pow(10.0f, 1.6f * std::clamp(res, 0.0f, 1.0f)); }
     // How far the ENVELOPE type opens the cutoff, in octaves, at the peak of a picked note.
     inline constexpr float kEnvelopeOctaves = 3.0f;
+    // Where the RES BLOOM type pushes the resonance at the peak of a picked note (just short of whistling).
+    inline constexpr float kBloomMaxRes = 0.95f;
 
     inline float bitDepth(float knob) { return kMinBits + (kMaxBits - kMinBits) * knob; }
 

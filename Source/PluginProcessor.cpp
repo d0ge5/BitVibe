@@ -51,7 +51,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // the filter's type (stored in the preset slots); the FILTER knob's text is by the range of the type in use (the
     // band-pass and high-pass stop at 8 kHz)
     auto filterTypeParam = std::make_unique<AudioParameterChoice>(id(ids::filterType), "Filter Type",
-                                                                  StringArray { "Ladder", "Low Pass", "Band Pass", "High Pass", "Envelope" }, 0);
+                                                                  StringArray { "Ladder", "Low Pass", "Band Pass", "High Pass", "Envelope", "Res Bloom" }, 0);
     add(std::make_unique<AudioParameterFloat>(
         id(ids::filter), "Filter", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([type = filterTypeParam.get()](float v, int) {
@@ -109,6 +109,12 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                                                                                { return String(roundToInt(50.0f + v * 100.0f / 6.0f)) + "%"; })
                                                   .withValueFromStringFunction([](const String& t)
                                                                                { return jlimit(0.0f, 1.0f, (t.getFloatValue() - 50.0f) * 0.06f); })));
+    // PING (stored in the preset slots): a click into the chain at each step, so a resonant filter rings
+    add(std::make_unique<AudioParameterBool>(id(ids::pingOn), "Filter Ping", false));
+    add(std::make_unique<AudioParameterFloat>(id(ids::pingLevel), "Ping Level", NormalisableRange<float>(0.0f, 1.0f), 0.7f,
+                                              AudioParameterFloatAttributes()
+                                                  .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })
+                                                  .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
     // what the stutter does with its slice (StutterKind; stored in the preset slots)
     add(std::make_unique<AudioParameterChoice>(id(ids::stutterType), "Stutter Type",
                                                StringArray { "Repeat", "Reverse", "Rise", "Tape Stop", "Scratch", "Freeze" }, 0));
@@ -439,7 +445,7 @@ std::vector<String> presetParameterIds()
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             list.push_back(ids::stepMem(t, i));
     for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats,
-                            ids::seqLength, ids::stutterType, ids::swing })
+                            ids::seqLength, ids::stutterType, ids::swing, ids::pingOn, ids::pingLevel })
         list.emplace_back(id);
     for (int l = 0; l < bitvibe::kNumLanes; ++l)
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -650,6 +656,8 @@ BitVibeProcessor::BitVibeProcessor()
     pFilterType = raw(ids::filterType);
     pFilterRes = raw(ids::filterRes);
     pSwing = raw(ids::swing);
+    pPingOn = raw(ids::pingOn);
+    pPingLevel = raw(ids::pingLevel);
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -808,6 +816,8 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.filterType = roundToInt(pFilterType->load());
     p.filterRes = pFilterRes->load();
     p.swing = pSwing->load();
+    p.pingOn = pPingOn->load() > 0.5f;
+    p.pingLevel = pPingLevel->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();
@@ -1448,6 +1458,7 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "SEQUENCER", "Beat pattern" },
     { "STUTTER", "Stutter" },                { "STUTTER", "Stutter types" },
     { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
+    { "SOUND", "Filter ping" },
     { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Ring mod" },
     { "EFFECTS", "Tremolo" },
     { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
@@ -1539,6 +1550,7 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     mark(featFilterTypes, filterHeard && (roundToInt(plain(ids::filterType)) != 0
                                           || std::abs(plain(ids::filterRes) - mapping::kDefaultFilterRes) > 0.02f));
 
+    mark(featPing, running && plain(ids::pingOn) > 0.5f && plain(ids::pingLevel) > 0.005f);
     mark(featDistortion, effect(ids::distOn) > 0.5f);
     mark(featRingMod, effect(ids::ringOn) > 0.5f && effect(ids::ringMix) > 0.005f);
     mark(featTremolo, effect(ids::tremOn) > 0.5f);

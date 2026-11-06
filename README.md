@@ -33,8 +33,9 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
 **The pedal**
 
 - **Sample-rate reduction** (48 kHz down to 48 Hz) and **bit-depth reduction** (24 bit down to 1 bit).
-- **Filter** with five types and a **RESONANCE** knob: the ladder-style low-pass (96 Hz to 24 kHz), a cleaner
-  two-pole low-pass, a band-pass and a high-pass (96 Hz to 8 kHz), and an **envelope** type that opens with each pick.
+- **Filter** with six types and a **RESONANCE** knob: the ladder-style low-pass (96 Hz to 24 kHz), a cleaner
+  two-pole low-pass, a band-pass and a high-pass (96 Hz to 8 kHz), an **envelope** type that opens with each pick,
+  and a **res bloom** type where each pick pushes the resonance up instead.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random), a hold to freeze it, and six **stutter
   types**: repeat, reverse, rise (each repeat a tone higher), tape stop, scratch and freeze.
 - **Step sequencer of up to 16 steps** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole
@@ -42,9 +43,10 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   it plays: crush the bits further, set its level, its share of the tremolo, the delay and the reverb, or fire the
   stutter. Speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
-  **SWING** delays every second step, from straight up to a triplet shuffle, saved with the preset.
+  **SWING** delays every second step, from straight up to a triplet shuffle, and **PING** rings the filter with a
+  click at every step, a drum synth that needs no input; both are saved with the preset.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **one bank of 66 preset slots** with editable names,
+- **Expression morph** between two stored sets of knobs, and **one bank of 68 preset slots** with editable names,
   grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
@@ -205,7 +207,7 @@ crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes do
 the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **OUTPUT** with an
 output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
 out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
-a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row with **SWING**:
+a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row with **SWING** and **PING**:
 
 - **HEAR** is what comes out. **Guitar + effect**: both, blended with DRY/WET. **Clean in between**: the crush and
   filter act only while a stutter or sequence plays, so your playing stays clean in between. **Effect only**: your
@@ -225,8 +227,9 @@ a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row wit
   (24 dB/oct). **LOW PASS** is a two-pole one (12 dB/oct): cleaner and more like a synth. **BAND PASS** leaves only
   the sound around the cutoff and **HIGH PASS** only the sound above it, thin; these two run 96 Hz to 8 kHz, as there
   would be nothing left at 24 kHz. **ENVELOPE** is an auto-wah: the ladder, resting where FILTER sets it and opened
-  up to three octaves by each picked note, closing again as the note dies away. For every type fully right is off,
-  and a filter step in the sequence is still a percent of the knob.
+  up to three octaves by each picked note, closing again as the note dies away. **RES BLOOM** is the ladder again,
+  but each pick pushes the **RESONANCE** up instead, so every note starts vocal and relaxes as it dies. For every
+  type fully right is off, and a filter step in the sequence is still a percent of the knob.
 - **RESONANCE** is a peak at the cutoff: turn it right for a sharper, more vocal sweep; fully right the ladder is
   just short of whistling by itself and the others peak hard. Its middle setting (37%, double-click to get back
   to it) is the resonance the pedal always had. Both are saved with the preset, and in SIMPLE a type other than
@@ -234,6 +237,10 @@ a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row wit
 - **SWING** makes every second step wait a little, like a drum machine's shuffle: 50% is straight, 67% a full
   triplet feel, and each pair of steps keeps the tempo, so nothing drifts. It is part of the sequence (saved with
   the preset), it works at any speed and length, and in SIMPLE a swing above 50% is listed under "Also on".
+- **PING** drops a tiny click into the chain at the start of every step (muted steps stay silent), so a resonant
+  filter rings at its cutoff like a drum synth: turn **RESONANCE** up and **FILTER** down to tune it, and let
+  filter steps play it. It sounds with no input at all, its **LEVEL** knob sets how hard the click hits, it is
+  saved with the preset, and in SIMPLE it is listed under "Also on" while it is on.
 
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
@@ -358,8 +365,8 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **one bank of 66 preset slots** (they also appear as programs in your DAW). `<` and `>`
-  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 66 are the preset
+- The bar at the top holds **one bank of 68 preset slots** (they also appear as programs in your DAW). `<` and `>`
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 68 are the preset
   pack. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
@@ -368,15 +375,15 @@ Only record what you have the right to use.
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
   rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 66 in order
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 68 in order
   and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** forty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble, the filter types, swing and the ring mod, in slots 21 to 66 (your picked sounds stay as they are). Save over
+- **Preset pack:** forty-eight sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
+  the delay's tape wobble, the filter types, swing, the ping and the ring mod, in slots 21 to 68 (your picked sounds stay as they are). Save over
   one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 

@@ -884,6 +884,52 @@ void testRingMod()
     CHECK(diff < 0.02, "ring mod never touches the signal while no sequence or stutter plays (diff %g)", diff);
 }
 
+void testPing()
+{
+    std::puts("filter ping");
+    const Signal silence((size_t) (2.0 * kFs), 0.0f);
+    Params p;
+    p.seqPlay = 5; // continuous: the sequence runs with no input
+    p.tempoBpm = 600.0f;
+    p.seqMult = 0;
+    p.steps.fill(0.5f); // dry steps
+    p.filterType = (int) FilterType::Ladder;
+    p.filterRes = 0.93f;
+    p.filter = std::log(800.0f / mapping::kFilterMinHz) / std::log(mapping::kFilterMaxHz / mapping::kFilterMinHz);
+    p.pingOn = true;
+    p.pingLevel = 0.8f;
+    const Signal rung = render(p, silence);
+    const double at = tonePower(rung, 0.3, 1.8, 800.0), below = tonePower(rung, 0.3, 1.8, 150.0), above = tonePower(rung, 0.3, 1.8, 5000.0);
+    CHECK(rms(rung, 0.3, 1.8) > 1.0e-3, "the ping sounds with no input at all (rms %g)", rms(rung, 0.3, 1.8));
+    CHECK(at > 3.0 * below && at > 3.0 * above, "and rings at the cutoff (800 Hz %g, 150 Hz %g, 5 kHz %g)", at, below, above);
+
+    Params off = p;
+    off.pingOn = false;
+    CHECK(rms(render(off, silence), 0.3, 1.8) < 1.0e-5, "off, silence stays silence");
+
+    Params muted = p;
+    muted.steps.fill(1.0f); // every step muted
+    CHECK(rms(render(muted, silence), 0.3, 1.8) < 1.0e-5, "muted steps are not pinged");
+}
+
+void testBloom()
+{
+    std::puts("res bloom");
+    // the gain of a tone at the cutoff: RES BLOOM should peak harder the louder the note
+    auto gainAt = [](FilterType t, float amp)
+    {
+        Params p = neutral();
+        p.filterType = (int) t;
+        p.filterRes = 0.1f;
+        p.filter = std::log(500.0f / mapping::kFilterMinHz) / std::log(mapping::kFilterMaxHz / mapping::kFilterMinHz);
+        const Signal in = sine(500.0, 2.0, amp);
+        return db(std::sqrt(tonePower(render(p, in), 0.5, 1.8, 500.0) / tonePower(in, 0.5, 1.8, 500.0)));
+    };
+    const double ladder = gainAt(FilterType::Ladder, 0.4f), bloom = gainAt(FilterType::Bloom, 0.4f), gentle = gainAt(FilterType::Bloom, 0.015f);
+    CHECK(bloom > ladder + 4.0, "a held note pushes RES BLOOM's resonance up (ladder %g dB, bloom %g dB)", ladder, bloom);
+    CHECK(bloom > gentle + 3.0, "and a quiet note blooms less (quiet %g dB)", gentle);
+}
+
 void testRobustness()
 {
     std::puts("robustness: random parameters and input must never produce NaN/Inf or runaway levels");
@@ -3858,6 +3904,8 @@ int main(int argc, char** argv)
     testTremolo();
     testSwing();
     testRingMod();
+    testPing();
+    testBloom();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

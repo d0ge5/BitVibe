@@ -1208,6 +1208,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(trigSlider, trigAtt, ids::sensitivity);
     smallKnob(filterResSlider, filterResAtt, ids::filterRes);
     smallKnob(swingSlider, swingAtt, ids::swing);
+    pingButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(pingButton);
+    pingAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::pingOn, pingButton);
+    smallKnob(pingLevelSlider, pingLevelAtt, ids::pingLevel);
     smallKnob(reverbDecaySlider, reverbDecayAtt, ids::reverbDecay);
     smallKnob(reverbToneSlider, reverbToneAtt, ids::reverbTone);
     reverbReverseButton.setLookAndFeel(&laf);
@@ -1445,7 +1449,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
+                        &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &pingButton, &pingLevelSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
         pedalComponents.push_back(&k.front);
@@ -1531,7 +1535,7 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
     for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider,
-                      &ringHzSlider, &ringMixSlider, &swingSlider })
+                      &ringHzSlider, &ringMixSlider, &swingSlider, &pingLevelSlider })
         s->setLookAndFeel(nullptr);
     delayTimeBox.setLookAndFeel(nullptr);
     delayOnButton.setLookAndFeel(nullptr);
@@ -1544,6 +1548,7 @@ BitVibeEditor::~BitVibeEditor()
     reverbOnButton.setLookAndFeel(nullptr);
     syncButton.setLookAndFeel(nullptr);
     holdButton.setLookAndFeel(nullptr);
+    pingButton.setLookAndFeel(nullptr);
     hearBox.setLookAndFeel(nullptr);
     morphButton.setLookAndFeel(nullptr);
     expressionSlider.setLookAndFeel(nullptr);
@@ -1895,7 +1900,8 @@ void BitVibeEditor::applyRightMode()
 {
     const bool show = advancedRight && !drumsShown;
     for (Component* c : std::initializer_list<Component*> { &holdButton, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider,
-                                                            &swingSlider, &setUpButton, &expressionSlider, &setDownButton, &morphButton })
+                                                            &swingSlider, &pingButton, &pingLevelSlider, &setUpButton, &expressionSlider,
+                                                            &setDownButton, &morphButton })
         c->setVisible(show);
     if (!advancedRight && effectTab == kTabEq)
         effectTab = kTabSamples; // the EQ is an ADVANCED control
@@ -2154,9 +2160,12 @@ void BitVibeEditor::setTooltips()
     stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
     stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE (backwards), RISE (each repeat a tone "
                               "higher), TAPE STOP (slows to a stop), SCRATCH (back and forth), FREEZE (holds it as a cloud).");
-    filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own low-pass, 24 dB/oct), LOW PASS (a cleaner 12 dB/oct one), BAND PASS "
-                             "(only the sound around the cutoff), HIGH PASS (only the sound above it), ENVELOPE (an auto-wah: each pick "
-                             "opens the filter from where FILTER sets it).");
+    filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own low-pass), LOW PASS (cleaner, 12 dB/oct), BAND PASS (around the "
+                             "cutoff), HIGH PASS (above it), ENVELOPE (each pick opens the cutoff: an auto-wah), RES BLOOM (each pick "
+                             "pushes RESONANCE instead).");
+    pingButton.setTooltip("PING: a tiny click at the start of every step, so a resonant filter rings at its cutoff like a drum synth. "
+                          "Turn RESONANCE up and FILTER down to tune it; filter steps play it. It sounds with no input at all.");
+    pingLevelSlider.setTooltip("PING LEVEL: how hard each step's click hits the filter, so how loud the ring is.");
     filterResSlider.setTooltip("RESONANCE: a peak at the filter's cutoff. Turn right for a sharper, more vocal sweep; fully right it almost "
                                "whistles. Double-click for the pedal's own setting.");
 
@@ -2426,6 +2435,8 @@ void BitVibeEditor::resized()
     filterTypeBox.setBounds(side({ 98, gy + 178, 110, 24 }));
     filterResSlider.setBounds(side(Rectangle<int>(36, 36).withCentre({ 318, gy + 190 })));
     swingSlider.setBounds(side(Rectangle<int>(36, 36).withCentre({ 210, gy + 224 })));
+    pingButton.setBounds(side({ 300, gy + 212, 60, 24 }));
+    pingLevelSlider.setBounds(side(Rectangle<int>(36, 36).withCentre({ 400, gy + 224 })));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     const auto dist = distArea(), ring = ringArea(), delay = delayArea(), reverb = reverbArea();
@@ -2602,6 +2613,9 @@ void BitVibeEditor::paintContent(Graphics& g)
             g.drawText("SEQ", Rectangle<int>(24, gy + 212, 72, 24), Justification::centredLeft);
             g.drawText("SWING", Rectangle<int>(122, gy + 212, 66, 24), Justification::centredRight);
             g.drawText(String(roundToInt(50.0f + rawValue(ids::swing) * 100.0f / 6.0f)) + "%", Rectangle<int>(234, gy + 212, 60, 24), Justification::centredLeft);
+            g.setColour(kInkDim.withMultipliedAlpha(rawValue(ids::pingOn) > 0.5f ? 1.0f : 0.55f));
+            g.drawText(String(roundToInt(rawValue(ids::pingLevel) * 100.0f)) + "%", Rectangle<int>(424, gy + 212, 34, 24), Justification::centredLeft);
+            g.setColour(kInkDim);
         }
         else
         {
@@ -2621,6 +2635,8 @@ void BitVibeEditor::paintContent(Graphics& g)
                 on.add("RESONANCE " + String(roundToInt(rawValue(ids::filterRes) * 100.0f)) + "%");
             if (rawValue(ids::swing) > 0.005f)
                 on.add("SWING " + String(roundToInt(50.0f + rawValue(ids::swing) * 100.0f / 6.0f)) + "%");
+            if (rawValue(ids::pingOn) > 0.5f)
+                on.add("PING " + String(roundToInt(rawValue(ids::pingLevel) * 100.0f)) + "%");
             if (!on.isEmpty())
             {
                 g.setColour(kAccent);
@@ -2798,6 +2814,7 @@ void BitVibeEditor::updateLiveState()
         const bool ringOn = rawValue(ids::ringOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &ringHzSlider, &ringMixSlider })
             c->setAlpha(offAlphaFor(*c, ringOn));
+        pingLevelSlider.setAlpha(offAlphaFor(pingLevelSlider, rawValue(ids::pingOn) > 0.5f));
         setPowerActive(reverbOnButton, live);
         setPowerActive(delayOnButton, live);
         const bool delayOn = rawValue(ids::delayOn) > 0.5f;

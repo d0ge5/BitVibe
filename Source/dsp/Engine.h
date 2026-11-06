@@ -59,6 +59,10 @@ struct Params
     // Swing, 0..1: the odd steps (the 1st, 3rd, ...) lengthen and the even ones shorten by up to a third
     // (kMaxSwingRatio, a 2:1 triplet feel at full), so each pair of steps keeps the tempo. 0 = straight.
     float swing = 0.0f;
+    // PING: a short click into the chain at the start of every step (muted steps stay silent), so a resonant
+    // filter rings at its cutoff like a drum synth. It needs no input to sound. Off by default.
+    bool pingOn = false;
+    float pingLevel = 0.7f;
 
     // Second layer (Alt): the sequencer steps, normalised 0..1. The first seqLength of them play.
     std::array<float, kNumSteps> steps = mapping::defaultStepKnobs();
@@ -222,6 +226,7 @@ public:
     void prepare(double sampleRate)
     {
         fs = sampleRate;
+        pingDecay = (float) std::exp(-1.0 / (0.0015 * fs));
         detector.prepare(fs);
         eqReference.prepare(fs);
 
@@ -452,7 +457,9 @@ public:
                     ch.svf.reset();
                 }
             }
-            const float resonance = filterResSm.next(blk.filterRes);
+            const float resKnob = filterResSm.next(blk.filterRes);
+            const float resonance = blk.filterType == FilterType::Bloom
+                                        ? resKnob + std::max(0.0f, mapping::kBloomMaxRes - resKnob) * envelopeOpen : resKnob;
             const float ladderK = mapping::ladderFeedback(resonance), filterQ = mapping::filterQ(resonance);
             const float g = std::tan(kPi * std::min(fc, 0.45f * (float) fs) / (float) fs);
             const float G = g / (1.0f + g);
@@ -508,8 +515,14 @@ public:
             const float ringAmount = ringOnSm.next(blk.ringOn ? 1.0f : 0.0f) * reverbSend * ringMixSm.next(blk.ringMix);
             const float ringGain = 1.0f + (std::sin(2.0f * kPi * (float) ringPhase) - 1.0f) * ringAmount;
             const auto heard = samplePlayer.process();
+            float ping = 0.0f;
+            if (pingEnv > 1.0e-4f)
+            {
+                ping = pingEnv * ((float) (nextRandom() >> 8) * (2.0f / 16777216.0f) - 1.0f);
+                pingEnv *= pingDecay;
+            }
             const float sampleSignal = (heard.sequence * sampleMixSm.next(blk.sampleGain) + heard.loopSequence * loopSampleMixSm.next(blk.loopSampleGain))
-                                           * sampleOnGain + heard.preview;
+                                           * sampleOnGain + heard.preview + ping;
             ReverbSettings revSettings;
             revSettings.type = (ReverbType) blk.reverbType;
             revSettings.tone = revTone;
@@ -556,7 +569,8 @@ public:
                     case FilterType::Band: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Band); break;
                     case FilterType::High: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::High); break;
                     case FilterType::Ladder:
-                    case FilterType::Envelope: filtered = ch.ladder.process(y, G, ladderK); break;
+                    case FilterType::Envelope:
+                    case FilterType::Bloom: filtered = ch.ladder.process(y, G, ladderK); break;
                     default: filtered = y; break;
                 }
                 y = lerpExact(y, filtered, filterMix);
@@ -718,6 +732,8 @@ private:
         bool ringOn = false;
         float ringHz = 440.0f, ringMix = 1.0f;
         float swing = 0.0f;
+        bool pingOn = false;
+        float pingLevel = 0.7f;
         bool reverbOn = true, sampleOn = true, eqOn = false;
         int distType = 0;
         bool patternOn = false;
@@ -783,6 +799,8 @@ private:
         blk.ringHz = std::isfinite(p.ringHz) ? std::clamp(p.ringHz, kRingMinHz, kRingMaxHz) : 440.0f;
         blk.ringMix = std::isfinite(p.ringMix) ? std::clamp(p.ringMix, 0.0f, 1.0f) : 1.0f;
         blk.swing = std::isfinite(p.swing) ? std::clamp(p.swing, 0.0f, 1.0f) : 0.0f;
+        blk.pingOn = p.pingOn;
+        blk.pingLevel = std::isfinite(p.pingLevel) ? std::clamp(p.pingLevel, 0.0f, 1.0f) : 0.7f;
         blk.reverbOn = p.reverbOn;
         blk.eqOn = p.eqOn;
         blk.sampleOn = p.sampleOn;
@@ -1069,6 +1087,9 @@ private:
             && lanes[(size_t) Lane::Stutter][(size_t) active[(size_t) seqIdx]] > 0.5f
             && steps[(size_t) active[(size_t) seqIdx]].kind != mapping::Step::Kind::Mute)
             fireStutter(true);
+        // PING: a click into the chain, so a resonant filter rings at its cutoff
+        if (blk.pingOn && numActive > 0 && steps[(size_t) active[(size_t) seqIdx]].kind != mapping::Step::Kind::Mute)
+            pingEnv = blk.pingLevel;
         const bool inLoop = loopFirst >= 0 && seqIdx >= loopFirst && seqIdx <= loopLast;
         const SampleSet* set = inLoop && blk.loopSampleSet != nullptr ? blk.loopSampleSet : blk.sampleSet;
         const float gain = inLoop ? blk.loopSampleGain : blk.sampleGain;
@@ -1186,6 +1207,7 @@ private:
     Tremolo tremolo;
     bool tremWasActive = false;
     double ringPhase = 0.0; // the ring mod's sine, shared by the channels
+    float pingEnv = 0.0f, pingDecay = 0.97f; // the ping: a short noise burst, shared by the channels
     ScopeFeed scope;
     double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on
     std::atomic<float> tremRampOut { -1.0f };

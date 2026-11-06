@@ -112,6 +112,8 @@ inline constexpr const char* stutterType = "stutterType";
 inline constexpr const char* filterType = "filterType";
 inline constexpr const char* filterRes = "filterRes";
 inline constexpr const char* swing = "swing";
+inline constexpr const char* pingOn = "pingOn";
+inline constexpr const char* pingLevel = "pingLevel";
 inline constexpr const char* ringOn = "ringOn";
 inline constexpr const char* ringHz = "ringHz";
 inline constexpr const char* ringMix = "ringMix";
@@ -190,7 +192,7 @@ public:
         featSwing,
         featBeatPattern,
         featStutter, featStutterTypes,
-        featCrush, featFilterTypes,
+        featCrush, featFilterTypes, featPing,
         featDistortion, featRingMod, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
         kNumPresetFeatures
@@ -452,6 +454,8 @@ private:
     std::atomic<float>* pFilterType = nullptr;
     std::atomic<float>* pFilterRes = nullptr;
     std::atomic<float>* pSwing = nullptr;
+    std::atomic<float>* pPingOn = nullptr;
+    std::atomic<float>* pPingLevel = nullptr;
     std::atomic<float>* pRingOn = nullptr;
     std::atomic<float>* pRingHz = nullptr;
     std::atomic<float>* pRingMix = nullptr;
