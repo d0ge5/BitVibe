@@ -48,7 +48,8 @@ namespace detail
 {
 inline Theme shown;
 inline int shownIndex = 0, serial = 0;
-inline float pulse = 0.0f; // 1 right on a beat, fading towards the next (only read by a wireframe theme)
+inline float pulse = 0.0f;     // 1 right on a beat or step, fading (only read by a wireframe theme)
+inline float pulseHeat = 0.0f; // 0 = the beat alone (the edge colour), 1 = the sequencer acting (the accent)
 } // namespace detail
 // The theme every editor paints in. It is one for the whole computer (kept with the window settings), so changing it
 // changes every open window: an editor checks serial (which goes up with each change) and repaints.
@@ -58,10 +59,44 @@ inline int themeIndex() { return detail::shownIndex; }
 int findTheme(const juce::String& name); // its index, or 0 (the default) for a name that is not a theme
 inline int themeSerial() { return detail::serial; }
 
-// The glow level of a wireframe theme's edges: the editor's timer sets it from the engine's beat clock
-// (1 on the beat, fading), so every panel's outline keeps time with the sequencer.
-inline void setPulse(float level) { detail::pulse = juce::jlimit(0.0f, 1.0f, level); }
+// The glow of a wireframe theme's edges: the editor's timer sets the level from the engine's beat clock and
+// step changes (1 right on one, fading), and the heat from whether the sequencer and its effects are acting,
+// so every outline keeps time and its colour says what it is keeping time with.
+inline void setPulse(float level, float heat = 0.0f)
+{
+    detail::pulse = juce::jlimit(0.0f, 1.0f, level);
+    detail::pulseHeat = juce::jlimit(0.0f, 1.0f, heat);
+}
 inline float pulse() { return detail::pulse; }
+inline float pulseHeat() { return detail::pulseHeat; }
+// The glow's colour: the edge colour for the beat alone, flushing to the accent while the sequencer acts.
+inline juce::Colour glowColour() { return detail::shown.panelEdge.interpolatedWith(detail::shown.accent, detail::pulseHeat); }
+
+// A glowing halo around a control's outline (no fill), for buttons, boxes, tabs and wells; a no-op in the
+// other themes. strength scales it, so small controls can glow more quietly than panels.
+inline void wireGlow(juce::Graphics& g, juce::Rectangle<float> r, float corner, float strength = 1.0f)
+{
+    if (!detail::shown.wireframe)
+        return;
+    const auto glow = glowColour();
+    for (int ring = 2; ring >= 1; --ring)
+    {
+        g.setColour(glow.withAlpha(strength * (0.10f + 0.26f * detail::pulse) / (float) ring));
+        g.drawRoundedRectangle(r.expanded(1.2f * (float) ring), corner + (float) ring, 2.2f);
+    }
+}
+// The same halo around a round control (a knob, a footswitch).
+inline void wireGlowEllipse(juce::Graphics& g, juce::Rectangle<float> r, float strength = 1.0f)
+{
+    if (!detail::shown.wireframe)
+        return;
+    const auto glow = glowColour();
+    for (int ring = 2; ring >= 1; --ring)
+    {
+        g.setColour(glow.withAlpha(strength * (0.10f + 0.26f * detail::pulse) / (float) ring));
+        g.drawEllipse(r.expanded(1.2f * (float) ring), 2.2f);
+    }
+}
 
 // A panel's card: its fill and its edge. A wireframe theme draws the edge as a glowing outline, haloed
 // rings fading outwards, brighter on each beat; the other themes draw the plain hairline they always had.
@@ -71,13 +106,14 @@ inline void panelFrame(juce::Graphics& g, juce::Rectangle<float> r, float corner
     g.fillRoundedRectangle(r, corner);
     if (detail::shown.wireframe)
     {
-        for (int ring = 3; ring >= 1; --ring)
+        const auto glow = glowColour();
+        for (int ring = 4; ring >= 1; --ring)
         {
-            g.setColour(detail::shown.panelEdge.withAlpha((0.07f + 0.17f * detail::pulse) / (float) ring));
-            g.drawRoundedRectangle(r.expanded(1.1f * (float) ring), corner + (float) ring, 2.2f);
+            g.setColour(glow.withAlpha((0.12f + 0.30f * detail::pulse) / (float) ring));
+            g.drawRoundedRectangle(r.expanded(1.5f * (float) ring), corner + 1.5f * (float) ring, 3.0f);
         }
-        g.setColour(detail::shown.panelEdge.withAlpha(0.7f + 0.3f * detail::pulse));
-        g.drawRoundedRectangle(r.reduced(0.5f), corner, 1.2f);
+        g.setColour(glow.withAlpha(0.7f + 0.3f * detail::pulse));
+        g.drawRoundedRectangle(r.reduced(0.5f), corner, 1.2f + 0.8f * detail::pulse);
     }
     else
     {
@@ -525,7 +561,7 @@ public:
     bool isBeatDogShown() const { return beatDogShown; }
 
     // The effect panel showing on the right-hand side (one at a time, picked with the tabs above it). Remembered.
-    static constexpr int kTabSamples = 0, kTabDist = 1, kTabRing = 2, kTabTremolo = 3, kTabDelay = 4, kTabReverb = 5, kTabEq = 6;
+    static constexpr int kTabSamples = 0, kTabDist = 1, kTabMod = 2, kTabTremolo = 3, kTabDelay = 4, kTabReverb = 5, kTabEq = 6;
     void setEffectTab(int tab);
     int getEffectTab() const { return effectTab; }
 
@@ -613,6 +649,9 @@ private:
     PedalButton viewButton { "VIEW" };
     bool beatDogShown = true;
     int shownThemeSerial = -1;
+    // the wireframe glow: the last step seen (a change flashes), its fading flash, and how "hot" the colour is
+    int glowStep = -1;
+    float stepGlow = 0.0f, glowHeat = 0.0f;
     void applyTheme(); // repaints in the theme now showing
     HelpOverlay helpOverlay;
     int seenAttacks = 0;
@@ -687,6 +726,15 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> ringHzAtt, ringMixAtt;
     juce::ToggleButton ringOnButton { "ON" };
     std::unique_ptr<APVTS::ButtonAttachment> ringOnAtt;
+    // the phaser / flanger, beside the ring mod in the MOD panel: type, rate (a note length of the tempo), depth,
+    // feedback and mix, and its power button
+    KnobSlider modRateSlider, modDepthSlider, modFeedbackSlider, modMixSlider;
+    std::unique_ptr<APVTS::SliderAttachment> modRateAtt, modDepthAtt, modFeedbackAtt, modMixAtt;
+    juce::ToggleButton modOnButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> modOnAtt;
+    juce::ComboBox modTypeBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> modTypeAtt;
+    static constexpr int kModSplit = 176; // in the MOD panel: the ring mod left of this, the phaser / flanger right
     std::unique_ptr<APVTS::ComboBoxAttachment> reverbTypeAtt;
     std::unique_ptr<SamplePanel> samplePanel;
     std::unique_ptr<SamplerPage> samplerPage; // the SAMPLER, over the whole window when it is open

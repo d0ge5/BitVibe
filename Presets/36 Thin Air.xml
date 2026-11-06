@@ -2,7 +2,7 @@
 
 <BITVIBE_PRESET version="1" name="Thin Air">
   <PRESET name="Thin Air" sample="1.0" filter="0.8500000238418579" bits="1.0"
-          stutter="0.0" seqPlay="1.0" seqMult="0.1428571492433548" filterType="0.6000000238418579"
+          stutter="0.0" seqPlay="1.0" seqMult="0.1428571492433548" filterType="0.5"
           filterRes="0.550000011920929" step1="0.07699999958276749" step2="0.1240000054240227"
           step3="0.1992000043392181" step4="0.2932000160217285" step5="0.406000018119812"
           step6="0.546999990940094" step7="0.7067999839782715" step8="0.875999927520752"
@@ -100,6 +100,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

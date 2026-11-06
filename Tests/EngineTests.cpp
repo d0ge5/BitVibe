@@ -959,6 +959,99 @@ void testBloom()
     CHECK(bloom > gentle + 3.0, "and a quiet note blooms less (quiet %g dB)", gentle);
 }
 
+void testFormant()
+{
+    std::puts("formant filter");
+    // the gain of a tone through the FORMANT type, with the FILTER knob on a vowel (0 = U .. 4 = I)
+    auto gainAt = [](float position, double f)
+    {
+        Params p = neutral();
+        p.filterType = (int) FilterType::Formant;
+        p.filterRes = 0.5f;
+        const float hz = mapping::kFilterMinHz * std::pow(mapping::kFormantTopHz / mapping::kFilterMinHz, position / 4.0f);
+        p.filter = std::log(hz / mapping::kFilterMinHz) / std::log(mapping::kFilterMaxHz / mapping::kFilterMinHz);
+        const Signal in = sine(f, 1.5, 0.3f);
+        return db(std::sqrt(tonePower(render(p, in), 0.5, 1.4, f) / tonePower(in, 0.5, 1.4, f)));
+    };
+    const double a730 = gainAt(2.0f, 730.0), i730 = gainAt(4.0f, 730.0), a2290 = gainAt(2.0f, 2290.0), i2290 = gainAt(4.0f, 2290.0);
+    CHECK(a730 > i730 + 6.0, "on A the first formant (730 Hz) passes, on I it does not (%g dB against %g)", a730, i730);
+    CHECK(i2290 > a2290 + 6.0, "on I the second formant (2290 Hz) passes, on A it does not (%g dB against %g)", i2290, a2290);
+
+    const auto u = mapping::vowelAt(0.0f), i = mapping::vowelAt(4.0f), between = mapping::vowelAt(2.5f);
+    CHECK(sameFloat(u.f1, 300.0f) && sameFloat(i.f2, 2290.0f) && between.f2 > 1090.0f && between.f2 < 1840.0f,
+          "the vowels run U to I, gliding between them (A-E F2 %g Hz)", (double) between.f2);
+    CHECK(mapping::vowelPosition(mapping::kFilterMinHz) < 0.01f && mapping::vowelPosition(mapping::kFormantTopHz) > 3.99f,
+          "the bottom of the knob is U and the vowel top is I");
+}
+
+void testPhaserFlanger()
+{
+    std::puts("phaser and flanger");
+    const Signal tone = sine(1000.0, 4.5, 0.4f);
+    auto run = [&](int type, float mix, bool playing)
+    {
+        Params p = playing ? Params {} : neutral();
+        if (playing)
+        {
+            p.seqPlay = 5; // a continuous sequence of dry steps, so the effect side acts
+            p.seqMult = 0;
+            p.steps.fill(0.5f);
+        }
+        p.tempoBpm = 120.0f;
+        p.modOn = true;
+        p.modType = type;
+        p.modRateBeats = 4.0f; // one bar: 2 s at 120 BPM
+        p.modDepth = 0.9f;
+        p.modFeedback = 0.6f;
+        p.modMix = mix;
+        return render(p, tone);
+    };
+    // the tone's level in 50 ms windows over one sweep: a moving notch makes it swing
+    auto swingOf = [](const Signal& s)
+    {
+        double lo = 1.0e9, hi = 0.0;
+        for (double t = 1.0; t < 3.0; t += 0.05)
+        {
+            const double r = rms(s, t, t + 0.05);
+            lo = std::min(lo, r);
+            hi = std::max(hi, r);
+        }
+        return lo / std::max(hi, 1.0e-12);
+    };
+    const Signal phased = run(0, 1.0f, true), flanged = run(1, 1.0f, true);
+    CHECK(swingOf(phased) < 0.5, "PHASER: a notch sweeps across the tone (lowest / highest level %g)", swingOf(phased));
+    CHECK(swingOf(flanged) < 0.5, "FLANGER: its comb sweeps across the tone (lowest / highest level %g)", swingOf(flanged));
+
+    // the sweep keeps time: at 120 BPM a one-bar sweep comes round again every 2 s
+    double drift = 0.0, level = 0.0;
+    for (double t = 1.0; t < 2.0; t += 0.05)
+    {
+        drift = std::max(drift, std::abs(rms(phased, t, t + 0.05) - rms(phased, t + 2.0, t + 2.05)));
+        level = std::max(level, rms(phased, t, t + 0.05));
+    }
+    CHECK(drift < 0.1 * level, "and the sweep is locked to the bar (it repeats every 2 s at 120 BPM, drift %g)", drift);
+
+    float peak = 0.0f;
+    bool finite = true;
+    for (const Signal* s : { &phased, &flanged })
+        for (float v : *s)
+        {
+            finite = finite && std::isfinite(v);
+            peak = std::max(peak, std::abs(v));
+        }
+    CHECK(finite && peak < 0.8f, "both stay finite and near the input's level with feedback (peak %g)", (double) peak);
+
+    auto untouched = [&](const Signal& s)
+    {
+        double diff = 0.0;
+        for (size_t n = (size_t) (0.5 * kFs); n < s.size(); ++n)
+            diff = std::max(diff, (double) std::abs(s[n] - tone[n]));
+        return diff;
+    };
+    CHECK(untouched(run(0, 0.0f, true)) < 0.02, "at MIX 0 the sound passes as it is");
+    CHECK(untouched(run(1, 1.0f, false)) < 0.02, "and while no sequence or stutter plays, the clean signal is never swept");
+}
+
 void testRobustness()
 {
     std::puts("robustness: random parameters and input must never produce NaN/Inf or runaway levels");
@@ -3935,6 +4028,8 @@ int main(int argc, char** argv)
     testRingMod();
     testPing();
     testBloom();
+    testFormant();
+    testPhaserFlanger();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

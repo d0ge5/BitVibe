@@ -114,6 +114,12 @@ inline constexpr const char* filterRes = "filterRes";
 inline constexpr const char* swing = "swing";
 inline constexpr const char* pingOn = "pingOn";
 inline constexpr const char* pingLevel = "pingLevel";
+inline constexpr const char* modOn = "modOn";
+inline constexpr const char* modType = "modType";
+inline constexpr const char* modRate = "modRate";
+inline constexpr const char* modDepth = "modDepth";
+inline constexpr const char* modFeedback = "modFeedback";
+inline constexpr const char* modMix = "modMix";
 inline constexpr const char* ringOn = "ringOn";
 inline constexpr const char* ringHz = "ringHz";
 inline constexpr const char* ringMix = "ringMix";
@@ -207,8 +213,8 @@ public:
         featSwing,
         featBeatPattern,
         featStutter, featStutterTypes,
-        featCrush, featFilterTypes, featPing,
-        featDistortion, featRingMod, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
+        featCrush, featFilterTypes, featFormant, featPing,
+        featDistortion, featRingMod, featModulation, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
         kNumPresetFeatures
     };
@@ -471,6 +477,12 @@ private:
     std::atomic<float>* pSwing = nullptr;
     std::atomic<float>* pPingOn = nullptr;
     std::atomic<float>* pPingLevel = nullptr;
+    std::atomic<float>* pModOn = nullptr;
+    std::atomic<float>* pModType = nullptr;
+    std::atomic<float>* pModRate = nullptr;
+    std::atomic<float>* pModDepth = nullptr;
+    std::atomic<float>* pModFeedback = nullptr;
+    std::atomic<float>* pModMix = nullptr;
     std::atomic<float>* pRingOn = nullptr;
     std::atomic<float>* pRingHz = nullptr;
     std::atomic<float>* pRingMix = nullptr;

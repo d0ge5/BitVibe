@@ -334,6 +334,7 @@ void StepEditor::paint(Graphics& g)
     const auto bars = barsArea();
     g.setColour(theme.well);
     g.fillRoundedRectangle(bars, 4.0f);
+    wireGlow(g, bars, 4.0f, 0.9f);
     if (loopOn) // the loop section, shaded behind its steps
     {
         g.setColour(accent.withAlpha(0.12f));
@@ -476,6 +477,7 @@ void StepEditor::paint(Graphics& g)
     const auto area = laneArea();
     g.setColour(theme.well);
     g.fillRoundedRectangle(area, 4.0f);
+    wireGlow(g, area, 4.0f, 0.9f);
     for (int i = 4; i < kNumSteps; i += 4)
     {
         g.setColour(theme.gridMajor);

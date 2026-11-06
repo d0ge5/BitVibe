@@ -144,6 +144,13 @@ struct Params
     float ringHz = 440.0f;
     float ringMix = 1.0f;
 
+    // The phaser / flanger on the sequenced sound, after the ring mod and before the tremolo: modType 0 = phaser,
+    // 1 = flanger. Its sweep takes modRateBeats beats of the tempo, locked to the beat clock. Off by default.
+    bool modOn = false;
+    int modType = 0;
+    float modRateBeats = 4.0f;
+    float modDepth = 0.7f, modFeedback = 0.5f, modMix = 1.0f;
+
     // On / off switches (both on by default): with the reverb off nothing is fed to it and nothing is added; with the
     // sample blend off no random sounds start (the preview of the volume range still plays).
     bool reverbOn = true;
@@ -239,7 +246,11 @@ public:
         for (int c = 0; c < kMaxChannels; ++c)
             channels[(size_t) c].reverb.prepare(fs, c);
         for (auto& ch : channels)
+        {
             ch.delay.prepare(fs);
+            ch.flanger.prepare(fs);
+            ch.phaser.reset();
+        }
         samplePlayer.prepare(fs);
         for (auto& ch : channels)
         {
@@ -455,6 +466,8 @@ public:
                 {
                     ch.ladder.reset();
                     ch.svf.reset();
+                    for (auto& f : ch.formants)
+                        f.reset();
                 }
             }
             const float resKnob = filterResSm.next(blk.filterRes);
@@ -463,6 +476,16 @@ public:
             const float ladderK = mapping::ladderFeedback(resonance), filterQ = mapping::filterQ(resonance);
             const float g = std::tan(kPi * std::min(fc, 0.45f * (float) fs) / (float) fs);
             const float G = g / (1.0f + g);
+            std::array<float, 3> formantG {};
+            float formantQ = 1.0f;
+            if (filterShown == FilterType::Formant)
+            {
+                const auto vowel = mapping::vowelAt(mapping::vowelPosition(fc));
+                const float limit = 0.45f * (float) fs;
+                formantG = { std::tan(kPi * std::min(vowel.f1, limit) / (float) fs), std::tan(kPi * std::min(vowel.f2, limit) / (float) fs),
+                             std::tan(kPi * std::min(vowel.f3, limit) / (float) fs) };
+                formantQ = mapping::formantQ(resonance);
+            }
 
             // Pitch
             const float ratio = std::exp2(semitones / 12.0f);
@@ -514,6 +537,21 @@ public:
                 ringPhase -= std::floor(ringPhase);
             const float ringAmount = ringOnSm.next(blk.ringOn ? 1.0f : 0.0f) * reverbSend * ringMixSm.next(blk.ringMix);
             const float ringGain = 1.0f + (std::sin(2.0f * kPi * (float) ringPhase) - 1.0f) * ringAmount;
+            // the phaser / flanger, gated the same way; its sweep follows the beat clock
+            const float modOnGain = modOnSm.next(blk.modOn ? 1.0f : 0.0f);
+            const bool modRun = blk.modOn || modOnGain > 1.0e-4f;
+            if (modRun && modIdle)
+                for (auto& ch : channels)
+                {
+                    ch.phaser.reset();
+                    ch.flanger.reset();
+                }
+            modIdle = !modRun;
+            const float modAmount = modOnGain * reverbSend * modMixSm.next(blk.modMix);
+            const float modFlange = modTypeSm.next(blk.modType == 1 ? 1.0f : 0.0f);
+            const float modDepth = modDepthSm.next(blk.modDepth), modFeedback = modFeedbackSm.next(blk.modFeedback);
+            double modPhase = ((double) beatsDone + beatPhase) / (double) blk.modRateBeats;
+            modPhase -= std::floor(modPhase);
             const auto heard = samplePlayer.process();
             float ping = 0.0f;
             if (pingEnv > 1.0e-4f)
@@ -571,6 +609,15 @@ public:
                     case FilterType::Ladder:
                     case FilterType::Envelope:
                     case FilterType::Bloom: filtered = ch.ladder.process(y, G, ladderK); break;
+                    case FilterType::Formant:
+                    {
+                        float voiced = 0.0f;
+                        for (size_t f = 0; f < 3; ++f)
+                            voiced += mapping::kFormantGains[f]
+                                      * ch.formants[f].process(y, formantG[f], formantQ, StateVariableFilter::Mode::Band);
+                        filtered = voiced * mapping::kFormantMakeup;
+                        break;
+                    }
                     default: filtered = y; break;
                 }
                 y = lerpExact(y, filtered, filterMix);
@@ -582,6 +629,18 @@ public:
                     y += (distorted - y) * distGate;
                 }
                 y *= ringGain;
+                if (modRun)
+                {
+                    // the right channel sweeps a quarter of a cycle later, for width
+                    double phase = modPhase + (c == 1 ? 0.25 : 0.0);
+                    phase -= std::floor(phase);
+                    const float sine = 0.5f - 0.5f * std::cos(2.0f * kPi * (float) phase);
+                    const float triangle = phase < 0.5 ? 2.0f * (float) phase : 2.0f - 2.0f * (float) phase;
+                    const float phased = ch.phaser.process(y, sine, modDepth, modFeedback, fs);
+                    const float flanged = ch.flanger.process(y, triangle, modDepth, modFeedback, fs);
+                    const float swept = phased + (flanged - phased) * modFlange;
+                    y += (swept - y) * modAmount;
+                }
                 y *= tremGain;
                 y *= muteGain * seqGate * laneLevel;
                 // the delay: echoes of the sequenced sound (after the distortion), which ring on after the sequence stops
@@ -700,11 +759,14 @@ private:
         PitchShifter pitch;
         LadderFilter ladder;
         StateVariableFilter svf;
+        std::array<StateVariableFilter, 3> formants; // the FORMANT type's three peaks
         Reverb reverb;
         Distortion dist, distReverb; // the second one distorts the reverb when the player asks for that
         Fuzz fuzz, fuzzReverb;       // the same two jobs for the fuzz setting
         Delay delay;
         Equalizer eq;
+        Phaser phaser;
+        Flanger flanger;
         float held = 0.0f;
     };
 
@@ -731,6 +793,9 @@ private:
         TremoloSettings trem;
         bool ringOn = false;
         float ringHz = 440.0f, ringMix = 1.0f;
+        bool modOn = false;
+        int modType = 0;
+        float modRateBeats = 4.0f, modDepth = 0.7f, modFeedback = 0.5f, modMix = 1.0f;
         float swing = 0.0f;
         bool pingOn = false;
         float pingLevel = 0.7f;
@@ -798,6 +863,12 @@ private:
         blk.ringOn = p.ringOn;
         blk.ringHz = std::isfinite(p.ringHz) ? std::clamp(p.ringHz, kRingMinHz, kRingMaxHz) : 440.0f;
         blk.ringMix = std::isfinite(p.ringMix) ? std::clamp(p.ringMix, 0.0f, 1.0f) : 1.0f;
+        blk.modOn = p.modOn;
+        blk.modType = std::clamp(p.modType, 0, 1);
+        blk.modRateBeats = std::isfinite(p.modRateBeats) ? std::clamp(p.modRateBeats, 0.0625f, 64.0f) : 4.0f;
+        blk.modDepth = std::isfinite(p.modDepth) ? std::clamp(p.modDepth, 0.0f, 1.0f) : 0.7f;
+        blk.modFeedback = std::isfinite(p.modFeedback) ? std::clamp(p.modFeedback, 0.0f, 0.9f) : 0.5f;
+        blk.modMix = std::isfinite(p.modMix) ? std::clamp(p.modMix, 0.0f, 1.0f) : 1.0f;
         blk.swing = std::isfinite(p.swing) ? std::clamp(p.swing, 0.0f, 1.0f) : 0.0f;
         blk.pingOn = p.pingOn;
         blk.pingLevel = std::isfinite(p.pingLevel) ? std::clamp(p.pingLevel, 0.0f, 1.0f) : 0.7f;
@@ -859,6 +930,11 @@ private:
             ringOnSm.snap(blk.ringOn ? 1.0f : 0.0f);
             ringMixSm.snap(blk.ringMix);
             ringHzSm.snap(blk.ringHz);
+            modOnSm.snap(blk.modOn ? 1.0f : 0.0f);
+            modMixSm.snap(blk.modMix);
+            modTypeSm.snap(blk.modType == 1 ? 1.0f : 0.0f);
+            modDepthSm.snap(blk.modDepth);
+            modFeedbackSm.snap(blk.modFeedback);
             reverbOnSm.snap(blk.reverbOn ? 1.0f : 0.0f);
             delayOnSm.snap(blk.delayOn ? 1.0f : 0.0f);
             delayMixSm.snap(blk.delayMix);
@@ -1202,11 +1278,12 @@ private:
     // smoothers
     FilterType filterShown = FilterType::Ladder; // the filter in use (the type changes once the old one has faded out)
     EnvelopeFollower filterEnvelope;
-    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, ringOnSm, ringMixSm, ringHzSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
+    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, ringOnSm, ringMixSm, ringHzSm, modOnSm, modMixSm, modTypeSm, modDepthSm, modFeedbackSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
     Tremolo tremolo;
     bool tremWasActive = false;
     double ringPhase = 0.0; // the ring mod's sine, shared by the channels
+    bool modIdle = true;    // the phaser / flanger was off: its state is cleared when it comes back
     float pingEnv = 0.0f, pingDecay = 0.97f; // the ping: a short noise burst, shared by the channels
     ScopeFeed scope;
     double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on

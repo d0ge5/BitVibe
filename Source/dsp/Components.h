@@ -285,6 +285,89 @@ private:
     float attack = 1.0f, release = 1.0f, env = 0.0f;
 };
 
+// The phaser: six first-order all-pass stages whose corner the LFO sweeps from 160 Hz up to about 4 kHz (at full
+// depth), with feedback round them. process() returns the classic phaser sound, half the input and half the
+// swept all-pass, whose sum has the moving notches; the caller blends that in by its mix.
+class Phaser
+{
+public:
+    void reset()
+    {
+        state.fill(0.0f);
+        last = 0.0f;
+    }
+
+    // lfo 0..1, depth 0..1, feedback 0..0.9
+    float process(float x, float lfo, float depth, float feedback, double fs)
+    {
+        const float hz = 160.0f * std::exp2(4.6f * std::clamp(depth, 0.0f, 1.0f) * std::clamp(lfo, 0.0f, 1.0f));
+        const float g = std::tan(kPi * std::min(hz, 0.45f * (float) fs) / (float) fs);
+        const float G = g / (1.0f + g);
+        const float fb = std::clamp(feedback, 0.0f, 0.9f);
+        float v = x + fb * last;
+        for (auto& s : state)
+        {
+            const float u = (v - s) * G;
+            const float lp = u + s;
+            s = lp + u;
+            v = 2.0f * lp - v;
+        }
+        last = std::isfinite(v) ? v : 0.0f;
+        return 0.5f * (x + last) / (1.0f + fb); // feedback makes peaks: this keeps them near the input's level
+    }
+
+private:
+    std::array<float, 6> state {};
+    float last = 0.0f;
+};
+
+// The flanger: a short delay (a quarter of a millisecond up to about 6 ms at full depth) swept by the LFO, with
+// feedback; added to the input, its comb of notches swoops up and down. process() returns the classic flanger
+// sound, half the input and half the delayed copy.
+class Flanger
+{
+public:
+    void prepare(double sampleRate)
+    {
+        int n = 1;
+        while (n < (int) (0.02 * sampleRate) + 4)
+            n <<= 1;
+        buffer.assign((size_t) n, 0.0f);
+        mask = n - 1;
+        reset();
+    }
+    void reset()
+    {
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+        writePos = 0;
+    }
+
+    // lfo 0..1, depth 0..1, feedback 0..0.9
+    float process(float x, float lfo, float depth, float feedback, double fs)
+    {
+        if (buffer.empty())
+            return x;
+        const float delayMs = 0.25f + 6.0f * std::clamp(depth, 0.0f, 1.0f) * std::clamp(lfo, 0.0f, 1.0f);
+        const float d = std::min(delayMs * 0.001f * (float) fs, (float) (mask - 2));
+        const float readAt = (float) writePos - d;
+        const float base = std::floor(readAt);
+        const float frac = readAt - base;
+        const int i0 = (int) base;
+        const float a = buffer[(size_t) (i0 & mask)], b = buffer[(size_t) ((i0 + 1) & mask)];
+        float delayed = a + (b - a) * frac;
+        if (!std::isfinite(delayed))
+            delayed = 0.0f;
+        const float fb = std::clamp(feedback, 0.0f, 0.9f);
+        buffer[(size_t) (writePos & mask)] = x + fb * delayed;
+        writePos = (writePos + 1) & mask;
+        return 0.5f * (x + delayed) / (1.0f + fb); // feedback makes peaks: this keeps them near the input's level
+    }
+
+private:
+    std::vector<float> buffer;
+    int mask = 0, writePos = 0;
+};
+
 // "Stuck buffer" stutter, one instance per channel. On a trigger it captures a snippet of the
 // live signal (starting a few ms before the detected attack so the pick transient is included),
 // passes the live signal through while recording, then repeats the snippet N times at 1x, 2x or

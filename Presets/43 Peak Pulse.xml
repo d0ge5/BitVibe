@@ -2,7 +2,7 @@
 
 <BITVIBE_PRESET version="1" name="Peak Pulse">
   <PRESET name="Peak Pulse" sample="1.0" filter="0.6000000238418579" bits="1.0"
-          stutter="0.0" seqPlay="1.0" seqMult="0.2857142984867096" filterType="0.2000000029802322"
+          stutter="0.0" seqPlay="1.0" seqMult="0.2857142984867096" filterType="0.1666666716337204"
           filterRes="0.8999999761581421" step1="0.1240000054240227" step2="0.1240000054240227"
           step3="0.7820000052452087" step4="0.1240000054240227" step5="0.1240000054240227"
           step6="0.593999981880188" step7="0.1240000054240227" step8="0.9699999690055847"
@@ -100,6 +100,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

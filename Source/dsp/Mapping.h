@@ -59,6 +59,12 @@ inline constexpr float kMaxSwingRatio = 1.0f / 3.0f;
 // The ring mod's frequency; at the bottom it is slow enough to hear as a wobble rather than a new tone.
 inline constexpr float kRingMinHz = 1.0f, kRingMaxHz = 6000.0f;
 
+// The phaser / flanger's sweep: one cycle takes this many beats of the tempo (4 bars down to a 32nd note), locked to
+// the beat clock so the sweep lands with the music.
+inline constexpr int kNumModRates = 8;
+inline constexpr std::array<float, kNumModRates> kModRateBeats { 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f };
+inline constexpr int kDefaultModRate = 2; // one bar
+
 enum class SeqType
 {
     Pitch = 0,
@@ -73,6 +79,8 @@ enum class SeqType
 //   High      its high-pass: the sound above the cutoff is left, thin
 //   Envelope  the ladder, opened up to three octaves by each picked note (an auto-wah); the knob is where it rests
 //   Bloom     the ladder again, but each picked note pushes the RESONANCE up instead, relaxing as the note dies
+//   Formant   three band-pass peaks at the formants of a vowel; the cutoff picks the vowel (U, O, A, E, I), so a
+//             sweep or the filter steps make the sound talk
 enum class FilterType
 {
     Ladder = 0,
@@ -80,9 +88,10 @@ enum class FilterType
     Band,
     High,
     Envelope,
-    Bloom
+    Bloom,
+    Formant
 };
-inline constexpr int kNumFilterTypes = 6;
+inline constexpr int kNumFilterTypes = 7;
 
 namespace mapping
 {
@@ -126,6 +135,43 @@ namespace mapping
     inline constexpr float kEnvelopeOctaves = 3.0f;
     // Where the RES BLOOM type pushes the resonance at the peak of a picked note (just short of whistling).
     inline constexpr float kBloomMaxRes = 0.95f;
+
+    // FORMANT: the vowel is chosen by the cutoff, on a log scale from U (the bottom of the knob) through O, A and E
+    // to I (at kFormantTopHz); above that the knob runs on to off, as for the other types. Each vowel is three
+    // formant frequencies (an adult voice, rounded), sounded at the gains in kFormantGains.
+    inline constexpr float kFormantTopHz = 16000.0f;
+    struct Vowel
+    {
+        float f1, f2, f3;
+    };
+    inline constexpr std::array<Vowel, 5> kVowels { { { 300.0f, 870.0f, 2240.0f },  // U
+                                                      { 450.0f, 800.0f, 2830.0f },  // O
+                                                      { 730.0f, 1090.0f, 2440.0f }, // A
+                                                      { 530.0f, 1840.0f, 2480.0f }, // E
+                                                      { 270.0f, 2290.0f, 3010.0f } } }; // I
+    inline constexpr std::array<const char*, 5> kVowelNames { "U", "O", "A", "E", "I" };
+    inline constexpr std::array<float, 3> kFormantGains { 1.0f, 0.63f, 0.4f };
+    inline constexpr float kFormantMakeup = 1.6f; // the three narrow peaks pass less than a low-pass does
+
+    // Where along the vowels a cutoff is: 0 = U .. 4 = I.
+    inline float vowelPosition(float fc)
+    {
+        const float t = std::log(std::max(fc, kFilterMinHz) / kFilterMinHz) / std::log(kFormantTopHz / kFilterMinHz);
+        return 4.0f * std::clamp(t, 0.0f, 1.0f);
+    }
+    // The formants at a position between vowels, glided on a log scale (as a voice moves between them).
+    inline Vowel vowelAt(float position)
+    {
+        position = std::clamp(position, 0.0f, 4.0f);
+        const int i = std::min(3, (int) position);
+        const float t = position - (float) i;
+        auto glide = [t](float a, float b) { return a * std::pow(b / a, t); };
+        const auto& a = kVowels[(size_t) i];
+        const auto& b = kVowels[(size_t) i + 1];
+        return { glide(a.f1, b.f1), glide(a.f2, b.f2), glide(a.f3, b.f3) };
+    }
+    // How sharp the formant peaks are: RESONANCE 0 = a breathy 3, 1 = a nasal 20.
+    inline float formantQ(float res) { return 3.0f + 17.0f * std::clamp(res, 0.0f, 1.0f); }
 
     inline float bitDepth(float knob) { return kMinBits + (kMaxBits - kMinBits) * knob; }
 

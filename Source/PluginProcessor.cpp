@@ -51,7 +51,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // the filter's type (stored in the preset slots); the FILTER knob's text is by the range of the type in use (the
     // band-pass and high-pass stop at 8 kHz)
     auto filterTypeParam = std::make_unique<AudioParameterChoice>(id(ids::filterType), "Filter Type",
-                                                                  StringArray { "Ladder", "Low Pass", "Band Pass", "High Pass", "Envelope", "Res Bloom" }, 0);
+                                                                  StringArray { "Ladder", "Low Pass", "Band Pass", "High Pass", "Envelope", "Res Bloom", "Formant" }, 0);
     add(std::make_unique<AudioParameterFloat>(
         id(ids::filter), "Filter", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([type = filterTypeParam.get()](float v, int) {
@@ -283,6 +283,17 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     }
     add(std::make_unique<AudioParameterFloat>(id(ids::ringMix), "Ring Mod Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
 
+    // ---- phaser / flanger on the sequenced sound (rig settings): its sweep is a note length of the tempo ----
+    inGroup("mod", "Phaser / Flanger");
+    add(std::make_unique<AudioParameterBool>(id(ids::modOn), "Phaser / Flanger On", false));
+    add(std::make_unique<AudioParameterChoice>(id(ids::modType), "Mod Type", StringArray { "Phaser", "Flanger" }, 0));
+    add(std::make_unique<AudioParameterChoice>(id(ids::modRate), "Mod Rate",
+                                               StringArray { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32" },
+                                               bitvibe::kDefaultModRate));
+    add(std::make_unique<AudioParameterFloat>(id(ids::modDepth), "Mod Depth", NormalisableRange<float>(0.0f, 1.0f), 0.7f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::modFeedback), "Mod Feedback", NormalisableRange<float>(0.0f, 0.9f), 0.5f, percent));
+    add(std::make_unique<AudioParameterFloat>(id(ids::modMix), "Mod Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
+
     // ---- sample blend: a random sound from the player's list joins every sequencer step (rig settings) ----
     inGroup("samples", "Sample Blend");
     add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
@@ -461,7 +472,7 @@ std::vector<String> presetParameterIds()
 // effects, and a slot as its effects.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "trem", "ring", "delay", "sample", "eq" })
+    for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
@@ -630,6 +641,12 @@ BitVibeProcessor::BitVibeProcessor()
     pRingOn = raw(ids::ringOn);
     pRingHz = raw(ids::ringHz);
     pRingMix = raw(ids::ringMix);
+    pModOn = raw(ids::modOn);
+    pModType = raw(ids::modType);
+    pModRate = raw(ids::modRate);
+    pModDepth = raw(ids::modDepth);
+    pModFeedback = raw(ids::modFeedback);
+    pModMix = raw(ids::modMix);
     pSampleMix = raw(ids::sampleMix);
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
@@ -858,6 +875,12 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.ringOn = pRingOn->load() > 0.5f;
     p.ringHz = pRingHz->load();
     p.ringMix = pRingMix->load();
+    p.modOn = pModOn->load() > 0.5f;
+    p.modType = roundToInt(pModType->load());
+    p.modRateBeats = bitvibe::kModRateBeats[(size_t) jlimit(0, bitvibe::kNumModRates - 1, roundToInt(pModRate->load()))];
+    p.modDepth = pModDepth->load();
+    p.modFeedback = pModFeedback->load();
+    p.modMix = pModMix->load();
     p.sampleMix = pSampleMix->load();
     p.sampleChance = pSampleChance->load();
     p.sampleBaseDb = pSampleBase->load();
@@ -1462,8 +1485,9 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "SEQUENCER", "Beat pattern" },
     { "STUTTER", "Stutter" },                { "STUTTER", "Stutter types" },
     { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
-    { "SOUND", "Filter ping" },
+    { "SOUND", "Talking filter (formant)" },  { "SOUND", "Filter ping" },
     { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Ring mod" },
+    { "EFFECTS", "Phaser and flanger" },
     { "EFFECTS", "Tremolo" },
     { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
     { "EFFECTS", "Reverb" },                 { "EFFECTS", "EQ" },
@@ -1553,10 +1577,12 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     const bool filterHeard = plain(ids::filter) < 0.99f || filter;
     mark(featFilterTypes, filterHeard && (roundToInt(plain(ids::filterType)) != 0
                                           || std::abs(plain(ids::filterRes) - mapping::kDefaultFilterRes) > 0.02f));
+    mark(featFormant, filterHeard && roundToInt(plain(ids::filterType)) == (int) FilterType::Formant);
 
     mark(featPing, running && plain(ids::pingOn) > 0.5f && plain(ids::pingLevel) > 0.005f);
     mark(featDistortion, effect(ids::distOn) > 0.5f);
     mark(featRingMod, effect(ids::ringOn) > 0.5f && effect(ids::ringMix) > 0.005f);
+    mark(featModulation, effect(ids::modOn) > 0.5f && effect(ids::modMix) > 0.005f);
     mark(featTremolo, effect(ids::tremOn) > 0.5f);
     mark(featDelay, effect(ids::delayOn) > 0.5f);
     mark(featTapeWobble, effect(ids::delayOn) > 0.5f && effect(ids::delayWobble) > 0.005f);

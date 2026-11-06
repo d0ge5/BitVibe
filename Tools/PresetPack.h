@@ -97,6 +97,16 @@ struct Builder
         set(ids::tremBend, bend);
         set(ids::tremRamp, (float) ramp);
     }
+    // The phaser / flanger: type 0 = phaser, 1 = flanger; rate an index of kModRateBeats (0 = 4 bars .. 7 = 1/32).
+    void sweep(int type, int rate, float depth, float feedback, float mix = 1.0f)
+    {
+        on(ids::modOn);
+        set(ids::modType, (float) type);
+        set(ids::modRate, (float) rate);
+        set(ids::modDepth, depth);
+        set(ids::modFeedback, feedback);
+        set(ids::modMix, mix);
+    }
     // The STUTTER knob: speed 0 = normal, 1 = fast, 2 = slow; repeats 1, 2, 3, 4, 6, 8 or 16.
     void stutter(int speed, int repeats, int type, int length)
     {
@@ -118,7 +128,10 @@ constexpr float kSkip = 0.0f, kMute = 1.0f;
 constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5, kFall = 6, kShuffle = 7,
               kHalf = 8, kGate = 9;
 // filter types
-constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4, kBloom = 5;
+constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4, kBloom = 5, kFormant = 6;
+// phaser / flanger types and rates
+constexpr int kPhaser = 0, kFlanger = 1;
+constexpr int kRate4Bars = 0, kRate2Bars = 1, kRateBar = 2, kRateHalf = 3, kRateQuarter = 4, kRateEighth = 5;
 // delay times (kDelayDivisions)
 constexpr int k32nd = 0, k16th = 2, k16thDotted = 3, k8th = 5, k8thDotted = 6, kQuarter = 8, kQuarterDotted = 9;
 // reverb types
@@ -776,6 +789,76 @@ inline const std::vector<Preset>& presets()
              b.stutter(0, 16, kGate, 0);
              b.dist(0, 0.3f, 0.5f, 0.7f);
              b.reverb(kPlate, 0.2f, 0.45f);
+         } },
+        { "Talk Box", [](Builder& b) {
+             // the FORMANT filter on filter steps: the line says "oo-oh-ah-ee" as it walks, over a light drive
+             b.set(ids::tempo, 100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kFormant);
+             b.set(ids::filterRes, 0.5f);
+             b.set(ids::filter, 0.85f);
+             b.steps({ pct(0.02f), pct(0.15f), pct(0.4f), pct(1.0f), pct(0.4f), pct(0.15f), pct(0.05f), pct(1.0f) });
+             b.dist(0, 0.35f, 0.6f, 0.75f);
+             b.reverb(kRoom, 0.15f, 0.35f);
+         } },
+        { "Vowel Ping", [](Builder& b) {
+             // PING through the FORMANT filter: every step a sung syllable, swung, with no input needed
+             b.set(ids::tempo, 96.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.on(ids::pingOn);
+             b.set(ids::pingLevel, 1.0f);
+             b.set(ids::swing, 0.5f);
+             b.set(ids::filterType, (float) kFormant);
+             b.set(ids::filterRes, 0.45f);
+             b.dist(0, 0.3f, 0.55f, 0.5f);
+             b.set(ids::filter, 0.85f);
+             b.steps({ pct(0.03f), pct(0.4f), pct(0.15f), pct(1.0f), pct(0.03f), pct(0.4f), pct(0.6f), pct(0.15f) });
+             b.reverb(kPlate, 0.25f, 0.5f);
+         } },
+        { "Phase Walk", [](Builder& b) {
+             // an arpeggio under a one-bar PHASER sweep with plenty of feedback, into a hall
+             b.set(ids::tempo, 108.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(7), P(12), P(7), P(3), P(10), P(15), P(10) });
+             b.sweep(kPhaser, kRateBar, 0.85f, 0.6f);
+             b.reverb(kHall, 0.25f, 0.5f);
+         } },
+        { "Phased Shuffle", [](Builder& b) {
+             // a swung funk line with a quick quarter-note PHASER and a little drive
+             b.set(ids::tempo, 112.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::swing, 0.9f);
+             b.steps({ P(0), P(12), P(5), P(12), P(3), P(10), P(7), P(12) });
+             b.lane(Lane::Level, { 1.0f, 0.7f });
+             b.sweep(kPhaser, kRateQuarter, 0.6f, 0.3f);
+             b.dist(0, 0.3f, 0.5f, 0.7f);
+         } },
+        { "Jet Plane", [](Builder& b) {
+             // octaves through a slow two-bar FLANGER with heavy feedback: the jet taking off, echoed
+             b.set(ids::tempo, 90.0f);
+             b.sequence(4, 5, 0);
+             b.freeRunning();
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.sweep(kFlanger, kRate2Bars, 0.9f, 0.75f);
+             b.delay(k8thDotted, 0.3f, 0.5f, 4);
+         } },
+        { "Metal Flange", [](Builder& b) {
+             // a quarter-note FLANGER over a low ring mod and the fuzz: a grinding, clanging riff
+             b.set(ids::tempo, 120.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(12), P(0), P(7), P(0), P(10), P(12) });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 110.0f);
+             b.set(ids::ringMix, 0.45f);
+             b.sweep(kFlanger, kRateQuarter, 0.6f, 0.6f);
+             b.dist(1, 0.45f, 0.5f, 0.5f);
          } },
     };
     return list;

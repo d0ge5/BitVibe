@@ -3,7 +3,7 @@
 <BITVIBE_PRESET version="1" name="Wah Picks">
   <PRESET name="Wah Picks" sample="1.0" filter="0.2800000011920929" bits="1.0"
           stutter="0.0" seqPlay="0.6000000238418579" seqMult="0.1428571492433548"
-          filterType="0.800000011920929" filterRes="0.6000000238418579"
+          filterType="0.6666666865348816" filterRes="0.6000000238418579"
           step1="0.5" step2="0.7592592835426331" step3="0.9444444179534912"
           step4="0.7592592835426331" step5="0.6481481194496155" step6="0.5"
           step7="0.5" step8="0.5" step9="0.5" step10="0.5" step11="0.5"
@@ -100,6 +100,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

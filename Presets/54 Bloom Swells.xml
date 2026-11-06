@@ -2,7 +2,7 @@
 
 <BITVIBE_PRESET version="1" name="Bloom Swells">
   <PRESET name="Bloom Swells" sample="1.0" filter="0.550000011920929" bits="1.0"
-          stutter="0.0" seqPlay="0.4000000059604645" seqMult="0.0" filterType="1.0"
+          stutter="0.0" seqPlay="0.4000000059604645" seqMult="0.0" filterType="0.8333333134651184"
           filterRes="0.1500000059604645" step1="0.5" step2="0.6851851940155029"
           step3="0.7592592835426331" step4="0.9444444179534912" step5="0.6481481194496155"
           step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"
@@ -99,6 +99,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

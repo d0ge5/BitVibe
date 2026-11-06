@@ -3,7 +3,7 @@
 <BITVIBE_PRESET version="1" name="Radio Dial">
   <PRESET name="Radio Dial" sample="0.8500000238418579" filter="0.8999999761581421"
           bits="1.0" stutter="0.0" seqPlay="1.0" seqMult="0.2857142984867096"
-          filterType="0.4000000059604645" filterRes="0.699999988079071"
+          filterType="0.3333333432674408" filterRes="0.699999988079071"
           step1="0.3120000064373016" step2="0.875999927520752" step3="0.1240000054240227"
           step4="0.593999981880188" step5="0.4529999792575836" step6="0.07699999958276749"
           step7="0.7820000052452087" step8="0.2649999856948853" step9="0.687999963760376"
@@ -104,6 +104,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

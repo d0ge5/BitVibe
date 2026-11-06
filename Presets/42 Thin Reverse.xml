@@ -3,29 +3,29 @@
 <BITVIBE_PRESET version="1" name="Thin Reverse">
   <PRESET name="Thin Reverse" sample="1.0" filter="0.800000011920929" bits="1.0"
           stutter="0.09090909361839294" seqPlay="1.0" seqMult="0.1428571492433548"
-          filterType="0.6000000238418579" filterRes="0.6000000238418579"
-          step1="0.07699999958276749" step2="0.1427999883890152" step3="0.2368000000715256"
-          step4="0.3589999973773956" step5="0.5" step6="0.6692000031471252"
-          step7="0.8289999961853027" step8="0.9699999690055847" step9="0.5"
-          step10="0.5" step11="0.5" step12="0.5" step13="0.5" step14="0.5"
-          step15="0.5" step16="0.5" stepType1="0.0" stepType2="0.0" stepType3="0.0"
-          stepType4="0.0" stepType5="0.0" stepType6="0.0" stepType7="0.0"
-          stepType8="0.0" stepType9="0.0" stepType10="0.0" stepType11="0.0"
-          stepType12="0.0" stepType13="0.0" stepType14="0.0" stepType15="0.0"
-          stepType16="0.0" stepMem0_1="0.0" stepMem0_2="0.0" stepMem0_3="0.0"
-          stepMem0_4="0.0" stepMem0_5="0.0" stepMem0_6="0.0" stepMem0_7="0.0"
-          stepMem0_8="0.0" stepMem0_9="0.0" stepMem0_10="0.0" stepMem0_11="0.0"
-          stepMem0_12="0.0" stepMem0_13="0.0" stepMem0_14="0.0" stepMem0_15="0.0"
-          stepMem0_16="0.0" stepMem1_1="0.0" stepMem1_2="0.0" stepMem1_3="0.0"
-          stepMem1_4="0.0" stepMem1_5="0.0" stepMem1_6="0.0" stepMem1_7="0.0"
-          stepMem1_8="0.0" stepMem1_9="0.0" stepMem1_10="0.0" stepMem1_11="0.0"
-          stepMem1_12="0.0" stepMem1_13="0.0" stepMem1_14="0.0" stepMem1_15="0.0"
-          stepMem1_16="0.0" stepMem2_1="0.0" stepMem2_2="0.0" stepMem2_3="0.0"
-          stepMem2_4="0.0" stepMem2_5="0.0" stepMem2_6="0.0" stepMem2_7="0.0"
-          stepMem2_8="0.0" stepMem2_9="0.0" stepMem2_10="0.0" stepMem2_11="0.0"
-          stepMem2_12="0.0" stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0"
-          stepMem2_16="0.0" seqType="0.5" tempo="0.4912443161010742" stutterLen="0.5"
-          morph="0.0" loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
+          filterType="0.5" filterRes="0.6000000238418579" step1="0.07699999958276749"
+          step2="0.1427999883890152" step3="0.2368000000715256" step4="0.3589999973773956"
+          step5="0.5" step6="0.6692000031471252" step7="0.8289999961853027"
+          step8="0.9699999690055847" step9="0.5" step10="0.5" step11="0.5"
+          step12="0.5" step13="0.5" step14="0.5" step15="0.5" step16="0.5"
+          stepType1="0.0" stepType2="0.0" stepType3="0.0" stepType4="0.0"
+          stepType5="0.0" stepType6="0.0" stepType7="0.0" stepType8="0.0"
+          stepType9="0.0" stepType10="0.0" stepType11="0.0" stepType12="0.0"
+          stepType13="0.0" stepType14="0.0" stepType15="0.0" stepType16="0.0"
+          stepMem0_1="0.0" stepMem0_2="0.0" stepMem0_3="0.0" stepMem0_4="0.0"
+          stepMem0_5="0.0" stepMem0_6="0.0" stepMem0_7="0.0" stepMem0_8="0.0"
+          stepMem0_9="0.0" stepMem0_10="0.0" stepMem0_11="0.0" stepMem0_12="0.0"
+          stepMem0_13="0.0" stepMem0_14="0.0" stepMem0_15="0.0" stepMem0_16="0.0"
+          stepMem1_1="0.0" stepMem1_2="0.0" stepMem1_3="0.0" stepMem1_4="0.0"
+          stepMem1_5="0.0" stepMem1_6="0.0" stepMem1_7="0.0" stepMem1_8="0.0"
+          stepMem1_9="0.0" stepMem1_10="0.0" stepMem1_11="0.0" stepMem1_12="0.0"
+          stepMem1_13="0.0" stepMem1_14="0.0" stepMem1_15="0.0" stepMem1_16="0.0"
+          stepMem2_1="0.0" stepMem2_2="0.0" stepMem2_3="0.0" stepMem2_4="0.0"
+          stepMem2_5="0.0" stepMem2_6="0.0" stepMem2_7="0.0" stepMem2_8="0.0"
+          stepMem2_9="0.0" stepMem2_10="0.0" stepMem2_11="0.0" stepMem2_12="0.0"
+          stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0" stepMem2_16="0.0"
+          seqType="0.5" tempo="0.4912443161010742" stutterLen="0.5" morph="0.0"
+          loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
           loopRepeats="0.0" seqLength="0.4666666686534882" stutterType="0.1111111119389534"
           swing="0.0" pingOn="0.0" pingLevel="0.699999988079071" laneCrush1="0.0"
           laneCrush2="0.0" laneCrush3="0.0" laneCrush4="0.0" laneCrush5="0.0"
@@ -100,6 +100,12 @@
     <PARAM id="ringOn" value="0.0"/>
     <PARAM id="ringHz" value="440.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
     <PARAM id="sampleOn" value="0.0"/>
     <PARAM id="sampleMix" value="0.0"/>
     <PARAM id="sampleChance" value="1.0"/>

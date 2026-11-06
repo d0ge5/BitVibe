@@ -171,7 +171,7 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 80 && p->getCurrentProgram() == 0,
+    check(p->getNumPrograms() == slotCount && slotCount == 86 && p->getCurrentProgram() == 0,
           "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack), starts on slot 1");
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
@@ -955,28 +955,31 @@ void testThemes(const File& outDir)
             check(false, "DOG5 is on the page");
     }
     {
-        // WIREFRAME: the panel outlines glow, brighter right on a beat (the editor's timer sets the pulse)
+        // WIREFRAME: the outlines glow, brighter right on a beat, and flush to the accent while the sequencer acts
         pedalstyle::setTheme(pedalstyle::findTheme("WIREFRAME"));
         pedalstyle::setPulse(0.0f);
         const auto dim = snapshot(*ed, 1.0f);
         pedalstyle::setPulse(1.0f);
         const auto lit = snapshot(*ed, 1.0f);
+        pedalstyle::setPulse(1.0f, 1.0f);
+        const auto hot = snapshot(*ed, 1.0f);
         pedalstyle::setPulse(0.0f);
-        auto glow = [](const Image& img)
+        auto near = [](const Image& img, Colour target)
         {
-            const auto edge = pedalstyle::theme.panelEdge;
             int n = 0;
             for (int yy = 0; yy < img.getHeight(); yy += 2)
                 for (int xx = 0; xx < img.getWidth(); xx += 2)
                 {
                     const auto px = img.getPixelAt(xx, yy);
-                    n += std::abs(px.getRed() - edge.getRed()) < 60 && std::abs(px.getGreen() - edge.getGreen()) < 60
-                                 && std::abs(px.getBlue() - edge.getBlue()) < 60 ? 1 : 0;
+                    n += std::abs(px.getRed() - target.getRed()) < 60 && std::abs(px.getGreen() - target.getGreen()) < 60
+                                 && std::abs(px.getBlue() - target.getBlue()) < 60 ? 1 : 0;
                 }
             return n;
         };
-        const int dimGlow = glow(dim), litGlow = glow(lit);
+        const int dimGlow = near(dim, pedalstyle::theme.panelEdge), litGlow = near(lit, pedalstyle::theme.panelEdge);
+        const int litHot = near(lit, pedalstyle::theme.accent), hotHot = near(hot, pedalstyle::theme.accent);
         check(litGlow > dimGlow + 200, "WIREFRAME: the outlines glow brighter on the beat (" + String(dimGlow) + " -> " + String(litGlow) + " edge pixels)");
+        check(hotHot > litHot + 200, "and flush to the accent while the sequencer acts (" + String(litHot) + " -> " + String(hotHot) + " accent pixels)");
     }
     ed->setThemeFromPage(0);
     check(pedalstyle::themeIndex() == 0 && uisettings::themeName() == "NIGHT", "and back to NIGHT");
@@ -1758,7 +1761,9 @@ void testPresetPack(const File& outDir)
         const bool named = p->getProgramName(p->getCurrentProgram()) == BitVibeProcessor::packPresetName(i);
         bool usesNew = roundToInt(getValue(*p, ids::seqLength)) != bitvibe::kDefaultSeqLength || roundToInt(getValue(*p, ids::stutterType)) != 0
                        || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f
-                       || roundToInt(getValue(*p, ids::filterType)) != 0 || std::abs(getValue(*p, ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.05f;
+                       || roundToInt(getValue(*p, ids::filterType)) != 0 || std::abs(getValue(*p, ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.05f
+                       || getValue(*p, ids::swing) > 0.005f || getValue(*p, ids::ringOn) > 0.5f || getValue(*p, ids::pingOn) > 0.5f
+                       || getValue(*p, ids::modOn) > 0.5f;
         for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
@@ -2008,6 +2013,8 @@ void testRightModes(const File& outDir)
         ed->setRightMode(true);
         ed->setEffectTab(BitVibeEditor::kTabReverb);
         save(*ed, outDir.getChildFile("editor_effects.png")); // the reverb tab: the graph and six knobs in two rows
+        ed->setEffectTab(BitVibeEditor::kTabMod);
+        save(*ed, outDir.getChildFile("editor_mod.png")); // the MOD tab: the ring mod beside the phaser / flanger
         ed->setEffectTab(BitVibeEditor::kTabSamples);
     }
     save(*ed, outDir.getChildFile("editor_advanced.png"));
@@ -2752,7 +2759,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 70 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 70 and 0)");
+    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2898,7 +2905,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 354, "354 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 360, "360 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

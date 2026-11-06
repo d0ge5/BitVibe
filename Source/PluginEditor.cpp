@@ -23,6 +23,8 @@ using pedalstyle::kPanelTitleX;
 using pedalstyle::makePowerButton;
 using pedalstyle::powerProperty;
 using pedalstyle::setPowerActive;
+using pedalstyle::wireGlow;
+using pedalstyle::wireGlowEllipse;
 
 namespace
 {
@@ -393,6 +395,7 @@ void PedalLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int width, in
     g.fillEllipse(c.x - R, c.y - R, R * 2.0f, R * 2.0f);
     g.setColour(Colours::black.withAlpha(0.85f));
     g.drawEllipse(c.x - R, c.y - R, R * 2.0f, R * 2.0f, 1.6f);
+    wireGlowEllipse(g, Rectangle<float>(c.x - R, c.y - R, R * 2.0f, R * 2.0f), 0.8f);
 
     const float Ri = R * 0.80f;
     g.setGradientFill(ColourGradient(kTheme.capTop, c.x, c.y - Ri, kTheme.capBottom, c.x, c.y + Ri, false));
@@ -491,6 +494,7 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
         g.fillRoundedRectangle(r, r.getHeight() * 0.5f);
         g.setColour(highlighted ? kTheme.mid : kTheme.outline);
         g.drawRoundedRectangle(r, r.getHeight() * 0.5f, 1.0f);
+        wireGlow(g, r, r.getHeight() * 0.5f, 0.7f);
         const Point<float> c(r.getX() + 10.0f, r.getCentreY());
         if (on && (bool) b.getProperties().getWithDefault(activeProperty, false))
         {
@@ -510,6 +514,7 @@ void PedalLookAndFeel::drawToggleButton(Graphics& g, ToggleButton& b, bool highl
     g.fillRoundedRectangle(r, 4.0f);
     g.setColour(highlighted ? kTheme.mid : kTheme.buttonEdge);
     g.drawRoundedRectangle(r, 4.0f, 1.2f);
+    wireGlow(g, r, 4.0f, 0.7f);
     pedalstyle::drawSwitchLight(g, { r.getX() + 9.0f, r.getCentreY() }, on);
     g.setColour(on ? kInk : kInkDim);
     g.setFont(bold(11.0f));
@@ -523,6 +528,7 @@ void PedalLookAndFeel::drawComboBox(Graphics& g, int w, int h, bool, int, int, i
     g.fillRoundedRectangle(r, 4.0f);
     g.setColour(findColour(ComboBox::outlineColourId));
     g.drawRoundedRectangle(r, 4.0f, 1.0f);
+    wireGlow(g, r, 4.0f, 0.7f);
     Path arrow;
     const float ax = (float) w - 14.0f, ay = (float) h * 0.5f;
     arrow.addTriangle(ax - 4.0f, ay - 2.0f, ax + 4.0f, ay - 2.0f, ax, ay + 3.0f);
@@ -563,6 +569,7 @@ void FootSwitch::paint(Graphics& g)
     g.fillEllipse(c.x - di * 0.5f, c.y - di * 0.5f, di, di);
     g.setColour(Colours::black.withAlpha(0.6f));
     g.drawEllipse(c.x - di * 0.5f, c.y - di * 0.5f, di, di, 1.2f);
+    wireGlowEllipse(g, Rectangle<float>(c.x - d * 0.5f, c.y - d * 0.5f, d, d), 1.2f);
 }
 
 void FootSwitch::mouseDown(const MouseEvent&)
@@ -714,7 +721,7 @@ int EffectTabs::tabAt(float x) const { return jlimit(0, count - 1, (int) std::fl
 
 void EffectTabs::paint(Graphics& g)
 {
-    static const char* names[kCount] { "SAMPLES", "DIST", "RING", "TREM", "DELAY", "REVERB", "EQ" };
+    static const char* names[kCount] { "SAMPLES", "DIST", "MOD", "TREM", "DELAY", "REVERB", "EQ" };
     for (int i = 0; i < count; ++i)
     {
         const auto r = tabBounds(i);
@@ -723,6 +730,7 @@ void EffectTabs::paint(Graphics& g)
         g.fillRoundedRectangle(r, 4.0f);
         g.setColour(isChosen ? kAccent : kTheme.buttonEdge);
         g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, isChosen ? 1.2f : 1.0f);
+        wireGlow(g, r.reduced(0.5f), 4.0f, isChosen ? 1.0f : 0.5f);
         // the light: on when the effect is on, bright while it acts
         const auto light = Rectangle<float>(7.0f, 7.0f).withCentre({ r.getX() + 11.0f, r.getCentreY() });
         g.setColour(lit[(size_t) i] ? (glowing ? kAccent : kAccent.withAlpha(0.55f)) : kTheme.unlit);
@@ -939,7 +947,7 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
              "The ON lights glow, and:\n"
              "- RATE, BITS and FILTER crush the sound (always, or only now with HEAR on CLEAN IN BETWEEN)\n"
              "- 2 DISTORTION distorts it\n"
-             "- 3 RING MOD rings it against a sine tone\n"
+             "- 3 MOD rings it against a sine tone and sweeps it (phaser / flanger)\n"
              "- 4 TREMOLO cuts it in and out, at a rate that can speed up or slow down\n"
              "- 5 DELAY echoes it, and the echoes ring on after\n"
              "- 6 REVERB adds reverb, and the tail rings on after\n"
@@ -981,7 +989,7 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
         bool onlyWhilePlaying;
     };
     static const Stage stages[] { { "INPUT", 0, false },  { "STUTTER\n+ SOUNDS", 1, true }, { "PITCH", 0, true },  { "RATE, BITS,\nFILTER", 0, false },
-                                  { "DISTORTION", 2, true }, { "RING MOD", 3, true },       { "TREMOLO", 4, true }, { "DELAY", 5, true },
+                                  { "DISTORTION", 2, true }, { "MOD", 3, true },       { "TREMOLO", 4, true }, { "DELAY", 5, true },
                                   { "REVERB", 6, true },   { "EQ", 7, false },              { "DRY/WET,\nOUTPUT", 0, false } };
     const int n = (int) std::size(stages);
     const float slot = w / (float) n, gap = 14.0f;
@@ -1299,6 +1307,18 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     ringOnButton.setLookAndFeel(&laf);
     content.addAndMakeVisible(ringOnButton);
     ringOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::ringOn, ringOnButton);
+    smallKnob(modRateSlider, modRateAtt, ids::modRate);
+    smallKnob(modDepthSlider, modDepthAtt, ids::modDepth);
+    smallKnob(modFeedbackSlider, modFeedbackAtt, ids::modFeedback);
+    smallKnob(modMixSlider, modMixAtt, ids::modMix);
+    modOnButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(modOnButton);
+    modOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::modOn, modOnButton);
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::modType)))
+        modTypeBox.addItemList(choice->choices, 1);
+    modTypeBox.setLookAndFeel(&laf);
+    content.addAndMakeVisible(modTypeBox);
+    modTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::modType, modTypeBox);
     smallKnob(reverbHighSlider, reverbHighAtt, ids::reverbHighCut);
     smallKnob(delayMixSlider, delayMixAtt, ids::delayMix);
     smallKnob(delayDecaySlider, delayDecayAtt, ids::delayDecay);
@@ -1492,7 +1512,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox, &modRateSlider, &modDepthSlider,
+                        &modFeedbackSlider, &modMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
                         &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &pingButton, &pingLevelSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
@@ -1579,7 +1600,8 @@ BitVibeEditor::~BitVibeEditor()
         k.front.setLookAndFeel(nullptr);
     for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider,
-                      &ringHzSlider, &ringMixSlider, &swingSlider, &pingLevelSlider })
+                      &ringHzSlider, &ringMixSlider, &swingSlider, &pingLevelSlider, &modRateSlider, &modDepthSlider,
+                      &modFeedbackSlider, &modMixSlider })
         s->setLookAndFeel(nullptr);
     delayTimeBox.setLookAndFeel(nullptr);
     delayOnButton.setLookAndFeel(nullptr);
@@ -1587,6 +1609,8 @@ BitVibeEditor::~BitVibeEditor()
     distTypeBox.setLookAndFeel(nullptr);
     distReverbButton.setLookAndFeel(nullptr);
     ringOnButton.setLookAndFeel(nullptr);
+    modOnButton.setLookAndFeel(nullptr);
+    modTypeBox.setLookAndFeel(nullptr);
     reverbTypeBox.setLookAndFeel(nullptr);
     reverbReverseButton.setLookAndFeel(nullptr);
     reverbOnButton.setLookAndFeel(nullptr);
@@ -2015,8 +2039,9 @@ void BitVibeEditor::applyEffectTab()
         show(*c, kTabDist);
     for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton })
         show(*c, kTabDist, true);
-    for (Component* c : std::initializer_list<Component*> { &ringOnButton, &ringHzSlider, &ringMixSlider })
-        show(*c, kTabRing);
+    for (Component* c : std::initializer_list<Component*> { &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox,
+                                                            &modRateSlider, &modDepthSlider, &modFeedbackSlider, &modMixSlider })
+        show(*c, kTabMod);
     show(*tremoloPanel, kTabTremolo);
     for (Component* c : std::initializer_list<Component*> { &delayOnButton, &delayTimeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider,
                                                             &delayWobbleSlider, delayGraph.get() })
@@ -2081,8 +2106,16 @@ String BitVibeEditor::readoutText(int i) const
     switch (i)
     {
         case 0: return hzText(mapping::sampleRateHz(rawValue(ids::sampleRate)));
-        case 1: return rawValue(ids::filter) >= 0.99f ? String("OPEN")
-                                                      : hzText(mapping::filterHzFor((FilterType) roundToInt(rawValue(ids::filterType)), rawValue(ids::filter)));
+        case 1:
+        {
+            const auto type = (FilterType) roundToInt(rawValue(ids::filterType));
+            const float hz = mapping::filterHzFor(type, rawValue(ids::filter));
+            if (rawValue(ids::filter) >= 0.99f)
+                return String("OPEN");
+            if (type == FilterType::Formant)
+                return "VOWEL " + String(mapping::kVowelNames[(size_t) jlimit(0, 4, roundToInt(mapping::vowelPosition(hz)))]);
+            return hzText(hz);
+        }
         case 2: return String(mapping::bitDepth(rawValue(ids::bits)), 1) + " bit";
         case 3:
         {
@@ -2206,9 +2239,20 @@ void BitVibeEditor::setTooltips()
     stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE, RISE (a tone higher each repeat), "
                               "FALL (lower), TAPE STOP, SCRATCH (back and forth), FREEZE (a grain cloud), SHUFFLE (pieces "
                               "reordered), HALF SPEED (an octave down), GATE (chopped).");
-    filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own low-pass), LOW PASS (cleaner, 12 dB/oct), BAND PASS (around the "
-                             "cutoff), HIGH PASS (above it), ENVELOPE (each pick opens the cutoff: an auto-wah), RES BLOOM (each pick "
-                             "pushes RESONANCE instead).");
+    filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own), LOW PASS (cleaner), BAND PASS, HIGH PASS, ENVELOPE (an auto-wah), "
+                             "RES BLOOM (each pick pushes RESONANCE), FORMANT (vowels: FILTER picks U, O, A, E or I, so filter steps "
+                             "make it talk).");
+    makePowerButton(modOnButton);
+    modOnButton.setTooltip("SWEEP ON: a phaser or flanger on the sequenced and stuttered sound, swept in time with the tempo. Your "
+                           "clean signal is never touched. The light glows while it acts.");
+    modTypeBox.setTooltip("SWEEP TYPE: PHASER sweeps soft notches up and down (smooth, vocal); FLANGER sweeps a short echo for the "
+                          "jet-plane whoosh.");
+    modRateSlider.setTooltip("SWEEP RATE: how long one sweep takes, as a note length of the tempo (4 bars down to 1/32), locked to "
+                             "the beat so it lands with the music.");
+    modDepthSlider.setTooltip("SWEEP DEPTH: how far it sweeps. Low = a gentle shimmer, high = a wide swoop.");
+    modFeedbackSlider.setTooltip("SWEEP FEEDBACK: feeds the sound back round. Higher = sharper, more ringing notches; near full the "
+                                 "flanger whistles.");
+    modMixSlider.setTooltip("SWEEP MIX: how much of the phased or flanged sound replaces the plain one.");
     pingButton.setTooltip("PING: a tiny click at the start of every step, so a resonant filter rings at its cutoff like a drum synth. "
                           "Turn RESONANCE up and FILTER down to tune it; filter steps play it. It sounds with no input at all.");
     pingLevelSlider.setTooltip("PING LEVEL: how hard each step's click hits the filter, so how loud the ring is.");
@@ -2371,8 +2415,11 @@ void BitVibeEditor::buildBackground()
     g.fillAll(kTheme.background);
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
 
+    const float bakedPulse = pedalstyle::pulse(), bakedHeat = pedalstyle::pulseHeat();
+    pedalstyle::setPulse(0.0f); // the cached image holds the resting state; paintContent adds the live halo
     const auto header = kHeader.withHeight(advancedRight ? kHeader.getHeight() : 56).toFloat();
     pedalstyle::panelFrame(g, header);
+    pedalstyle::setPulse(bakedPulse, bakedHeat);
     g.setColour(kTheme.well);
     g.fillRoundedRectangle(kNameBox.toFloat(), 4.0f);
     g.setColour(kTheme.outline);
@@ -2493,7 +2540,9 @@ void BitVibeEditor::resized()
     distOnButton.setBounds(face({ kSideX + 8, dist.getY() + 3, 50, 19 }));
     distTypeBox.setBounds(face({ kSideX + 206, dist.getY() + 3, 116, 20 }));
     distReverbButton.setBounds(face({ kSideX + 328, dist.getY() + 3, 120, 20 }));
-    ringOnButton.setBounds(face({ kSideX + 8, ring.getY() + 3, 50, 19 }));
+    ringOnButton.setBounds(face({ kSideX + 8, ring.getY() + 32, 50, 19 }));
+    modOnButton.setBounds(face({ kSideX + kModSplit + 10, ring.getY() + 32, 50, 19 }));
+    modTypeBox.setBounds(face({ kSideX + 344, ring.getY() + 31, 100, 20 }));
     // the knobs that are showing (SIMPLE hides some) share the width of their panel evenly
     // the knobs of a panel: up to three a row, two rows (a single row sits in the middle), right of the graph
     auto spread = [this](std::initializer_list<std::pair<Slider*, bool>> row, int size, int top)
@@ -2513,7 +2562,14 @@ void BitVibeEditor::resized()
             }
     };
     spread({ { &distDriveSlider, false }, { &distToneSlider, true }, { &distLevelSlider, false } }, 48, dist.getY());
-    spread({ { &ringHzSlider, false }, { &ringMixSlider, false } }, 48, ring.getY());
+    {
+        const int knobY = ring.getY() + kKnobMid;
+        ringHzSlider.setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 50, knobY })));
+        ringMixSlider.setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 128, knobY })));
+        KnobSlider* modKnobs[] { &modRateSlider, &modDepthSlider, &modFeedbackSlider, &modMixSlider };
+        for (int i = 0; i < 4; ++i)
+            modKnobs[i]->setBounds(face(Rectangle<int>(44, 44).withCentre({ kSideX + kModSplit + 35 + 70 * i, knobY })));
+    }
     spread({ { &reverbDecaySlider, false }, { &reverbToneSlider, true }, { &reverbMixSlider, false }, { &reverbLevelSlider, true },
              { &reverbLowSlider, true }, { &reverbHighSlider, true } },
            44, reverb.getY());
@@ -2549,6 +2605,12 @@ void BitVibeEditor::paintContent(Graphics& g)
     if (drumsShown)
         return; // the DRUMS page paints everything below the tabs
     g.addTransform(AffineTransform::translation(0.0f, (float) kTabsH));
+    if (pedalstyle::theme.wireframe)
+    {
+        // the enclosure and the preset bar live in the cached background, so their halos are drawn here, live
+        pedalstyle::wireGlow(g, kFace.toFloat(), 16.0f, 1.2f);
+        pedalstyle::wireGlow(g, kHeader.withHeight(advancedRight ? kHeader.getHeight() : 56).toFloat(), 10.0f);
+    }
 
     // Header: slot number and modified mark beside the preset name, state line under the morph strip
     {
@@ -2741,7 +2803,7 @@ void BitVibeEditor::paintContent(Graphics& g)
 
     // The distortion, delay and reverb panels are drawn by the editor (the other effects draw themselves): the one showing.
     const auto dist = distArea(), ring = ringArea(), delay = delayArea(), reverb = reverbArea();
-    if (effectTab == kTabDist || effectTab == kTabDelay || effectTab == kTabReverb)
+    if (effectTab == kTabDist || effectTab == kTabMod || effectTab == kTabDelay || effectTab == kTabReverb)
     {
         pedalstyle::panelFrame(g, dist.toFloat());
     }
@@ -2766,11 +2828,28 @@ void BitVibeEditor::paintContent(Graphics& g)
     }
     }
 
-    // Ring mod panel labels
-    if (effectTab == kTabRing)
+    // MOD panel labels: the ring mod on the left, the phaser / flanger on the right
+    if (effectTab == kTabMod)
     {
         const float ringAlpha = rawValue(ids::ringOn) > 0.5f ? 1.0f : kOffAlpha;
-        drawPanelTitle(g, kSideX + kPanelTitleX, ring.getY() + 4, 3, "RING MOD");
+        const float modAlpha = rawValue(ids::modOn) > 0.5f ? 1.0f : kOffAlpha;
+        drawPanelTitle(g, kSideX + 14, ring.getY() + 4, 3, "MODULATION");
+        g.setColour(pedalstyle::panelEdge.withAlpha(0.5f));
+        g.drawVerticalLine(kSideX + kModSplit, (float) ring.getY() + 30.0f, (float) ring.getBottom() - 14.0f);
+        g.setColour(kInkDim.withMultipliedAlpha(jmax(ringAlpha, kOffTextAlpha)));
+        g.setFont(bold(10.5f));
+        g.drawText("RING MOD", Rectangle<int>(kSideX + 64, ring.getY() + 32, 108, 19), Justification::centredLeft);
+        g.setColour(kInkDim.withMultipliedAlpha(jmax(modAlpha, kOffTextAlpha)));
+        g.drawText("SWEEP", Rectangle<int>(kSideX + kModSplit + 66, ring.getY() + 32, 100, 19), Justification::centredLeft);
+        const int labelY = ring.getY() + kKnobMid + 28;
+        String rateText;
+        if (auto* rate = proc.apvts.getParameter(ids::modRate))
+            rateText = rate->getCurrentValueAsText();
+        pedalstyle::drawControlLabel(g, kSideX + kModSplit + 35, labelY, "RATE", rateText, modAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + kModSplit + 105, labelY, "DEPTH", String(roundToInt(rawValue(ids::modDepth) * 100.0f)) + "%", modAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + kModSplit + 175, labelY, "FEEDBACK",
+                                     String(roundToInt(rawValue(ids::modFeedback) / 0.9f * 100.0f)) + "%", modAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + kModSplit + 245, labelY, "MIX", String(roundToInt(rawValue(ids::modMix) * 100.0f)) + "%", modAlpha);
         const float ringHzNow = rawValue(ids::ringHz);
         String ringFreqText = ringHzNow < 100.0f ? String(ringHzNow, ringHzNow < 10.0f ? 2 : 1) + " Hz" : hzText(ringHzNow);
         if (const String note = noteNameForHz(ringHzNow); note.isNotEmpty())
@@ -2779,8 +2858,8 @@ void BitVibeEditor::paintContent(Graphics& g)
             { "FREQUENCY", ringFreqText },
             { "MIX", String(roundToInt(rawValue(ids::ringMix) * 100.0f)) + "%" },
         }};
-        for (size_t i = 0; i < ringEntries.size(); ++i)
-            pedalstyle::drawControlLabel(g, labelPos(ringEntries, i, ring.getY()).x, labelPos(ringEntries, i, ring.getY()).y, ringEntries[i].name, ringEntries[i].value, ringAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + 50, labelY, ringEntries[0].name, ringEntries[0].value, ringAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + 128, labelY, ringEntries[1].name, ringEntries[1].value, ringAlpha);
     }
 
     // Delay panel labels
@@ -2861,11 +2940,16 @@ void BitVibeEditor::updateLiveState()
         // the power buttons glow while their effect acts; a switched-off panel's controls are dimmed
         const bool live = proc.getEngine().isEffectSideActive();
         effectTabs.set(effectTab, advancedRight ? EffectTabs::kCount : EffectTabs::kCount - 1,
-                       { rawValue(ids::sampleOn) > 0.5f, rawValue(ids::distOn) > 0.5f, rawValue(ids::ringOn) > 0.5f, rawValue(ids::tremOn) > 0.5f,
+                       { rawValue(ids::sampleOn) > 0.5f, rawValue(ids::distOn) > 0.5f,
+                         rawValue(ids::ringOn) > 0.5f || rawValue(ids::modOn) > 0.5f, rawValue(ids::tremOn) > 0.5f,
                          rawValue(ids::delayOn) > 0.5f, rawValue(ids::reverbOn) > 0.5f, rawValue(ids::eqOn) > 0.5f },
                        live);
         setPowerActive(distOnButton, live);
         setPowerActive(ringOnButton, live);
+        setPowerActive(modOnButton, live);
+        const bool modOn = rawValue(ids::modOn) > 0.5f;
+        for (Component* c : std::initializer_list<Component*> { &modRateSlider, &modDepthSlider, &modFeedbackSlider, &modMixSlider, &modTypeBox })
+            c->setAlpha(offAlphaFor(*c, modOn));
         const bool ringOn = rawValue(ids::ringOn) > 0.5f;
         for (Component* c : std::initializer_list<Component*> { &ringHzSlider, &ringMixSlider })
             c->setAlpha(offAlphaFor(*c, ringOn));
@@ -2899,13 +2983,18 @@ void BitVibeEditor::timerCallback()
 
     if (pedalstyle::theme.wireframe)
     {
-        // the glow of every panel's outline: bright on each beat, fading towards the next, quieter while
-        // nothing plays, so the page itself keeps time with the sequencer
+        // every outline keeps time: the beat breathes the glow, a step change flashes it, and while the
+        // sequencer and its effects act the colour flushes from the edge colour to the accent
         const auto& engine = proc.getEngine();
-        float level = std::pow(1.0f - engine.getBeatPhase(), 3.0f);
-        if (!engine.isEffectSideActive())
-            level *= 0.35f;
-        pedalstyle::setPulse(level);
+        const float beatLevel = std::pow(1.0f - engine.getBeatPhase(), 3.0f);
+        const int step = engine.getCurrentStep();
+        if (step >= 0 && step != glowStep)
+            stepGlow = 1.0f;
+        glowStep = step;
+        stepGlow *= 0.78f;
+        const bool acting = engine.isEffectSideActive();
+        glowHeat += ((acting ? 1.0f : 0.0f) - glowHeat) * 0.2f;
+        pedalstyle::setPulse(jmax(beatLevel * (acting ? 1.0f : 0.35f), stepGlow), glowHeat);
         content.repaint();
     }
 
