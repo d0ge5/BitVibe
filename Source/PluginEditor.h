@@ -476,7 +476,8 @@ public:
     juce::PopupMenu presetMenu();
     void presetMenuChosen(int result);
     static constexpr int kMenuSave = 1, kMenuRename = 2, kMenuExport = 3, kMenuImport = 4, kMenuUndo = 5, kMenuRedo = 6,
-                         kMenuSlot = 100; // + the slot's index
+                         kMenuSlot = 100, // + the slot's index
+                         kMenuPack = 1000; // + the index of a preset of the pack
 
 private:
     static constexpr int kKnobs = 6;

@@ -332,6 +332,20 @@ Only record what you have the right to use.
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
+- **Preset pack:** twenty sounds built around the 16-step sequencer, its lanes, the stutter types and the tremolo, in
+  the preset menu under **Preset pack**. Like an import, one loads into the slot that is showing (your picked sounds
+  stay as they are); press SAVE to keep it there. The same files are in [`Presets/`](Presets) to share or import.
+  The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
+
+  | | | |
+  | --- | --- | --- |
+  | **Arp Sixteen**: a two-bar arpeggio in sixteenths, accented, with dotted echoes | **Glass Stairs**: each pick climbs in whole tones into a shimmer | **Tape Brake**: picks grind to a halt over a bar |
+  | **Scratch Cut**: scratched picks, and a scratch on beats 2 and 4 | **Frozen Pad**: a pick held as a breathing cloud in a long hall | **Backwards Rain**: reversed picks into echoes and a reversed hall |
+  | **Gate Grid**: a sixteen-step gate on a fuzzed chord | **Crush Accents**: clean on the beat, crushed in between | **Dub Throws**: only the off-beats go into the echoes and the spring |
+  | **Stutter Machine**: a filter sequence that stutters by itself | **Filter Walk 12**: twelve filter steps against a bar of sixteen | **Five Against Four**: a five-note figure over four beats |
+  | **Rate Ramp**: a dive through the sample rate, then a loop | **Tremolo Rush**: a tremolo that speeds up over two bars | **Mixed Signals**: pitch, filter and rate steps in turn |
+  | **Octave Bounce**: bouncing octaves with a rising stutter | **Lo-Fi Shuffle**: a dusty long-short gate over three beats | **Reverb Swells**: two steps swell backwards into a hall |
+  | **Freeze and Glide**: a melody that freezes on each bar's first step | **Chaos Engine**: random scratches, mixed steps, crush and fuzz | |
 - **Expression morph:** press **STORE A** with one sound on the knobs and **STORE B** with another, switch on
   **MORPH**, and the **Expression** slider (or your DAW automation or a MIDI pedal) blends between them.
 
@@ -390,6 +404,8 @@ build.bat BitVibeSmokeTest BitVibeEditorSnapshot
 `BitVibeSmokeTest <.vst3> <outdir>` loads the VST3 in a test host and exercises its parameters, audio,
 presets and state. `BitVibeEditorSnapshot <outdir>` renders the editor to PNG without a window (the
 screenshots above) and runs processor-level checks. Both exit non-zero if a check fails.
+The preset pack is written from the table in `Tools/PresetPack.h` with `BitVibeEditorSnapshot --write-presets Presets`
+(then rebuild, so the plug-in embeds the new files); the snapshot checks fail if the files and the table disagree.
 
 </details>
 

@@ -14,6 +14,7 @@
 #include "BeatDog.h"
 #include "TremoloPanel.h"
 #include "StepEditor.h"
+#include "PresetPack.h"
 #include "EffectGraphs.h"
 #include "BeatDogMesh.h"
 #include "UiSettings.h"
@@ -1567,6 +1568,92 @@ void testStepEditor(const File& outDir)
         s->setCurrentProgram(0);
         check(roundToInt(getValue(*s, ids::loopFrom)) == 2 && roundToInt(getValue(*s, ids::loopTo)) == 4, "a slot saved now loads as it was saved");
     }
+}
+
+// Writes the preset pack's files (BitVibeEditorSnapshot --write-presets <folder>).
+int writePresetPack(const File& folder)
+{
+    folder.createDirectory();
+    for (const auto& old : folder.findChildFiles(File::findFiles, false, "*.xml"))
+        old.deleteFile();
+    const auto& list = presetpack::presets();
+    for (size_t i = 0; i < list.size(); ++i)
+    {
+        const auto file = folder.getChildFile(presetpack::fileName((int) i, list[i]));
+        presetpack::build(list[i])->writeTo(file);
+        std::printf("wrote %s\n", file.getFullPathName().toRawUTF8());
+    }
+    return 0;
+}
+
+// The preset pack: the files match the table they were written from, the plug-in carries all of them, and each one
+// loads, uses something new (a length other than six, a lane, a stutter type or the tremolo) and makes a sound that is
+// clearly the effect's, without clipping.
+void testPresetPack(const File& outDir)
+{
+    std::puts("preset pack");
+    const auto& list = presetpack::presets();
+    const File folder = outDir.getParentDirectory().getChildFile("Presets");
+    int matching = 0;
+    for (size_t i = 0; i < list.size(); ++i)
+        if (auto saved = XmlDocument::parse(folder.getChildFile(presetpack::fileName((int) i, list[i]))))
+            matching += saved->toString() == presetpack::build(list[i])->toString() ? 1 : 0;
+    check(list.size() == 20 && matching == 20, "the 20 files in Presets/ match the table in PresetPack.h (" + String(matching)
+                                                   + "; run BitVibeEditorSnapshot --write-presets Presets after changing it)");
+    check(BitVibeProcessor::numPackPresets() == 20, "the plug-in carries the 20 presets (" + String(BitVibeProcessor::numPackPresets()) + ")");
+
+    // a guitar-like pluck every second
+    constexpr int fs = 48000, seconds = 4;
+    AudioBuffer<float> dry(2, fs * seconds);
+    dry.clear();
+    for (int start = fs / 4; start < fs * seconds; start += fs)
+        for (int n = 0; start + n < fs * seconds; ++n)
+        {
+            const double t = (double) n / fs, env = std::exp(-3.0 * t);
+            const float v = (float) (0.35 * env * (std::sin(MathConstants<double>::twoPi * 196.0 * t) + 0.5 * std::sin(MathConstants<double>::twoPi * 392.0 * t)
+                                                   + 0.25 * std::sin(MathConstants<double>::twoPi * 588.0 * t)));
+            dry.setSample(0, start + n, v);
+            dry.setSample(1, start + n, v);
+        }
+    const double dryRms = dry.getRMSLevel(0, 0, dry.getNumSamples());
+
+    int good = 0;
+    for (int i = 0; i < BitVibeProcessor::numPackPresets(); ++i)
+    {
+        auto p = makeProcessor();
+        String message;
+        const bool loaded = p->loadPackPreset(i, message);
+        const bool named = p->getProgramName(p->getCurrentProgram()) == BitVibeProcessor::packPresetName(i);
+        bool usesNew = roundToInt(getValue(*p, ids::seqLength)) != bitvibe::kDefaultSeqLength || roundToInt(getValue(*p, ids::stutterType)) != 0
+                       || getValue(*p, ids::tremOn) > 0.5f;
+        for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
+            for (int s = 0; s < bitvibe::kNumSteps; ++s)
+                usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
+
+        AudioBuffer<float> wet(dry);
+        MidiBuffer midi;
+        for (int pos = 0; pos < wet.getNumSamples(); pos += 512)
+        {
+            AudioBuffer<float> block(wet.getArrayOfWritePointers(), 2, pos, jmin(512, wet.getNumSamples() - pos));
+            p->processBlock(block, midi);
+        }
+        bool finite = true;
+        double diff = 0.0;
+        for (int n = 0; n < wet.getNumSamples(); ++n)
+        {
+            const float v = wet.getSample(0, n);
+            finite = finite && std::isfinite(v);
+            diff += (double) (v - dry.getSample(0, n)) * (v - dry.getSample(0, n));
+        }
+        diff = std::sqrt(diff / wet.getNumSamples());
+        const float peak = wet.getMagnitude(0, wet.getNumSamples());
+        const double rmsRatio = wet.getRMSLevel(0, 0, wet.getNumSamples()) / dryRms;
+        const bool ok = loaded && named && usesNew && finite && peak < 1.0f && rmsRatio > 0.25 && rmsRatio < 3.0 && diff > 0.1 * dryRms;
+        good += ok ? 1 : 0;
+        std::printf("    %-20s %s  peak %.2f  level x%.2f  change %.2f%s\n", BitVibeProcessor::packPresetName(i).toRawUTF8(), ok ? "ok  " : "FAIL", peak,
+                    rmsRatio, diff / dryRms, usesNew ? "" : "  (nothing new)");
+    }
+    check(good == 20, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of 20)");
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -3139,7 +3226,9 @@ int main(int argc, char** argv)
     uisettings::screenAreaOverride() = Rectangle<int>(0, 0, 3840, 2160); // a big screen: the editor opens at its designed size
     uisettings::markHelpSeen(); // the quick-start help would otherwise cover the screenshots
     uisettings::setAdvancedRight(true); // and the screenshots show every control
-    const File outDir(argv[1]);
+    if (String(argv[1]) == "--write-presets")
+        return writePresetPack(File::getCurrentWorkingDirectory().getChildFile(argc > 2 ? argv[2] : "Presets"));
+    const File outDir(File::getCurrentWorkingDirectory().getChildFile(argv[1]));
     outDir.createDirectory();
 
     auto processorOwner = makeProcessor();
@@ -3284,6 +3373,7 @@ int main(int argc, char** argv)
     testTremoloPanel(outDir);
     testVisuals(outDir);
     testStepEditor(outDir);
+    testPresetPack(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

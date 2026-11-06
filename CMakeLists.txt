@@ -106,7 +106,9 @@ if(BITVIBE_BUILD_PLUGIN)
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
     # the BEAT DOG animation: a sprite sheet rendered by Tools/beatdog/build_beat_dog.py
-    juce_add_binary_data(BitVibeAssets SOURCES Assets/beat_dog.jpg)
+    # and the preset pack: Presets/*.xml, written by the editor snapshot tool (--write-presets) and listed in the preset menu
+    file(GLOB BITVIBE_PRESET_PACK CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Presets/*.xml")
+    juce_add_binary_data(BitVibeAssets SOURCES Assets/beat_dog.jpg ${BITVIBE_PRESET_PACK})
 
     target_link_libraries(BitVibe
         PRIVATE

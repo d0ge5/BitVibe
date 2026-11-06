@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "BinaryData.h"
 #include <limits>
 #include <map>
 
@@ -1283,6 +1284,66 @@ bool BitVibeProcessor::saveCapturedClip(const File& file, String& message)
 File BitVibeProcessor::presetFolder()
 {
     return File::getSpecialLocation(File::userDocumentsDirectory).getChildFile("BitVibe").getChildFile("Presets");
+}
+
+namespace
+{
+struct PackPreset
+{
+    String file, name;
+    const char* data = nullptr;
+    int size = 0;
+};
+
+const std::vector<PackPreset>& presetPack()
+{
+    static const std::vector<PackPreset> pack = []
+    {
+        std::vector<PackPreset> list;
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+        {
+            const String file = BinaryData::originalFilenames[i];
+            if (!file.endsWithIgnoreCase(".xml"))
+                continue;
+            int size = 0;
+            const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+            if (data == nullptr)
+                continue;
+            String name = file.upToLastOccurrenceOf(".", false, false);
+            if (auto xml = XmlDocument::parse(String::fromUTF8(data, size)))
+                name = xml->getStringAttribute("name", name);
+            list.push_back({ file, name, data, size });
+        }
+        std::sort(list.begin(), list.end(), [](const PackPreset& a, const PackPreset& b) { return a.file.compareNatural(b.file) < 0; });
+        return list;
+    }();
+    return pack;
+}
+} // namespace
+
+int BitVibeProcessor::numPackPresets() { return (int) presetPack().size(); }
+
+String BitVibeProcessor::packPresetName(int index)
+{
+    const auto& pack = presetPack();
+    return index >= 0 && index < (int) pack.size() ? pack[(size_t) index].name : String();
+}
+
+bool BitVibeProcessor::loadPackPreset(int index, String& message)
+{
+    const auto& pack = presetPack();
+    if (index < 0 || index >= (int) pack.size())
+    {
+        message = "There is no such preset in the pack.";
+        return false;
+    }
+    const auto xml = XmlDocument::parse(String::fromUTF8(pack[(size_t) index].data, pack[(size_t) index].size));
+    if (xml == nullptr)
+    {
+        message = "The preset could not be read.";
+        return false;
+    }
+    return importPreset(*xml, message);
 }
 
 std::unique_ptr<XmlElement> BitVibeProcessor::exportPreset() const

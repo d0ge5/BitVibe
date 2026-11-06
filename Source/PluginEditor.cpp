@@ -1608,6 +1608,14 @@ PopupMenu BitVibeEditor::presetMenu()
     menu.addSeparator();
     menu.addItem(kMenuExport, "Export to a file...");
     menu.addItem(kMenuImport, "Import from a file...");
+    if (const int packSize = BitVibeProcessor::numPackPresets(); packSize > 0)
+    {
+        PopupMenu pack;
+        pack.addSectionHeader("LOADS INTO SLOT " + String(current + 1).paddedLeft('0', 2));
+        for (int i = 0; i < packSize; ++i)
+            pack.addItem(kMenuPack + i, BitVibeProcessor::packPresetName(i));
+        menu.addSubMenu("Preset pack", pack);
+    }
     return menu;
 }
 
@@ -1634,6 +1642,15 @@ void BitVibeEditor::presetMenuChosen(int result)
         exportPresetFile();
     else if (result == kMenuImport)
         importPresetFile();
+    else if (result >= kMenuPack && result < kMenuPack + BitVibeProcessor::numPackPresets())
+    {
+        proc.getUndo().remember();
+        String message;
+        if (!proc.loadPackPreset(result - kMenuPack, message))
+            AlertWindow::showMessageBoxAsync(MessageBoxIconType::WarningIcon, "Could not load the preset", message);
+        refreshPresetName();
+        repaint();
+    }
 }
 
 void BitVibeEditor::showPresetMenu()

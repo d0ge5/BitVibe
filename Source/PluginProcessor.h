@@ -168,6 +168,13 @@ public:
     bool importPreset(const juce::XmlElement&, juce::String& message);
     static juce::File presetFolder(); // Documents/BitVibe/Presets
 
+    // The preset pack that ships inside the plug-in (the files in Presets/), in file-name order. Loading one works like
+    // importing its file: into the selected slot, the shared effects and the beat pattern too (the picked sounds are
+    // left as they are).
+    static int numPackPresets();
+    static juce::String packPresetName(int index);
+    bool loadPackPreset(int index, juce::String& message);
+
     // ---- the sampler ----------------------------------------------------------------------------------------
     // Records programs on this computer (see AppAudioCapture).
     AppAudioCapture& getAppCapture() { return appCapture; }
