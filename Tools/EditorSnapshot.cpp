@@ -1630,7 +1630,8 @@ void testPresetPack(const File& outDir)
         const bool loaded = p->loadPackPreset(i, message);
         const bool named = p->getProgramName(p->getCurrentProgram()) == BitVibeProcessor::packPresetName(i);
         bool usesNew = roundToInt(getValue(*p, ids::seqLength)) != bitvibe::kDefaultSeqLength || roundToInt(getValue(*p, ids::stutterType)) != 0
-                       || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f;
+                       || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f
+                       || roundToInt(getValue(*p, ids::filterType)) != 0 || std::abs(getValue(*p, ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.05f;
         for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
@@ -1798,7 +1799,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 748, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 784, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -1859,7 +1860,7 @@ void testRightModes(const File& outDir)
     save(*ed, outDir.getChildFile("editor_simple.png"));
     ed->setRightMode(true);
     const int advanced = countRight(*ed);
-    check(advanced == simple + 3, "ADVANCED shows the stutter's length, type and hold (" + String(simple) + " then " + String(advanced) + ")");
+    check(advanced == simple + 5, "ADVANCED shows the stutter's length, type and hold, and the filter's type and resonance (" + String(simple) + " then " + String(advanced) + ")");
     check(ed->getEffectTab() == BitVibeEditor::kTabSamples, "the sample blend is the effect panel showing first");
     {
         // the effect tabs: one panel at a time, ADVANCED adds the extra controls of the one showing
@@ -1870,7 +1871,7 @@ void testRightModes(const File& outDir)
             ed->setEffectTab(tab);
             const int few = countRight(*ed);
             ed->setRightMode(true);
-            extra += countRight(*ed) - few == more + 3 ? 1 : 0;
+            extra += countRight(*ed) - few == more + 5 ? 1 : 0;
         }
         check(extra == 3, "each of the distortion, delay and reverb tabs shows its extra controls in ADVANCED (" + String(extra) + " of 3)");
         ed->setEffectTab(BitVibeEditor::kTabEq);
@@ -2624,7 +2625,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 62 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 62 and 0)");
+    check(controls == 64 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 64 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -2770,7 +2771,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 346, "346 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 348, "348 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

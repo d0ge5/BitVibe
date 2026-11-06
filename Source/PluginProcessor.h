@@ -109,6 +109,8 @@ inline constexpr const char* beatOutput = "beatOutput";
 
 inline constexpr const char* seqLength = "seqLength";
 inline constexpr const char* stutterType = "stutterType";
+inline constexpr const char* filterType = "filterType";
+inline constexpr const char* filterRes = "filterRes";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
@@ -414,6 +416,8 @@ private:
     std::array<std::array<std::atomic<float>*, bitvibe::kNumSteps>, bitvibe::kNumLanes> pLanes {};
     std::atomic<float>* pSeqLength = nullptr;
     std::atomic<float>* pStutterType = nullptr;
+    std::atomic<float>* pFilterType = nullptr;
+    std::atomic<float>* pFilterRes = nullptr;
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
     mutable juce::SpinLock morphLock;

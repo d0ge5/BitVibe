@@ -51,6 +51,9 @@ struct Params
     float filter = 1.0f;
     float bits = 1.0f;
     int stutter = 0;   // 0..22
+    // The filter's type (FilterType) and the RESONANCE knob, 0..1 (see mapping::ladderFeedback and filterQ).
+    int filterType = 0;
+    float filterRes = mapping::kDefaultFilterRes;
     int seqPlay = 5;   // 0..5  (off, once, twice, 4, 8, continuous)
     int seqMult = 1;   // 0..7  (x1 .. x128)
 
@@ -235,7 +238,9 @@ public:
 
         srKnobSm.setTime(fs, 10.0f);
         filterKnobSm.setTime(fs, 10.0f);
+        filterResSm.setTime(fs, 10.0f);
         bitsKnobSm.setTime(fs, 10.0f);
+        filterEnvelope.prepare(fs);
         pitchAmountSm.setTime(fs, 4.0f);
         cutoffLogSm.setTime(fs, 3.0f);
         filterMixSm.setTime(fs, 5.0f);
@@ -418,11 +423,28 @@ public:
             const float levels = std::exp2(bitsF - 1.0f);
             updateGate(mono, bitsF);
 
-            // Filter
-            const float fcTarget = std::clamp(mapping::filterHz(filterKnobSm.next(blk.filter)) * filterFactor,
-                                              24.0f, mapping::kFilterMaxHz);
+            // Filter: the knob (by the type's range) times the step's factor is the cutoff; the ENVELOPE type opens it
+            // further with each picked note. A change of type fades the filter out, swaps it and fades it back in.
+            const float envelopeOpen = filterEnvelope.process(mono);
+            const float fcKnob = mapping::filterHzFor(blk.filterType, filterKnobSm.next(blk.filter)) * filterFactor;
+            const float fcWanted = blk.filterType == FilterType::Envelope
+                                       ? fcKnob * std::exp2(mapping::kEnvelopeOctaves * envelopeOpen) : fcKnob;
+            const float fcTarget = std::clamp(fcWanted, 24.0f, mapping::kFilterMaxHz);
             const float fc = std::exp2(cutoffLogSm.next(std::log2(fcTarget)));
-            const float filterMix = filterMixSm.next(fc >= 22000.0f ? 0.0f : 1.0f);
+            const bool filterOff = fcKnob >= mapping::filterOffAboveHz(blk.filterType);
+            const bool filterSwitching = blk.filterType != filterShown;
+            const float filterMix = filterMixSm.next((filterOff || filterSwitching) ? 0.0f : 1.0f);
+            if (filterSwitching && filterMix <= 0.0f)
+            {
+                filterShown = blk.filterType;
+                for (auto& ch : channels)
+                {
+                    ch.ladder.reset();
+                    ch.svf.reset();
+                }
+            }
+            const float resonance = filterResSm.next(blk.filterRes);
+            const float ladderK = mapping::ladderFeedback(resonance), filterQ = mapping::filterQ(resonance);
             const float g = std::tan(kPi * std::min(fc, 0.45f * (float) fs) / (float) fs);
             const float G = g / (1.0f + g);
 
@@ -512,7 +534,16 @@ public:
                     y = (std::floor(clipped * levels) + 0.5f) / levels * gateGain;
                 }
 
-                const float filtered = ch.ladder.process(y, G);
+                float filtered;
+                switch (filterShown)
+                {
+                    case FilterType::Low: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Low); break;
+                    case FilterType::Band: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::Band); break;
+                    case FilterType::High: filtered = ch.svf.process(y, g, filterQ, StateVariableFilter::Mode::High); break;
+                    case FilterType::Ladder:
+                    case FilterType::Envelope: filtered = ch.ladder.process(y, G, ladderK); break;
+                    default: filtered = y; break;
+                }
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
                 const float cleanSequence = y * laneLevel; // the reverb hears the sequence before the distortion
@@ -638,6 +669,7 @@ private:
         StutterChannel stutter;
         PitchShifter pitch;
         LadderFilter ladder;
+        StateVariableFilter svf;
         Reverb reverb;
         Distortion dist, distReverb; // the second one distorts the reverb when the player asks for that
         Fuzz fuzz, fuzzReverb;       // the same two jobs for the fuzz setting
@@ -650,6 +682,8 @@ private:
     struct Block
     {
         float sampleRate = 1.0f, filter = 1.0f, bits = 1.0f;
+        FilterType filterType = FilterType::Ladder;
+        float filterRes = mapping::kDefaultFilterRes;
         mapping::StutterMode stutter;
         bool bypass = false;
         bool fxOnlyOnTriggers = false;
@@ -686,6 +720,8 @@ private:
     {
         blk.sampleRate = p.sampleRate;
         blk.filter = p.filter;
+        blk.filterType = (FilterType) std::clamp(p.filterType, 0, kNumFilterTypes - 1);
+        blk.filterRes = std::isfinite(p.filterRes) ? std::clamp(p.filterRes, 0.0f, 1.0f) : mapping::kDefaultFilterRes;
         blk.bits = p.bits;
         blk.bypass = p.bypass;
         blk.fxOnlyOnTriggers = p.fxOnlyOnTriggers;
@@ -759,10 +795,12 @@ private:
         {
             srKnobSm.snap(p.sampleRate);
             filterKnobSm.snap(p.filter);
+            filterResSm.snap(blk.filterRes);
             bitsKnobSm.snap(p.bits);
-            const float fc = mapping::filterHz(p.filter);
+            filterShown = blk.filterType;
+            const float fc = std::clamp(mapping::filterHzFor(blk.filterType, p.filter), 24.0f, mapping::kFilterMaxHz);
             cutoffLogSm.snap(std::log2(fc));
-            filterMixSm.snap(fc >= 22000.0f ? 0.0f : 1.0f);
+            filterMixSm.snap(fc >= mapping::filterOffAboveHz(blk.filterType) ? 0.0f : 1.0f);
             bypassSm.snap(p.bypass ? 0.0f : 1.0f);
             inGainSm.snap(dbToGain(p.inputGainDb));
             outGainSm.snap(dbToGain(p.outputGainDb));
@@ -1102,7 +1140,9 @@ private:
     bool primed = false;
 
     // smoothers
-    Smoother srKnobSm, filterKnobSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
+    FilterType filterShown = FilterType::Ladder; // the filter in use (the type changes once the old one has faded out)
+    EnvelopeFollower filterEnvelope;
+    Smoother srKnobSm, filterKnobSm, filterResSm, bitsKnobSm, pitchAmountSm, cutoffLogSm, filterMixSm, bypassSm, inGainSm, outGainSm, mixSm, reverbMixSm, reverbToneSm, reverbLevelSm, reverbLowSm, reverbHighSm, reverbDecaySm, sampleMixSm, loopSampleMixSm, distOnSm, tremOnSm, reverbOnSm, sampleOnSm, eqOnSm, delayOnSm, delayMixSm, delayLowSm, delayHighSm;
     bool delayIdle = true; // the delay was off: its buffer is cleared when it comes back
     Tremolo tremolo;
     bool tremWasActive = false;

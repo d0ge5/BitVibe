@@ -184,23 +184,24 @@ private:
 // Four-pole transistor-ladder-style low-pass (zero-delay-feedback form) with a soft clipper in
 // the loop. The hardware's documentation describes its filter as a ladder-style low-pass and a
 // review describes it as resonant, but the resonance amount is not documented.
-// ASSUMED: fixed moderate resonance.
+// ASSUMED: moderate resonance by default (a feedback of 1.4); the RESONANCE knob sets it from none to just short
+// of self-oscillation (4.0).
 class LadderFilter
 {
 public:
-    static constexpr float kResonance = 1.4f; // 4.0 would self-oscillate
+    static constexpr float kResonance = 1.4f; // the default feedback
 
     void reset() { s[0] = s[1] = s[2] = s[3] = 0.0f; }
 
-    // G = g / (1 + g), g = tan(pi * fc / fs)
-    float process(float x, float G)
+    // G = g / (1 + g), g = tan(pi * fc / fs); k = the feedback, 0 .. just under 4
+    float process(float x, float G, float k = kResonance)
     {
         const float oneMinusG = 1.0f - G;
         const float G2 = G * G, G3 = G2 * G, G4 = G2 * G2;
         const float S = oneMinusG * (G3 * s[0] + G2 * s[1] + G * s[2] + s[3]);
-        const float y4 = (G4 * x + S) / (1.0f + kResonance * G4);
+        const float y4 = (G4 * x + S) / (1.0f + k * G4);
 
-        float u = x - kResonance * y4;
+        float u = x - k * y4;
         u = std::tanh(u);
 
         float in = u;
@@ -211,12 +212,76 @@ public:
             s[i] = y + v;
             in = y;
         }
-        // Make up the passband loss caused by the feedback so the filter is ~unity at low frequencies.
-        return in * (1.0f + kResonance);
+        // Make up the passband loss caused by the feedback so the filter is ~unity at low frequencies; past the
+        // default feedback only half of it, so a screaming resonance does not come with a shouting body.
+        return in * (1.0f + k) / (1.0f + 0.5f * std::max(0.0f, k - kResonance));
     }
 
 private:
     float s[4] {};
+};
+
+// Two-pole state-variable filter (the topology-preserving form, after Zavalishin, "The Art of VA Filter Design"),
+// giving a low-pass, a band-pass and a high-pass of the same cutoff and Q. Q = 0.5 is no peak at all (two cascaded
+// one-poles); 0.7071 is flat; higher Qs peak at the cutoff. The low- and high-pass are brought down as the Q rises so
+// the peak stays within reason (about 12 dB at Q = 20); the band-pass is unity at its centre whatever the Q.
+class StateVariableFilter
+{
+public:
+    enum class Mode { Low, Band, High };
+
+    void reset() { ic1 = ic2 = 0.0f; }
+
+    // g = tan(pi * fc / fs)
+    float process(float x, float g, float Q, Mode mode)
+    {
+        const float twoR = 1.0f / std::max(Q, 0.5f);
+        const float a1 = 1.0f / (1.0f + g * (g + twoR));
+        const float v1 = a1 * (ic1 + g * (x - ic2));
+        const float v2 = ic2 + g * v1;
+        ic1 = 2.0f * v1 - ic1;
+        ic2 = 2.0f * v2 - ic2;
+        switch (mode)
+        {
+            case Mode::Band: return v1 * twoR;
+            case Mode::High: return (x - twoR * v1 - v2) * peakTrim(Q);
+            case Mode::Low: break;
+        }
+        return v2 * peakTrim(Q);
+    }
+
+    static float peakTrim(float Q) { return Q > 0.7071f ? 1.0f / std::sqrt(Q / 0.7071f) : 1.0f; }
+
+private:
+    float ic1 = 0.0f, ic2 = 0.0f;
+};
+
+// Envelope follower for the ENVELOPE filter type: how hard the note being played is, 0 .. 1, rising in a few
+// milliseconds and falling back over a tenth of a second, so the filter opens on the pick and closes as the note
+// dies away (an auto-wah).
+class EnvelopeFollower
+{
+public:
+    void prepare(double sampleRate)
+    {
+        attack = 1.0f - std::exp(-1.0f / (float) (sampleRate * 0.004));
+        release = 1.0f - std::exp(-1.0f / (float) (sampleRate * 0.12));
+        env = 0.0f;
+    }
+    void reset() { env = 0.0f; }
+
+    // x = the (mono) signal; returns how open the filter should be, 0 .. 1 (a note of a quarter of full scale opens it fully)
+    float process(float x)
+    {
+        const float level = std::abs(x);
+        env += (level - env) * (level > env ? attack : release);
+        if (env < 1.0e-6f)
+            env = 0.0f;
+        return std::sqrt(std::min(1.0f, env * 4.0f));
+    }
+
+private:
+    float attack = 1.0f, release = 1.0f, env = 0.0f;
 };
 
 // "Stuck buffer" stutter, one instance per channel. On a trigger it captures a snippet of the

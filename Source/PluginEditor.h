@@ -615,6 +615,11 @@ private:
     int hearChoice() const;
     void setHear(int choice);
     juce::ComboBox headroomBox, stutterLenBox, stutterTypeBox;
+    // the FILTER row (ADVANCED): the filter's type and its resonance
+    juce::ComboBox filterTypeBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> filterTypeAtt;
+    KnobSlider filterResSlider;
+    std::unique_ptr<APVTS::SliderAttachment> filterResAtt;
 
     // the delay on the sequenced sound: time, mix, decay, repeats, low and high cut, and its power button
     KnobSlider delayMixSlider, delayDecaySlider, delayRepeatsSlider, delayWobbleSlider, delayLowSlider, delayHighSlider;

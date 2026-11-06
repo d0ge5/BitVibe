@@ -48,9 +48,19 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     add(std::make_unique<AudioParameterFloat>(
         id(ids::sampleRate), "Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([](float v, int) { return hzText(mapping::sampleRateHz(v)); })));
+    // the filter's type (stored in the preset slots); the FILTER knob's text is by the range of the type in use (the
+    // band-pass and high-pass stop at 8 kHz)
+    auto filterTypeParam = std::make_unique<AudioParameterChoice>(id(ids::filterType), "Filter Type",
+                                                                  StringArray { "Ladder", "Low Pass", "Band Pass", "High Pass", "Envelope" }, 0);
     add(std::make_unique<AudioParameterFloat>(
         id(ids::filter), "Filter", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
-        withText([](float v, int) { return hzText(mapping::filterHz(v)); })));
+        withText([type = filterTypeParam.get()](float v, int) {
+            return v >= 0.99f ? String("Off") : hzText(mapping::filterHzFor((FilterType) type->getIndex(), v));
+        })));
+    add(std::move(filterTypeParam));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::filterRes), "Resonance", NormalisableRange<float>(0.0f, 1.0f), mapping::kDefaultFilterRes,
+        withText([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })));
     add(std::make_unique<AudioParameterFloat>(
         id(ids::bits), "Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f,
         withText([](float v, int) { return String(mapping::bitDepth(v), 1) + " bit"; })));
@@ -389,7 +399,7 @@ namespace
 // option are left out on purpose (see the comment in the header).
 std::vector<String> presetParameterIds()
 {
-    std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult };
+    std::vector<String> list { ids::sampleRate, ids::filter, ids::bits, ids::stutter, ids::seqPlay, ids::seqMult, ids::filterType, ids::filterRes };
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         list.push_back(ids::step(i));
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
@@ -553,6 +563,8 @@ BitVibeProcessor::BitVibeProcessor()
             pLanes[(size_t) l][(size_t) i] = apvts.getRawParameterValue(ids::lane(l, i));
     pSeqLength = raw(ids::seqLength);
     pStutterType = raw(ids::stutterType);
+    pFilterType = raw(ids::filterType);
+    pFilterRes = raw(ids::filterRes);
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -701,6 +713,8 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.delayLowCutHz = pDelayLowCut->load();
     p.delayHighCutHz = pDelayHighCut->load();
     p.delayWobble = pDelayWobble->load();
+    p.filterType = roundToInt(pFilterType->load());
+    p.filterRes = pFilterRes->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
     p.reverbLevelDb = pReverbLevel->load();

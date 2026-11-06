@@ -31,7 +31,8 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 **The pedal**
 
 - **Sample-rate reduction** (48 kHz down to 48 Hz) and **bit-depth reduction** (24 bit down to 1 bit).
-- **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
+- **Filter** with five types and a **RESONANCE** knob: the ladder-style low-pass (96 Hz to 24 kHz), a cleaner
+  two-pole low-pass, a band-pass and a high-pass (96 Hz to 8 kHz), and an **envelope** type that opens with each pick.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random), a hold to freeze it, and six **stutter
   types**: repeat, reverse, rise (each repeat a tone higher), tape stop, scratch and freeze.
 - **Step sequencer of up to 16 steps** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole
@@ -150,7 +151,7 @@ on afterwards. The tempo clock sets the speed of all of it.
 | Knob | What it does |
 | --- | --- |
 | **Sample Rate** | Sample-rate reduction (fully clockwise = off) |
-| **Filter** | Ladder low-pass (fully clockwise = off) |
+| **Filter** | The filter's cutoff (fully clockwise = off); its type and RESONANCE are in ADVANCED |
 | **Bits** | Bit depth, 24 to 1 bit (fully clockwise = off) |
 | **Stutter** | Off, then three speeds with 1 to 16 repeats, then random |
 | **Sequencer** | Number of passes: off, once, twice, 4x, 8x, continuous |
@@ -198,7 +199,8 @@ stutter and sequencer) with the last three seconds of your playing scrolling pas
 crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over
 the line; and **HEADROOM** (Instrument or Line: set it first). **WHAT COMES OUT** has **DRY/WET**, **OUTPUT** with an
 output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
-out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**:
+out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
+and a **FILTER** row: the filter's type and its **RESONANCE**:
 
 - **HEAR** is what comes out. **Guitar + effect**: both, blended with DRY/WET. **Clean in between**: the crush and
   filter act only while a stutter or sequence plays, so your playing stays clean in between. **Effect only**: your
@@ -214,6 +216,16 @@ out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of
   hand (one push and pull per slice), and **FREEZE** holds the end of it as a steady cloud of tiny overlapping grains
   for that many slices. With HOLD each of them goes on until you let go. The knob's read-out names the type,
   it is saved with the preset, and in SIMPLE a type other than REPEAT is listed under "Also on".
+- **FILTER TYPE** is what the FILTER knob is the cutoff of. **LADDER** is the pedal's own four-pole low-pass
+  (24 dB/oct). **LOW PASS** is a two-pole one (12 dB/oct): cleaner and more like a synth. **BAND PASS** leaves only
+  the sound around the cutoff and **HIGH PASS** only the sound above it, thin; these two run 96 Hz to 8 kHz, as there
+  would be nothing left at 24 kHz. **ENVELOPE** is an auto-wah: the ladder, resting where FILTER sets it and opened
+  up to three octaves by each picked note, closing again as the note dies away. For every type fully right is off,
+  and a filter step in the sequence is still a percent of the knob.
+- **RESONANCE** is a peak at the cutoff: turn it right for a sharper, more vocal sweep; fully right the ladder is
+  just short of whistling by itself and the others peak hard. Its middle setting (37%, double-click to get back
+  to it) is the resonance the pedal always had. Both are saved with the preset, and in SIMPLE a type other than
+  LADDER or a changed RESONANCE is listed under "Also on".
 
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
@@ -343,8 +355,8 @@ Only record what you have the right to use.
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** thirty-two sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo and
-  the delay's tape wobble, in
+- **Preset pack:** thirty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
+  the delay's tape wobble and the filter types, in
   the preset menu under **Preset pack**. Like an import, one loads into the slot that is showing (your picked sounds
   stay as they are); press SAVE to keep it there. The same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
@@ -361,7 +373,8 @@ Only record what you have the right to use.
   | **Seasick Arp**: a minor arpeggio with echoes sliding out of tune | **Half-Speed Scratch**: picks dragged back and forth an octave down | **Reverse Climb**: sixteen steps up, flipping backwards at the top |
   | **Tape Stop Fill**: a sixteenth groove that brakes at the end of each bar | **Pulse Width**: a square tremolo thinning out step by step | **Slow Motion**: a falling line under a tremolo that slows to a crawl |
   | **Bitstorm**: the sample rate rattling in thirty-seconds, random stutters | **Ghost Notes**: quiet ghost steps round the accents, a worn echo | **Frozen Steps**: a rising figure freezing into shimmer on every beat |
-  | **Echo Ladder**: each step sends more to the echoes as the line climbs | **Underwater**: a low swaying filter, slow tremolo, drowned tape echo | |
+  | **Echo Ladder**: each step sends more to the echoes as the line climbs | **Underwater**: a low swaying filter, slow tremolo, drowned tape echo | **Acid Walk**: a resonant band-pass walking sixteen steps, with a sixteenth echo |
+  | **Wah Picks**: an auto-wah on a four-note figure, into a spring | **Squelch Ladder**: the ladder near to whistling, swept by eight steps | **Thin Air**: a high-pass climbing over a bar and falling back, under a tremolo |
 - **Expression morph:** press **STORE A** with one sound on the knobs and **STORE B** with another, switch on
   **MORPH**, and the **Expression** slider (or your DAW automation or a MIDI pedal) blends between them.
 

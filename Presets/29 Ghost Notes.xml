@@ -2,11 +2,11 @@
 
 <BITVIBE_PRESET version="1" name="Ghost Notes">
   <PRESET name="Ghost Notes" sample="1.0" filter="1.0" bits="1.0" stutter="0.0"
-          seqPlay="1.0" seqMult="0.2857142984867096" step1="0.5" step2="0.5"
-          step3="0.5" step4="0.9444444179534912" step5="0.5" step6="0.5"
-          step7="0.5" step8="0.5" step9="0.5" step10="0.5" step11="0.9444444179534912"
-          step12="0.5" step13="0.5" step14="0.7592592835426331" step15="0.5"
-          step16="0.5" stepType1="0.0" stepType2="0.0" stepType3="0.0"
+          seqPlay="1.0" seqMult="0.2857142984867096" filterType="0.0" filterRes="0.3684210479259491"
+          step1="0.5" step2="0.5" step3="0.5" step4="0.9444444179534912"
+          step5="0.5" step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"
+          step11="0.9444444179534912" step12="0.5" step13="0.5" step14="0.7592592835426331"
+          step15="0.5" step16="0.5" stepType1="0.0" stepType2="0.0" stepType3="0.0"
           stepType4="0.0" stepType5="0.0" stepType6="0.0" stepType7="0.0"
           stepType8="0.0" stepType9="0.0" stepType10="0.0" stepType11="0.0"
           stepType12="0.0" stepType13="0.0" stepType14="0.0" stepType15="0.0"

@@ -61,6 +61,22 @@ enum class SeqType
     SampleRate = 2
 };
 
+// What the FILTER knob is a cutoff of. The RESONANCE knob applies to all of them.
+//   Ladder    the four-pole ladder low-pass (24 dB / oct), the pedal's own
+//   Low       a two-pole state-variable low-pass (12 dB / oct): cleaner, more like a synth
+//   Band      the same filter's band-pass: only the sound around the cutoff is left
+//   High      its high-pass: the sound above the cutoff is left, thin
+//   Envelope  the ladder, opened up to three octaves by each picked note (an auto-wah); the knob is where it rests
+enum class FilterType
+{
+    Ladder = 0,
+    Low,
+    Band,
+    High,
+    Envelope
+};
+inline constexpr int kNumFilterTypes = 5;
+
 namespace mapping
 {
     // Manual, section 1.
@@ -82,6 +98,25 @@ namespace mapping
     {
         return kFilterMinHz * std::pow(kFilterMaxHz / kFilterMinHz, knob);
     }
+
+    // The band-pass and the high-pass would leave nothing at 24 kHz, so their knob stops at 8 kHz, and the last bit of
+    // its travel switches them off (as it does the others, above 22 kHz).
+    inline constexpr float kFilterBandMaxHz = 8000.0f;
+    inline bool filterHasBandRange(FilterType t) { return t == FilterType::Band || t == FilterType::High; }
+    inline float filterHzFor(FilterType t, float knob)
+    {
+        return filterHasBandRange(t) ? kFilterMinHz * std::pow(kFilterBandMaxHz / kFilterMinHz, knob) : filterHz(knob);
+    }
+    inline float filterOffAboveHz(FilterType t) { return filterHasBandRange(t) ? 0.975f * kFilterBandMaxHz : 22000.0f; }
+
+    // The RESONANCE knob, 0..1. The ladder's feedback (4 would self-oscillate) and the state-variable filter's Q
+    // (0.5, no peak, up to 20). The default is the feedback the ladder had before the knob existed.
+    inline constexpr float kLadderMaxFeedback = 3.8f;
+    inline constexpr float kDefaultFilterRes = 1.4f / kLadderMaxFeedback;
+    inline float ladderFeedback(float res) { return kLadderMaxFeedback * std::clamp(res, 0.0f, 1.0f); }
+    inline float filterQ(float res) { return 0.5f * std::pow(10.0f, 1.6f * std::clamp(res, 0.0f, 1.0f)); }
+    // How far the ENVELOPE type opens the cutoff, in octaves, at the peak of a picked note.
+    inline constexpr float kEnvelopeOctaves = 3.0f;
 
     inline float bitDepth(float knob) { return kMinBits + (kMaxBits - kMinBits) * knob; }
 

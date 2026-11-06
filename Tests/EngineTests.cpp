@@ -278,6 +278,115 @@ void testFilter()
     CHECK(std::abs(rms(out, 0.2, 0.5) - rms(in, 0.2, 0.5)) < 1.0e-4, "");
 }
 
+// The filter types and the RESONANCE knob.
+void testFilterTypes()
+{
+    std::puts("filter types and resonance");
+    // the gain of a tone through the filter, in dB
+    auto gainDb = [](const Params& p, double f)
+    {
+        const Signal in = sine(f, 1.0, 0.3f);
+        return db(std::sqrt(tonePower(render(p, in), 0.3, 1.0, f) / tonePower(in, 0.3, 1.0, f)));
+    };
+    auto at = [](FilterType t, float hz, float res)
+    {
+        Params p = neutral();
+        p.filterType = (int) t;
+        p.filterRes = res;
+        const float top = mapping::filterHasBandRange(t) ? mapping::kFilterBandMaxHz : mapping::kFilterMaxHz;
+        p.filter = std::log(hz / mapping::kFilterMinHz) / std::log(top / mapping::kFilterMinHz);
+        return p;
+    };
+    CHECK(std::abs(mapping::filterHzFor(FilterType::Band, 1.0f) - mapping::kFilterBandMaxHz) < 0.5f
+              && std::abs(mapping::filterHzFor(FilterType::High, 0.0f) - mapping::kFilterMinHz) < 1.0e-3f
+              && std::abs(mapping::filterHzFor(FilterType::Low, 1.0f) - mapping::kFilterMaxHz) < 0.5f,
+          "the band-pass and high-pass run 96 Hz to 8 kHz, the others to 24 kHz");
+
+    // LOW PASS: a 12 dB / oct low-pass
+    {
+        const double low = gainDb(at(FilterType::Low, 500.0f, 0.0f), 100.0), high = gainDb(at(FilterType::Low, 500.0f, 0.0f), 5000.0);
+        CHECK(std::abs(low) < 3.0 && high < -30.0 && high > -60.0, "LOW PASS at 500 Hz: 100 Hz %g dB, 5 kHz %g dB (gentler than the ladder)", low, high);
+    }
+    // BAND PASS: the centre passes, both sides fall away
+    {
+        const Params p = at(FilterType::Band, 500.0f, 0.5f);
+        const double centre = gainDb(p, 500.0), low = gainDb(p, 100.0), high = gainDb(p, 5000.0);
+        CHECK(std::abs(centre) < 3.0 && low < -10.0 && high < -10.0, "BAND PASS at 500 Hz: centre %g dB, 100 Hz %g dB, 5 kHz %g dB", centre, low, high);
+    }
+    // HIGH PASS: the highs pass, the lows fall away
+    {
+        const Params p = at(FilterType::High, 500.0f, 0.0f);
+        const double low = gainDb(p, 100.0), high = gainDb(p, 5000.0);
+        CHECK(low < -20.0 && std::abs(high) < 3.0, "HIGH PASS at 500 Hz: 100 Hz %g dB, 5 kHz %g dB", low, high);
+    }
+    // RESONANCE: a peak at the cutoff that grows with the knob, on the ladder and on the state-variable filter
+    for (FilterType t : { FilterType::Ladder, FilterType::Low })
+    {
+        const double none = gainDb(at(t, 500.0f, 0.0f), 500.0), some = gainDb(at(t, 500.0f, mapping::kDefaultFilterRes), 500.0),
+                     lots = gainDb(at(t, 500.0f, 0.95f), 500.0);
+        CHECK(lots > some + 4.0 && some > none, "type %d: the cutoff gain rises with RESONANCE (%g, %g, %g dB)", (int) t, none, some, lots);
+    }
+    // the default RESONANCE is the ladder as it was before the knob
+    {
+        Params before = neutral();
+        before.filter = std::log(500.0f / 96.0f) / std::log(250.0f);
+        LadderFilter a, b;
+        const float G = 0.05f;
+        double diff = 0.0;
+        for (int n = 0; n < 2000; ++n)
+        {
+            const float x = n == 10 ? 1.0f : 0.0f;
+            diff = std::max(diff, (double) std::abs(a.process(x, G) - b.process(x, G, mapping::ladderFeedback(mapping::kDefaultFilterRes))));
+        }
+        CHECK(diff < 1.0e-6, "the default RESONANCE is the old fixed one (%g)", diff);
+    }
+    // ENVELOPE: the filter rests low and a note opens it
+    {
+        const double closed = gainDb(at(FilterType::Ladder, 300.0f, 0.3f), 2000.0), open = gainDb(at(FilterType::Envelope, 300.0f, 0.3f), 2000.0);
+        CHECK(open > closed + 15.0, "ENVELOPE: a note at 2 kHz comes through a filter resting at 300 Hz (%g dB, against %g)", open, closed);
+    }
+    // fully right every type is off: the input comes out untouched
+    for (int t = 0; t < kNumFilterTypes; ++t)
+    {
+        Params p = neutral();
+        p.filterType = t;
+        p.filterRes = 0.9f;
+        const Signal in = sine(3000.0, 0.5);
+        const Signal out = render(p, in);
+        CHECK(std::abs(rms(out, 0.2, 0.5) - rms(in, 0.2, 0.5)) < 1.0e-4, "type %d fully right: off", t);
+    }
+    // the most resonance there is, on a loud rough signal: it stays finite and within bounds
+    for (int t = 0; t < kNumFilterTypes; ++t)
+    {
+        Params p = at((FilterType) t, 800.0f, 1.0f);
+        Signal in((size_t) kFs);
+        for (size_t n = 0; n < in.size(); ++n)
+            in[n] = 0.45f * (float) (std::sin(2.0 * 3.14159265358979 * 800.0 * (double) n / kFs) + std::sin(2.0 * 3.14159265358979 * 123.0 * (double) n / kFs));
+        const Signal out = render(p, in);
+        float peak = 0.0f;
+        bool finite = true;
+        for (float v : out)
+        {
+            finite = finite && std::isfinite(v);
+            peak = std::max(peak, std::abs(v));
+        }
+        CHECK(finite && peak < 4.0f, "type %d at full RESONANCE stays finite and under 12 dB (peak %g)", t, (double) peak);
+    }
+    // a change of type while a tone plays: no bang
+    {
+        const Signal in = sine(440.0, 1.0, 0.4f);
+        Params p = at(FilterType::Ladder, 600.0f, 0.5f);
+        const Signal out = render(p, in, [](Params& q, size_t pos) { q.filterType = pos >= (size_t) kFs / 2 ? (int) FilterType::Band : (int) FilterType::Ladder; });
+        float peak = 0.0f, jump = 0.0f;
+        for (size_t n = 1; n < out.size(); ++n)
+        {
+            peak = std::max(peak, std::abs(out[n]));
+            jump = std::max(jump, std::abs(out[n] - out[n - 1]));
+        }
+        CHECK(peak < 1.0f && jump < 0.2f, "switching LADDER to BAND PASS mid-note: peak %g, biggest step %g", (double) peak, (double) jump);
+    }
+}
+
 void testAttackDetector()
 {
     std::puts("attack detector: one trigger per pick, none on sustain");
@@ -3628,6 +3737,7 @@ int main(int argc, char** argv)
     testBitDepth();
     testSampleRate();
     testFilter();
+    testFilterTypes();
     testAttackDetector();
     testStutter();
     testSequencer();

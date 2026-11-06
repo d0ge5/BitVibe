@@ -116,6 +116,8 @@ inline float pct(float fraction) { return 0.03f + 0.94f * fraction; } // a filte
 constexpr float kSkip = 0.0f, kMute = 1.0f;
 // stutter types
 constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5;
+// filter types
+constexpr int kLadder = 0, kLowPass = 1, kBandPass = 2, kHighPass = 3, kEnvelope = 4;
 // delay times (kDelayDivisions)
 constexpr int k32nd = 0, k16th = 2, k16thDotted = 3, k8th = 5, k8thDotted = 6, kQuarter = 8, kQuarterDotted = 9;
 // reverb types
@@ -433,6 +435,58 @@ inline const std::vector<Preset>& presets()
              b.set(ids::delayWobble, 1.0f);
              b.reverb(kHall, 0.35f, 0.75f);
              b.set(ids::reverbTone, 0.2f);
+         } },
+        { "Acid Walk", [](Builder& b) {
+             // a resonant band-pass walking up and down sixteen steps, with a sixteenth echo: the acid line
+             b.set(ids::tempo, 126.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kBandPass);
+             b.set(ids::filterRes, 0.85f);
+             b.set(ids::filter, 0.8f);
+             b.steps({ pct(0.1f), pct(0.3f), pct(0.15f), pct(0.5f), pct(0.2f), pct(0.7f), pct(0.25f), pct(1.0f),
+                       pct(0.6f), pct(0.35f), pct(0.8f), pct(0.2f), pct(0.45f), pct(0.12f), pct(0.3f), pct(0.08f) });
+             b.lane(Lane::Level, { 1.0f, 0.7f, 0.9f, 0.7f, 1.0f, 0.7f, 0.9f, 0.7f });
+             b.dist(0, 0.3f, 0.55f, 0.7f);
+             b.delay(k16th, 0.25f, 0.5f, 3);
+         } },
+        { "Wah Picks", [](Builder& b) {
+             // an auto-wah: each pick opens the filter over a four-note figure that plays four times, into a spring
+             b.set(ids::tempo, 100.0f);
+             b.sequence(4, 3, 1);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.set(ids::filterType, (float) kEnvelope);
+             b.set(ids::filterRes, 0.6f);
+             b.set(ids::filter, 0.28f);
+             b.reverb(kSpring, 0.25f, 0.5f);
+         } },
+        { "Squelch Ladder", [](Builder& b) {
+             // the ladder near to whistling, swept by eight steps and a little crush on the off-beats, with dotted echoes
+             b.set(ids::tempo, 118.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kLadder);
+             b.set(ids::filterRes, 0.92f);
+             b.set(ids::filter, 0.7f);
+             b.steps({ pct(0.08f), pct(0.4f), pct(0.15f), pct(0.9f), pct(0.1f), pct(0.6f), pct(0.25f), pct(0.35f) });
+             b.lane(Lane::Crush, { 0.0f, 0.3f });
+             b.delay(k8thDotted, 0.3f, 0.5f, 4);
+         } },
+        { "Thin Air", [](Builder& b) {
+             // a high-pass climbing over a bar and falling back, under a slow tremolo, in a hall
+             b.set(ids::tempo, 92.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 1);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kHighPass);
+             b.set(ids::filterRes, 0.55f);
+             b.set(ids::filter, 0.85f);
+             b.steps({ pct(0.05f), pct(0.1f), pct(0.18f), pct(0.28f), pct(0.4f), pct(0.55f), pct(0.72f), pct(0.9f),
+                       pct(0.9f), pct(0.72f), pct(0.55f), pct(0.4f), pct(0.28f), pct(0.18f), pct(0.1f), pct(0.05f) });
+             b.tremolo(3.0f, 0.5f, 0.2f);
+             b.reverb(kHall, 0.3f, 0.6f);
          } },
     };
     return list;

@@ -2,12 +2,12 @@
 
 <BITVIBE_PRESET version="1" name="Mixed Signals">
   <PRESET name="Mixed Signals" sample="1.0" filter="1.0" bits="1.0" stutter="0.0"
-          seqPlay="1.0" seqMult="0.1428571492433548" step1="0.9444444179534912"
-          step2="0.07699999958276749" step3="0.1240000054240227" step4="0.0555555559694767"
-          step5="0.1710000038146973" step6="0.06759999692440033" step7="0.7592592835426331"
-          step8="0.3120000064373016" step9="0.5" step10="0.5" step11="0.5"
-          step12="0.5" step13="0.5" step14="0.5" step15="0.5" step16="0.5"
-          stepType1="0.3333333432674408" stepType2="0.6666666865348816"
+          seqPlay="1.0" seqMult="0.1428571492433548" filterType="0.0" filterRes="0.3684210479259491"
+          step1="0.9444444179534912" step2="0.07699999958276749" step3="0.1240000054240227"
+          step4="0.0555555559694767" step5="0.1710000038146973" step6="0.06759999692440033"
+          step7="0.7592592835426331" step8="0.3120000064373016" step9="0.5"
+          step10="0.5" step11="0.5" step12="0.5" step13="0.5" step14="0.5"
+          step15="0.5" step16="0.5" stepType1="0.3333333432674408" stepType2="0.6666666865348816"
           stepType3="1.0" stepType4="0.3333333432674408" stepType5="0.6666666865348816"
           stepType6="1.0" stepType7="0.3333333432674408" stepType8="0.6666666865348816"
           stepType9="0.0" stepType10="0.0" stepType11="0.0" stepType12="0.0"

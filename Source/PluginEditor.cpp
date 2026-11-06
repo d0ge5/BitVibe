@@ -1205,6 +1205,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     smallKnob(mixSlider, mixAtt, ids::mix);
     smallKnob(outSlider, outAtt, ids::outputGain);
     smallKnob(trigSlider, trigAtt, ids::sensitivity);
+    smallKnob(filterResSlider, filterResAtt, ids::filterRes);
     smallKnob(reverbDecaySlider, reverbDecayAtt, ids::reverbDecay);
     smallKnob(reverbToneSlider, reverbToneAtt, ids::reverbTone);
     reverbReverseButton.setLookAndFeel(&laf);
@@ -1305,6 +1306,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     stutterLenAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stutterLen, stutterLenBox);
     fillCombo(stutterTypeBox, ids::stutterType);
     stutterTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stutterType, stutterTypeBox);
+    fillCombo(filterTypeBox, ids::filterType);
+    filterTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::filterType, filterTypeBox);
     hearBox.addItemList({ "Guitar + effect", "Clean in between", "Effect only" }, 1);
     hearBox.setLookAndFeel(&laf);
     hearBox.onChange = [this] { setHear(hearBox.getSelectedId() - 1); };
@@ -1435,7 +1438,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &stutterTypeBox, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
+                        &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
         pedalComponents.push_back(&k.front);
@@ -1540,6 +1543,7 @@ BitVibeEditor::~BitVibeEditor()
     headroomBox.setLookAndFeel(nullptr);
     stutterLenBox.setLookAndFeel(nullptr);
     stutterTypeBox.setLookAndFeel(nullptr);
+    filterTypeBox.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
 }
 
@@ -1855,8 +1859,8 @@ void BitVibeEditor::setRightMode(bool advanced)
 void BitVibeEditor::applyRightMode()
 {
     const bool show = advancedRight && !drumsShown;
-    for (Component* c : std::initializer_list<Component*> { &holdButton, &stutterLenBox, &stutterTypeBox, &setUpButton, &expressionSlider,
-                                                            &setDownButton, &morphButton })
+    for (Component* c : std::initializer_list<Component*> { &holdButton, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider,
+                                                            &setUpButton, &expressionSlider, &setDownButton, &morphButton })
         c->setVisible(show);
     if (!advancedRight && effectTab == kTabEq)
         effectTab = kTabSamples; // the EQ is an ADVANCED control
@@ -1897,7 +1901,7 @@ Rectangle<int> BitVibeEditor::reverbArea() const { return effectsArea(); }
 int BitVibeEditor::eqTop() const { return effectsArea().getY(); }
 int BitVibeEditor::columnBottom() const { return globalTop() + globalHeight(); }
 int BitVibeEditor::globalTop() const { return (beatDogShown ? beatDogArea().getBottom() : effectsArea().getBottom()) + kPanelGap; }
-int BitVibeEditor::globalHeight() const { return advancedRight ? 182 : 162; }
+int BitVibeEditor::globalHeight() const { return advancedRight ? 218 : 162; }
 Rectangle<int> BitVibeEditor::beatDogArea() const { return { kSideX, effectsArea().getBottom() + kPanelGap, 456, 164 }; }
 // Tall enough for the longer column (the right-hand one, as a rule), and for the note that can show under it.
 int BitVibeEditor::pedalPageHeight() const
@@ -1989,7 +1993,8 @@ String BitVibeEditor::readoutText(int i) const
     switch (i)
     {
         case 0: return hzText(mapping::sampleRateHz(rawValue(ids::sampleRate)));
-        case 1: return rawValue(ids::filter) >= 0.99f ? String("OPEN") : hzText(mapping::filterHz(rawValue(ids::filter)));
+        case 1: return rawValue(ids::filter) >= 0.99f ? String("OPEN")
+                                                      : hzText(mapping::filterHzFor((FilterType) roundToInt(rawValue(ids::filterType)), rawValue(ids::filter)));
         case 2: return String(mapping::bitDepth(rawValue(ids::bits)), 1) + " bit";
         case 3:
         {
@@ -2024,7 +2029,8 @@ void BitVibeEditor::setTooltips()
 {
     static const char* frontTips[kKnobs] = {
         "SAMPLE RATE: lowers the sample rate for a gritty, aliased sound. Turn left for more. Fully right = off.",
-        "FILTER: a low-pass filter that darkens the sound. Turn left to close it. Fully right = off.",
+        "FILTER: the filter's cutoff. Turn left to close it (darker; thinner for a high-pass). Fully right = off. ADVANCED has "
+        "its type and RESONANCE.",
         "BITS: lowers the bit depth for digital distortion. Turn left for more. Fully right = off.",
         "STUTTER: after each picked note, repeats a short slice of it. Left = off, then 1 to 16 repeats at normal, "
         "double or half speed. Fully right = random.",
@@ -2100,6 +2106,11 @@ void BitVibeEditor::setTooltips()
     stutterLenBox.setTooltip("STUTTER LENGTH: how long the repeated slice is, as a note length of the tempo.");
     stutterTypeBox.setTooltip("STUTTER TYPE: what the stutter does with its slice. REPEAT, REVERSE (backwards), RISE (each repeat a tone "
                               "higher), TAPE STOP (slows to a stop), SCRATCH (back and forth), FREEZE (holds it as a cloud).");
+    filterTypeBox.setTooltip("FILTER TYPE: LADDER (the pedal's own low-pass, 24 dB/oct), LOW PASS (a cleaner 12 dB/oct one), BAND PASS "
+                             "(only the sound around the cutoff), HIGH PASS (only the sound above it), ENVELOPE (an auto-wah: each pick "
+                             "opens the filter from where FILTER sets it).");
+    filterResSlider.setTooltip("RESONANCE: a peak at the filter's cutoff. Turn right for a sharper, more vocal sweep; fully right it almost "
+                               "whistles. Double-click for the pedal's own setting.");
 
     // preset bar and expression morph strip
     prevButton.setTooltip("Previous preset.");
@@ -2364,6 +2375,8 @@ void BitVibeEditor::resized()
     stutterLenBox.setBounds(side({ 98, gy + 144, 96, 24 }));
     stutterTypeBox.setBounds(side({ 200, gy + 144, 110, 24 }));
     holdButton.setBounds(side({ 318, gy + 144, 76, 24 }));
+    filterTypeBox.setBounds(side({ 98, gy + 178, 110, 24 }));
+    filterResSlider.setBounds(side(Rectangle<int>(36, 36).withCentre({ 318, gy + 190 })));
 
     // reverb panel: the type on the caption row, then five knobs on the same grid as the global panel
     const auto dist = distArea(), delay = delayArea(), reverb = reverbArea();
@@ -2532,6 +2545,9 @@ void BitVibeEditor::paintContent(Graphics& g)
         if (advancedRight)
         {
             g.drawText("STUTTER", Rectangle<int>(24, gy + 144, 72, 24), Justification::centredLeft);
+            g.drawText("FILTER", Rectangle<int>(24, gy + 178, 72, 24), Justification::centredLeft);
+            g.drawText("RESONANCE", Rectangle<int>(222, gy + 178, 74, 24), Justification::centredRight);
+            g.drawText(String(roundToInt(rawValue(ids::filterRes) * 100.0f)) + "%", Rectangle<int>(342, gy + 178, 50, 24), Justification::centredLeft);
         }
         else
         {
@@ -2545,6 +2561,10 @@ void BitVibeEditor::paintContent(Graphics& g)
                 on.add("STUTTER " + stutterLenBox.getText().toUpperCase());
             if (roundToInt(rawValue(ids::stutterType)) != 0)
                 on.add("STUTTER TYPE " + stutterTypeBox.getText().toUpperCase());
+            if (roundToInt(rawValue(ids::filterType)) != 0)
+                on.add("FILTER " + filterTypeBox.getText().toUpperCase());
+            if (std::abs(rawValue(ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.02f)
+                on.add("RESONANCE " + String(roundToInt(rawValue(ids::filterRes) * 100.0f)) + "%");
             if (!on.isEmpty())
             {
                 g.setColour(kAccent);
