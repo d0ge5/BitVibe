@@ -355,7 +355,7 @@ Only record what you have the right to use.
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** thirty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
+- **Preset pack:** forty-four sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
   the delay's tape wobble and the filter types, in
   the preset menu under **Preset pack**. Like an import, one loads into the slot that is showing (your picked sounds
   stay as they are); press SAVE to keep it there. The same files are in [`Presets/`](Presets) to share or import.
@@ -375,6 +375,9 @@ Only record what you have the right to use.
   | **Bitstorm**: the sample rate rattling in thirty-seconds, random stutters | **Ghost Notes**: quiet ghost steps round the accents, a worn echo | **Frozen Steps**: a rising figure freezing into shimmer on every beat |
   | **Echo Ladder**: each step sends more to the echoes as the line climbs | **Underwater**: a low swaying filter, slow tremolo, drowned tape echo | **Acid Walk**: a resonant band-pass walking sixteen steps, with a sixteenth echo |
   | **Wah Picks**: an auto-wah on a four-note figure, into a spring | **Squelch Ladder**: the ladder near to whistling, swept by eight steps | **Thin Air**: a high-pass climbing over a bar and falling back, under a tremolo |
+  | **Wah Pedal**: no sequence, just the auto-wah on what you play | **Vowel Steps**: a sharp band-pass jumping between vowel-like places | **Resonant Dive**: each pick falls from open to shut, into wobbling echoes |
+  | **Acid Bass Loop**: an octave-jumping bass line with filter steps and a fuzz | **Radio Dial**: a band-pass hopping about, crushed as it goes | **Thin Reverse**: a high-pass climbing while reversed stutters fire |
+  | **Peak Pulse**: a resonant low-pass snapping open under a square tremolo | **Whistle Freeze**: the ladder at full resonance, frozen into a shimmer | |
 - **Expression morph:** press **STORE A** with one sound on the knobs and **STORE B** with another, switch on
   **MORPH**, and the **Expression** slider (or your DAW automation or a MIDI pedal) blends between them.
 

@@ -488,6 +488,112 @@ inline const std::vector<Preset>& presets()
              b.tremolo(3.0f, 0.5f, 0.2f);
              b.reverb(kHall, 0.3f, 0.6f);
          } },
+        { "Wah Pedal", [](Builder& b) {
+             // no sequence: just the auto-wah on whatever you play, a little overdrive behind it
+             b.sequence(6, 0, 1);
+             b.set(ids::filterType, (float) kEnvelope);
+             b.set(ids::filterRes, 0.75f);
+             b.set(ids::filter, 0.2f);
+             b.dist(0, 0.2f, 0.55f, 0.8f);
+         } },
+        { "Vowel Steps", [](Builder& b) {
+             // a band-pass at a sharp peak jumping between vowel-like places, four times after each pick, overdriven
+             b.set(ids::tempo, 112.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 3, 1);
+             b.set(ids::filterType, (float) kBandPass);
+             b.set(ids::filterRes, 0.9f);
+             b.set(ids::filter, 0.75f);
+             b.steps({ pct(0.12f), pct(0.3f), pct(0.12f), pct(0.55f), pct(0.2f), pct(0.3f), pct(0.8f), pct(0.45f) });
+             b.dist(0, 0.4f, 0.5f, 0.75f);
+             b.reverb(kRoom, 0.15f, 0.4f);
+         } },
+        { "Resonant Dive", [](Builder& b) {
+             // each pick: the ladder, nearly whistling, falls from open to shut over a bar, into wobbling echoes
+             b.set(ids::tempo, 120.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 1, 2);
+             b.set(ids::filterType, (float) kLadder);
+             b.set(ids::filterRes, 0.9f);
+             b.set(ids::filter, 0.9f);
+             b.steps({ pct(1.0f), pct(0.8f), pct(0.64f), pct(0.5f), pct(0.4f), pct(0.32f), pct(0.25f), pct(0.2f),
+                       pct(0.16f), pct(0.13f), pct(0.1f), pct(0.08f), pct(0.06f), pct(0.05f), pct(0.04f), pct(0.03f) });
+             b.delay(k8th, 0.4f, 0.55f, 6);
+             b.set(ids::delayWobble, 0.3f);
+         } },
+        { "Acid Bass Loop", [](Builder& b) {
+             // an octave-jumping bass line with filter steps between the notes, a resonant low-pass and a fuzz: a 303
+             b.set(ids::tempo, 132.0f);
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filterRes, 0.85f);
+             b.set(ids::filter, 0.5f);
+             b.types({ 1, 2, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 2, 1, 2, 2 });
+             b.steps({ P(-12), pct(0.3f), P(-12), P(0), pct(0.6f), P(-12), pct(0.9f), P(-5), P(-12), pct(0.4f), P(-12), P(3),
+                       pct(0.7f), P(-12), pct(1.0f), pct(0.2f) });
+             b.lane(Lane::Level, { 1.0f, 0.6f, 0.9f, 0.7f });
+             b.lane(Lane::Crush, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.4f, 0.0f });
+             b.dist(1, 0.3f, 0.5f, 0.5f);
+         } },
+        { "Radio Dial", [](Builder& b) {
+             // a band-pass hopping about sixteen places, crushed more and less as it goes, like a dial being turned
+             b.set(ids::tempo, 100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kBandPass);
+             b.set(ids::filterRes, 0.7f);
+             b.set(ids::filter, 0.9f);
+             b.steps({ pct(0.3f), pct(0.9f), pct(0.1f), pct(0.6f), pct(0.45f), pct(0.05f), pct(0.8f), pct(0.25f),
+                       pct(0.7f), pct(0.15f), pct(1.0f), pct(0.4f), pct(0.2f), pct(0.55f), pct(0.08f), pct(0.65f) });
+             b.lane(Lane::Crush, { 0.1f, 0.3f, 0.0f, 0.2f, 0.4f, 0.05f, 0.25f, 0.15f, 0.0f, 0.35f, 0.1f, 0.45f, 0.05f, 0.2f, 0.3f, 0.0f });
+             b.set(ids::sampleRate, 0.85f);
+             b.dist(0, 0.4f, 0.6f, 0.72f); // the band-pass leaves little: the overdrive brings it back up
+             b.delay(k16th, 0.2f, 0.4f, bitvibe::kDelayForever);
+         } },
+        { "Thin Reverse", [](Builder& b) {
+             // a high-pass climbing eight steps while reversed stutters fire on the odd ones, in a plate
+             b.set(ids::tempo, 108.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kHighPass);
+             b.set(ids::filterRes, 0.6f);
+             b.set(ids::filter, 0.8f);
+             b.steps({ pct(0.05f), pct(0.12f), pct(0.22f), pct(0.35f), pct(0.5f), pct(0.68f), pct(0.85f), pct(1.0f) });
+             b.stutter(0, 2, kReverse, 1);
+             b.lane(Lane::Stutter, { 1, 0, 1, 0, 1, 0, 1, 0 });
+             b.reverb(kPlate, 0.3f, 0.55f);
+         } },
+        { "Peak Pulse", [](Builder& b) {
+             // a resonant low-pass snapping between shut and open under a hard square tremolo
+             b.set(ids::tempo, 124.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filterRes, 0.9f);
+             b.set(ids::filter, 0.6f);
+             b.steps({ pct(0.1f), pct(0.1f), pct(0.8f), pct(0.1f), pct(0.1f), pct(0.6f), pct(0.1f), pct(1.0f),
+                       pct(0.1f), pct(0.1f), pct(0.7f), pct(0.1f), pct(0.5f), pct(0.1f), pct(0.9f), pct(0.3f) });
+             b.tremolo(8.0f, 0.8f, 0.9f);
+             b.delay(k8thDotted, 0.25f, 0.5f, 3);
+         } },
+        { "Whistle Freeze", [](Builder& b) {
+             // the ladder at full resonance, barely not whistling, swept slowly and frozen into a shimmer on each bar
+             b.set(ids::tempo, 80.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 0);
+             b.freeRunning();
+             b.set(ids::filterType, (float) kLadder);
+             b.set(ids::filterRes, 1.0f);
+             b.set(ids::filter, 0.55f);
+             b.steps({ pct(0.2f), pct(0.3f), pct(0.45f), pct(0.6f), pct(0.8f), pct(0.6f), pct(0.45f), pct(0.3f) });
+             b.stutter(0, 4, kFreeze, 0);
+             b.lane(Lane::Stutter, { 1, 0, 0, 0, 0, 0, 0, 0 });
+             b.reverb(kShimmer, 0.4f, 0.7f);
+         } },
     };
     return list;
 }
