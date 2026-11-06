@@ -356,7 +356,9 @@ public:
                     case StutterKind::TapeStop: out = tapeStopSample(); break;
                     case StutterKind::Scratch: out = scratchSample(); break;
                     case StutterKind::Freeze: out = freezeSample(); break;
-                    default: out = playbackSample(); break;
+                    case StutterKind::Repeat:
+                    case StutterKind::Reverse:
+                    case StutterKind::Rise: out = playbackSample(); break;
                 }
                 break;
         }
