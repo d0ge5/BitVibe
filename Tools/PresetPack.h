@@ -1,6 +1,7 @@
 #pragma once
 
-// The preset pack: twenty sounds built around the 16-step sequencer, its lanes, the stutter types and the tremolo.
+// The preset pack: sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo and the delay's
+// tape wobble.
 // BitVibeEditorSnapshot --write-presets <folder> writes them as preset files (Presets/ in the repository, which the
 // plug-in embeds and lists under Preset pack); the snapshot tests check that the files still match this table and
 // that every preset loads and sounds.
@@ -116,7 +117,7 @@ constexpr float kSkip = 0.0f, kMute = 1.0f;
 // stutter types
 constexpr int kRepeat = 0, kReverse = 1, kRise = 2, kTapeStop = 3, kScratch = 4, kFreeze = 5;
 // delay times (kDelayDivisions)
-constexpr int k16th = 2, k16thDotted = 3, k8th = 5, k8thDotted = 6, kQuarter = 8, kQuarterDotted = 9;
+constexpr int k32nd = 0, k16th = 2, k16thDotted = 3, k8th = 5, k8thDotted = 6, kQuarter = 8, kQuarterDotted = 9;
 // reverb types
 constexpr int kRoom = 0, kHall = 1, kSpring = 2, kPlate = 3, kShimmer = 4;
 
@@ -315,6 +316,123 @@ inline const std::vector<Preset>& presets()
              b.freeRunning();
              b.dist(1, 0.35f, 0.6f, 0.55f);
              b.delay(k16thDotted, 0.3f, 0.5f, bitvibe::kDelayForever);
+         } },
+        { "Worn Cassette", [](Builder& b) {
+             // no sequence at all: a tired cassette, crunchy and dark, its echoes sagging and wandering
+             b.sequence(6, 0, 1);
+             b.set(ids::sampleRate, 0.62f);
+             b.set(ids::bits, 0.5f);
+             b.set(ids::filter, 0.78f);
+             b.delay(k8thDotted, 0.45f, 0.6f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 1.0f);
+         } },
+        { "Seasick Arp", [](Builder& b) {
+             // a minor arpeggio whose echoes slide out of tune and back
+             b.set(ids::tempo, 104.0f);
+             b.sequence(8, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(3), P(7), P(12), P(7), P(3), P(-5), P(-2) });
+             b.lane(Lane::Level, { 1.0f, 0.65f, 0.75f, 0.65f });
+             b.delay(k8th, 0.4f, 0.55f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 0.8f);
+             b.reverb(kPlate, 0.15f, 0.5f);
+         } },
+        { "Half-Speed Scratch", [](Builder& b) {
+             // each pick dragged back and forth at half speed, an octave down, into a wobbly echo
+             b.sequence(6, 0, 1);
+             b.stutter(2, 2, kScratch, 0);
+             b.delay(k8th, 0.2f, 0.45f, 3);
+             b.set(ids::delayWobble, 0.4f);
+             b.dist(0, 0.3f, 0.45f, 0.5f);
+         } },
+        { "Reverse Climb", [](Builder& b) {
+             // sixteen steps climbing an octave, flipping backwards at the top of each half
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(2), P(3), P(5), P(7), P(8), P(10), P(12), P(0), P(2), P(3), P(5), P(7), P(8), P(10), P(12) });
+             b.stutter(0, 2, kReverse, 2);
+             b.set(ids::stutter, 0.0f);
+             b.lane(Lane::Stutter, { 0, 0, 0, 0, 0, 0, 0, 1 });
+             b.reverb(kRoom, 0.2f, 0.5f);
+         } },
+        { "Tape Stop Fill", [](Builder& b) {
+             // a straight sixteenth groove that brakes to a stop at the end of every bar
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(12), P(0), P(0), P(12), P(0), P(0), P(0), P(0), P(12), P(0), P(0), P(0), P(0), P(0) });
+             b.lane(Lane::Level, { 1.0f, 0.6f, 0.8f, 0.6f });
+             b.stutter(0, 2, kTapeStop, 1);
+             b.set(ids::stutter, 0.0f);
+             b.lane(Lane::Stutter, { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 });
+         } },
+        { "Pulse Width", [](Builder& b) {
+             // a hard square tremolo that thins out step by step, then comes back
+             b.sequence(8, 5, 2);
+             b.steps({ P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0) });
+             b.tremolo(8.0f, 1.0f, 1.0f);
+             b.lane(Lane::Trem, { 0.0f, 0.3f, 0.6f, 1.0f, 1.0f, 0.6f, 0.3f, 0.0f });
+             b.dist(0, 0.45f, 0.5f, 0.7f);
+         } },
+        { "Slow Motion", [](Builder& b) {
+             // a falling line under a tremolo that slows to a crawl over two bars
+             b.set(ids::tempo, 90.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(-5), P(-12), P(-7) });
+             b.tremolo(10.0f, 0.9f, 0.4f, -2.5f, -0.3f, 3);
+             b.reverb(kHall, 0.3f, 0.7f);
+         } },
+        { "Bitstorm", [](Builder& b) {
+             // the sample rate rattling at thirty-second notes, crushed hard on random steps, random stutters on top
+             b.set(ids::tempo, 140.0f);
+             b.set(ids::seqType, 2.0f);
+             b.sequence(16, 5, 3);
+             b.freeRunning();
+             b.steps({ pct(0.2f), pct(0.05f), pct(0.12f), pct(0.03f), pct(0.3f), pct(0.08f), pct(0.02f), pct(0.15f),
+                       pct(0.06f), pct(0.25f), pct(0.04f), pct(0.1f), pct(0.02f), pct(0.18f), pct(0.07f), pct(0.35f) });
+             b.lane(Lane::Crush, { 0.9f, 0.0f, 0.5f, 0.0f, 0.0f, 0.8f, 0.0f, 0.3f, 0.95f, 0.0f, 0.0f, 0.6f, 0.0f, 0.4f, 0.0f, 0.85f });
+             b.set(ids::stutter, 22.0f); // random
+             b.set(ids::stutterLen, 2.0f);
+             b.delay(k32nd, 0.2f, 0.4f, 4);
+         } },
+        { "Ghost Notes", [](Builder& b) {
+             // quiet ghost steps around the accents, with a lightly worn sixteenth echo
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(0), P(12), P(0), P(0), P(0), P(0), P(0), P(0), P(12), P(0), P(0), P(7), P(0), P(0) });
+             b.lane(Lane::Level, { 1.0f, 0.2f, 0.25f, 0.9f, 0.2f, 0.3f, 1.0f, 0.2f, 0.85f, 0.2f, 0.9f, 0.25f, 0.2f, 0.8f, 0.3f, 0.2f });
+             b.delay(k16thDotted, 0.25f, 0.4f, 3);
+             b.set(ids::delayWobble, 0.3f);
+         } },
+        { "Frozen Steps", [](Builder& b) {
+             // a rising figure that freezes into a shimmering cloud on every beat
+             b.sequence(16, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(7), P(12), P(7), P(3), P(10), P(12), P(10), P(5), P(12), P(7), P(12), P(0), P(7), P(12), P(-5) });
+             b.stutter(0, 2, kFreeze, 2);
+             b.set(ids::stutter, 0.0f);
+             b.lane(Lane::Stutter, { 1, 0, 0, 0 });
+             b.reverb(kShimmer, 0.35f, 0.7f);
+         } },
+        { "Echo Ladder", [](Builder& b) {
+             // each step sends more of itself to the echoes than the one before, the line climbing with it
+             b.sequence(16, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(2), P(2), P(3), P(3), P(5), P(5), P(7), P(7), P(8), P(8), P(10), P(10), P(12), P(12) });
+             b.lane(Lane::Delay, { 0.0f, 0.07f, 0.13f, 0.2f, 0.27f, 0.33f, 0.4f, 0.47f, 0.53f, 0.6f, 0.67f, 0.73f, 0.8f, 0.87f, 0.93f, 1.0f });
+             b.delay(k8th, 0.5f, 0.6f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 0.2f);
+         } },
+        { "Underwater", [](Builder& b) {
+             // a filter swaying low, a slow tremolo and a drowned tape echo in a dark hall
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ pct(0.03f), pct(0.05f), pct(0.08f), pct(0.06f), pct(0.04f), pct(0.07f), pct(0.1f), pct(0.05f) });
+             b.tremolo(1.5f, 0.4f, 0.0f);
+             b.delay(kQuarter, 0.5f, 0.6f, 6);
+             b.set(ids::delayWobble, 1.0f);
+             b.reverb(kHall, 0.35f, 0.75f);
+             b.set(ids::reverbTone, 0.2f);
          } },
     };
     return list;

@@ -1598,9 +1598,10 @@ void testPresetPack(const File& outDir)
     for (size_t i = 0; i < list.size(); ++i)
         if (auto saved = XmlDocument::parse(folder.getChildFile(presetpack::fileName((int) i, list[i]))))
             matching += saved->toString() == presetpack::build(list[i])->toString() ? 1 : 0;
-    check(list.size() == 20 && matching == 20, "the 20 files in Presets/ match the table in PresetPack.h (" + String(matching)
+    const int count = (int) list.size();
+    check(count >= 20 && matching == count, "the " + String(count) + " files in Presets/ match the table in PresetPack.h (" + String(matching)
                                                    + "; run BitVibeEditorSnapshot --write-presets Presets after changing it)");
-    check(BitVibeProcessor::numPackPresets() == 20, "the plug-in carries the 20 presets (" + String(BitVibeProcessor::numPackPresets()) + ")");
+    check(BitVibeProcessor::numPackPresets() == count, "the plug-in carries all " + String(count) + " (" + String(BitVibeProcessor::numPackPresets()) + ")");
 
     // a guitar-like pluck every second
     constexpr int fs = 48000, seconds = 4;
@@ -1625,7 +1626,7 @@ void testPresetPack(const File& outDir)
         const bool loaded = p->loadPackPreset(i, message);
         const bool named = p->getProgramName(p->getCurrentProgram()) == BitVibeProcessor::packPresetName(i);
         bool usesNew = roundToInt(getValue(*p, ids::seqLength)) != bitvibe::kDefaultSeqLength || roundToInt(getValue(*p, ids::stutterType)) != 0
-                       || getValue(*p, ids::tremOn) > 0.5f;
+                       || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f;
         for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
@@ -1653,7 +1654,7 @@ void testPresetPack(const File& outDir)
         std::printf("    %-20s %s  peak %.2f  level x%.2f  change %.2f%s\n", BitVibeProcessor::packPresetName(i).toRawUTF8(), ok ? "ok  " : "FAIL", peak,
                     rmsRatio, diff / dryRms, usesNew ? "" : "  (nothing new)");
     }
-    check(good == 20, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of 20)");
+    check(good == count, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of " + String(count) + ")");
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern

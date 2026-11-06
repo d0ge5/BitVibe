@@ -336,7 +336,8 @@ Only record what you have the right to use.
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** twenty sounds built around the 16-step sequencer, its lanes, the stutter types and the tremolo, in
+- **Preset pack:** thirty-two sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo and
+  the delay's tape wobble, in
   the preset menu under **Preset pack**. Like an import, one loads into the slot that is showing (your picked sounds
   stay as they are); press SAVE to keep it there. The same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
@@ -349,7 +350,11 @@ Only record what you have the right to use.
   | **Stutter Machine**: a filter sequence that stutters by itself | **Filter Walk 12**: twelve filter steps against a bar of sixteen | **Five Against Four**: a five-note figure over four beats |
   | **Rate Ramp**: a dive through the sample rate, then a loop | **Tremolo Rush**: a tremolo that speeds up over two bars | **Mixed Signals**: pitch, filter and rate steps in turn |
   | **Octave Bounce**: bouncing octaves with a rising stutter | **Lo-Fi Shuffle**: a dusty long-short gate over three beats | **Reverb Swells**: two steps swell backwards into a hall |
-  | **Freeze and Glide**: a melody that freezes on each bar's first step | **Chaos Engine**: random scratches, mixed steps, crush and fuzz | |
+  | **Freeze and Glide**: a melody that freezes on each bar's first step | **Chaos Engine**: random scratches, mixed steps, crush and fuzz | **Worn Cassette**: crunchy and dark, its echoes sagging |
+  | **Seasick Arp**: a minor arpeggio with echoes sliding out of tune | **Half-Speed Scratch**: picks dragged back and forth an octave down | **Reverse Climb**: sixteen steps up, flipping backwards at the top |
+  | **Tape Stop Fill**: a sixteenth groove that brakes at the end of each bar | **Pulse Width**: a square tremolo thinning out step by step | **Slow Motion**: a falling line under a tremolo that slows to a crawl |
+  | **Bitstorm**: the sample rate rattling in thirty-seconds, random stutters | **Ghost Notes**: quiet ghost steps round the accents, a worn echo | **Frozen Steps**: a rising figure freezing into shimmer on every beat |
+  | **Echo Ladder**: each step sends more to the echoes as the line climbs | **Underwater**: a low swaying filter, slow tremolo, drowned tape echo | |
 - **Expression morph:** press **STORE A** with one sound on the knobs and **STORE B** with another, switch on
   **MORPH**, and the **Expression** slider (or your DAW automation or a MIDI pedal) blends between them.
 
