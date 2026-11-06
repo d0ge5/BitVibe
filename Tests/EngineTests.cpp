@@ -1982,6 +1982,128 @@ void testStepTypes()
     CHECK(rmsDiff(render(rateStep, in), pitchOnly, 2.1, 2.9) > 0.01, "a SAMPLE step crushes the sample rate");
 }
 
+// LENGTH: the sequence plays its first seqLength steps (up to sixteen). The lanes: what else each step does while it
+// plays (fewer bits, its level, its share of the tremolo, the delay and the reverb, and firing the stutter).
+void testSeqLengthAndLanes()
+{
+    std::puts("sequence length and step lanes");
+    Params p = neutral();
+    p.seqPlay = 5; // continuous
+    p.seqMult = 0;
+    p.tempoBpm = 600.0f; // a step every 0.1 s
+    p.pickTriggers = false;
+    p.steps.fill(mapping::pitchStepKnob(0));
+    const Signal silence((size_t) (kFs * 2.0), 0.0f);
+    auto stepsSeen = [&](const Params& q)
+    {
+        const auto trace = stepTrace(q, silence, {});
+        int most = -1;
+        for (int s : trace)
+            most = std::max(most, s);
+        return most;
+    };
+    CHECK(stepsSeen(p) == kDefaultSeqLength - 1, "six steps by default: the last one played is step %d", stepsSeen(p) + 1);
+    Params ten = p;
+    ten.seqLength = 10;
+    CHECK(stepsSeen(ten) == 9, "LENGTH 10 plays ten steps (%d)", stepsSeen(ten) + 1);
+    Params sixteen = p;
+    sixteen.seqLength = 99; // clamped
+    CHECK(stepsSeen(sixteen) == kNumSteps - 1, "a length past sixteen plays sixteen (%d)", stepsSeen(sixteen) + 1);
+    {
+        const auto trace = stepTrace(ten, silence, {});
+        const size_t first10 = firstIndexOf(trace, 9), back = firstIndexOf(trace, 0, first10);
+        CHECK(first10 < trace.size() && back < trace.size() && back - first10 > 4000 && back - first10 < 5600,
+              "after step 10 it goes back to step 1 (%d samples later)", (int) (back - first10));
+    }
+    Params looped = ten;
+    looped.loopOn = true;
+    looped.loopFrom = 8;
+    looped.loopTo = 12; // past the end: the loop stops at step 10
+    {
+        const auto trace = stepTrace(looped, silence, {});
+        int afterLoopStart = -1;
+        for (size_t i = firstIndexOf(trace, 9); i < trace.size(); ++i)
+            if (trace[i] != 9)
+            {
+                afterLoopStart = trace[i];
+                break;
+            }
+        CHECK(afterLoopStart == 8, "a loop section reaching past the end loops up to the last step (back to step %d)", afterLoopStart + 1);
+    }
+
+    // the lanes, on a steady tone (step n plays from 0.1 n s)
+    const Signal in = sine(220.0, 1.2, 0.3f);
+    const Signal plain = render(p, in);
+    CHECK(rmsDiff(render(p, in), plain, 0.05, 1.1) < 1.0e-6, "neutral lanes change nothing");
+    {
+        Params q = p;
+        q.lanes[(size_t) Lane::Level][2] = 0.0f; // step 3 silent
+        q.lanes[(size_t) Lane::Level][4] = 0.5f; // step 5 half
+        const Signal out = render(q, in);
+        CHECK(rms(out, 0.215, 0.29) < 0.02 * rms(plain, 0.215, 0.29), "a step at LEVEL 0 is silent (%g)", rms(out, 0.215, 0.29));
+        const double half = rms(out, 0.415, 0.49) / rms(plain, 0.415, 0.49);
+        CHECK(half > 0.45 && half < 0.55, "a step at LEVEL 50%% is half as loud (%g)", half);
+        CHECK(rmsDiff(out, plain, 0.315, 0.39) < 1.0e-4, "the steps between are as they were");
+    }
+    {
+        Params q = p;
+        q.lanes[(size_t) Lane::Crush][1] = 1.0f; // step 2 crushed to one bit
+        const Signal out = render(q, in);
+        CHECK(rmsDiff(out, plain, 0.115, 0.19) > 0.03 && rmsDiff(out, plain, 0.215, 0.29) < 1.0e-4,
+              "CRUSH crushes its step only (%g)", rmsDiff(out, plain, 0.115, 0.19));
+    }
+    {
+        Params q = p;
+        q.tremOn = true;
+        q.trem.rateHz = 20.0f;
+        q.trem.depth = 1.0f;
+        Params calm = q;
+        calm.lanes[(size_t) Lane::Trem][3] = 0.0f; // no tremolo on step 4
+        const Signal trem = render(q, in), stepWithout = render(calm, in);
+        CHECK(rmsDiff(stepWithout, plain, 0.32, 0.39) < 0.01 && rmsDiff(trem, plain, 0.32, 0.39) > 0.03,
+              "TREM 0 takes the tremolo off its step (%g)", rmsDiff(stepWithout, plain, 0.32, 0.39));
+    }
+    {
+        Params q = p;
+        q.delayOn = true;
+        q.delayMix = 1.0f;
+        q.delayDivision = 0;
+        Params noSend = q;
+        for (auto& v : noSend.lanes[(size_t) Lane::Delay])
+            v = 0.0f;
+        Params q2 = q, noSend2 = noSend;
+        q2.reverbMix = noSend2.reverbMix = 0.0f;
+        CHECK(rmsDiff(render(noSend2, in), plain, 0.1, 1.1) < 1.0e-4 && rmsDiff(render(q2, in), plain, 0.1, 1.1) > 0.01,
+              "DELAY 0 on every step sends nothing to the delay");
+        Params rev = p;
+        rev.reverbMix = 1.0f;
+        Params revNone = rev;
+        for (auto& v : revNone.lanes[(size_t) Lane::Reverb])
+            v = 0.0f;
+        CHECK(rmsDiff(render(revNone, in), plain, 0.1, 1.1) < 1.0e-4 && rmsDiff(render(rev, in), plain, 0.1, 1.1) > 0.01,
+              "REVERB 0 on every step sends nothing to the reverb (%g)", rmsDiff(render(revNone, in), plain, 0.1, 1.1));
+    }
+    {
+        // the STUTTER lane fires the stutter as its step begins, even with the STUTTER knob off
+        Params q = p;
+        q.stutter = 0;
+        q.lanes[(size_t) Lane::Stutter][3] = 1.0f;
+        Engine e;
+        e.prepare(kFs);
+        Signal buf = in;
+        bool before = false, during = false;
+        for (size_t i = 0; i + 64 <= buf.size(); i += 64)
+        {
+            float* ch = buf.data() + i;
+            e.process(&ch, 1, 64, q);
+            const double t = (double) i / kFs;
+            before = before || (t < 0.29 && e.isStuttering());
+            during = during || (t > 0.3 && t < 0.4 && e.isStuttering());
+        }
+        CHECK(!before && during, "a STUTTER step fires the stutter as it begins (before %d, during %d)", (int) before, (int) during);
+    }
+}
+
 // SEQ ONLY: the clean signal is cut and the effect side only sounds while a sequence or stutter plays; the reverb
 // still rings out after it.
 void testSeqOnly()
@@ -3326,6 +3448,7 @@ int main(int argc, char** argv)
     testSampleBlend();
     testDistortion();
     testTremolo();
+    testSeqLengthAndLanes();
     testFuzz();
     testEqualizer();
     testTriggerEvents();

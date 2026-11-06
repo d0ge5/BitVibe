@@ -4,7 +4,7 @@
 //
 // Signal chain (per channel):   in -> Stutter -> Pitch (sequencer) -> Sample-rate reducer
 //                                  -> Bit-depth reducer (+ gate) -> Ladder filter -> Mute -> out
-// One shared controller runs the pick-attack detector, the 6-step sequencer, tempo and the
+// One shared controller runs the pick-attack detector, the step sequencer (up to 16 steps), tempo and the
 // stutter triggers, so both channels always stay in lock-step.
 //
 // ASSUMED (the published documentation does not specify): the order of the blocks in the chain, the fixed ladder
@@ -54,16 +54,16 @@ struct Params
     int seqPlay = 5;   // 0..5  (off, once, twice, 4, 8, continuous)
     int seqMult = 1;   // 0..7  (x1 .. x128)
 
-    // Second layer (Alt): the six sequencer step knobs, normalised 0..1.
-    std::array<float, kNumSteps> steps {
-        mapping::pitchStepKnob(-7), mapping::pitchStepKnob(-3), mapping::pitchStepKnob(-12),
-        mapping::pitchStepKnob(7),  mapping::pitchStepKnob(4),  mapping::pitchStepKnob(0)
-    };
+    // Second layer (Alt): the sequencer steps, normalised 0..1. The first seqLength of them play.
+    std::array<float, kNumSteps> steps = mapping::defaultStepKnobs();
+    int seqLength = kDefaultSeqLength; // 1..kNumSteps
     SeqType seqType = SeqType::Pitch;
     // What each step controls: -1 = the sequencer type above, 0..2 = its own (pitch, filter, sample rate).
-    std::array<int, kNumSteps> stepTypes { -1, -1, -1, -1, -1, -1 };
+    std::array<int, kNumSteps> stepTypes = mapping::followSeqType();
+    // Each step's value in each lane (see Lane): what else the step does to the sequenced sound while it plays.
+    LaneValues lanes = neutralLanes();
 
-    // A loop section: steps loopFrom..loopTo (0..5, either order) play loopPlays times in a row (0 = forever) before
+    // A loop section: steps loopFrom..loopTo (0..15, either order) play loopPlays times in a row (0 = forever) before
     // the sequence goes on to the steps after them. A restart still begins at step 1, so the steps before the
     // section play once each time the sequence restarts.
     bool loopOn = false;
@@ -288,6 +288,8 @@ public:
         seqRunning = false;
         seqIdx = seqCycles = loopCount = 0;
         seqPhase = 0.0;
+        laneNow = kLaneNeutral;
+        lanesPrimed = false;
         srPhase = 1.0;
         gateEnv = 0.0f;
         gateOpen = true;
@@ -360,6 +362,24 @@ public:
 
             float semitones = 0.0f, filterFactor = 1.0f, srFactor = 1.0f;
             bool mute = false;
+            // the playing step's lanes (neutral while no sequence plays), glided over the same short ramp as a mute
+            float crush = 0.0f;
+            for (int l = 0; l < kNumLanes; ++l)
+            {
+                const float target = seqRunning ? lanes[(size_t) l][(size_t) active[(size_t) seqIdx]] : kLaneNeutral[(size_t) l];
+                if (l == (int) Lane::Crush)
+                    crush = target; // the crusher moves in steps anyway
+                else if (l != (int) Lane::Stutter)
+                {
+                    auto& v = laneNow[(size_t) l];
+                    v += muteCoef * (target - v);
+                    if (!lanesPrimed || std::abs(target - v) < 1.0e-5f) // the very first sample starts where the lanes are
+                        v = target;
+                }
+            }
+            lanesPrimed = true;
+            const float laneLevel = laneNow[(size_t) Lane::Level], laneTrem = laneNow[(size_t) Lane::Trem];
+            const float laneDelay = laneNow[(size_t) Lane::Delay], laneReverb = laneNow[(size_t) Lane::Reverb];
             if (seqRunning)
             {
                 const auto& st = steps[(size_t) active[(size_t) seqIdx]];
@@ -390,7 +410,8 @@ public:
             }
 
             // Bit depth (+ the gate that the hardware engages below 8 bits)
-            const float bitsF = mapping::bitDepth(bitsKnobSm.next(blk.bits));
+            const float knobBits = mapping::bitDepth(bitsKnobSm.next(blk.bits));
+            const float bitsF = crush > 0.0f ? knobBits + (mapping::kMinBits - knobBits) * std::min(crush, 1.0f) : knobBits;
             const bool bitsBypass = bitsF >= 23.5f;
             const float levels = std::exp2(bitsF - 1.0f);
             updateGate(mono, bitsF);
@@ -444,7 +465,7 @@ public:
             if (fxActive && !tremWasActive)
                 tremolo.restart();
             tremWasActive = fxActive;
-            const float tremAmount = tremOnSm.next(blk.tremOn ? 1.0f : 0.0f) * reverbSend;
+            const float tremAmount = tremOnSm.next(blk.tremOn ? 1.0f : 0.0f) * reverbSend * laneTrem;
             const float tremLevel = tremolo.next(blk.trem, fs, beatSamples);
             const float tremGain = 1.0f - (1.0f - tremLevel) * tremAmount;
             const auto heard = samplePlayer.process();
@@ -492,17 +513,17 @@ public:
                 const float filtered = ch.ladder.process(y, G);
                 y = lerpExact(y, filtered, filterMix);
                 y = lerpExact(beforeFx, y, fxMix);
-                const float cleanSequence = y; // the reverb hears the sequence before the distortion
+                const float cleanSequence = y * laneLevel; // the reverb hears the sequence before the distortion
                 if (distRun)
                 {
                     const float distorted = blk.distType == 1 ? ch.fuzz.process(y) : ch.dist.process(y);
                     y += (distorted - y) * distGate;
                 }
                 y *= tremGain;
-                y *= muteGain * seqGate;
+                y *= muteGain * seqGate * laneLevel;
                 // the delay: echoes of the sequenced sound (after the distortion), which ring on after the sequence stops
-                const float echoes = delayRun ? ch.delay.process(y * reverbSend, delaySettings) * delayGain : 0.0f;
-                float reverbOut = ch.reverb.process((cleanSequence * reverbSend + echoes) * reverbOnGain, revSettings);
+                const float echoes = delayRun ? ch.delay.process(y * reverbSend * laneDelay, delaySettings) * delayGain : 0.0f;
+                float reverbOut = ch.reverb.process((cleanSequence * reverbSend * laneReverb + echoes) * reverbOnGain, revSettings);
                 if (distRun && blk.distReverb)
                     reverbOut += ((blk.distType == 1 ? ch.fuzzReverb.process(reverbOut) : ch.distReverb.process(reverbOut)) - reverbOut) * distAmount;
                 y *= invHeadroom;
@@ -547,6 +568,7 @@ public:
                           seqRunning ? active[(size_t) seqIdx] : ScopeFeed::kNoStep);
             }
 
+            ++sampleClock;
             beatPhase += 1.0 / beatSamples;
             if (beatPhase >= 1.0)
             {
@@ -780,8 +802,15 @@ private:
 
         seqType = p.seqType;
         seqRepeats = mapping::seqRepeats(p.seqPlay);
+        seqLength = std::clamp(p.seqLength, 1, kNumSteps);
+        for (int l = 0; l < kNumLanes; ++l)
+            for (int i = 0; i < kNumSteps; ++i)
+            {
+                const float v = p.lanes[(size_t) l][(size_t) i];
+                lanes[(size_t) l][(size_t) i] = std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : kLaneNeutral[(size_t) l];
+            }
         numActive = 0;
-        for (int i = 0; i < kNumSteps; ++i)
+        for (int i = 0; i < seqLength; ++i)
         {
             const int own = p.stepTypes[(size_t) i];
             stepType[(size_t) i] = own < 0 ? p.seqType : (SeqType) std::clamp(own, 0, 2);
@@ -794,8 +823,8 @@ private:
         loopPlays = std::max(0, p.loopPlays);
         if (p.loopOn)
         {
-            const int lo = std::clamp(std::min(p.loopFrom, p.loopTo), 0, kNumSteps - 1);
-            const int hi = std::clamp(std::max(p.loopFrom, p.loopTo), 0, kNumSteps - 1);
+            const int lo = std::clamp(std::min(p.loopFrom, p.loopTo), 0, seqLength - 1);
+            const int hi = std::clamp(std::max(p.loopFrom, p.loopTo), 0, seqLength - 1);
             for (int i = 0; i < numActive; ++i)
                 if (active[(size_t) i] >= lo && active[(size_t) i] <= hi)
                 {
@@ -863,14 +892,16 @@ private:
         }
     }
 
-    void fireStutter()
+    // forStep: fired by a step's STUTTER lane, which repeats twice at full speed when the stutter knob is off.
+    void fireStutter(bool forStep = false)
     {
-        if (!blk.stutter.off && !channels[0].stutter.isHeld())
+        if ((!blk.stutter.off || forStep) && !channels[0].stutter.isHeld())
         {
-            float speed = blk.stutter.speed;
-            int repeats = blk.stutter.repeats;
+            stutterFiredAt = sampleClock;
+            float speed = blk.stutter.off ? 1.0f : blk.stutter.speed;
+            int repeats = blk.stutter.off ? 2 : blk.stutter.repeats;
             bool reversed = false;
-            if (blk.stutter.random)
+            if (blk.stutter.random && !blk.stutter.off)
             {
                 const uint32_t r = nextRandom();
                 const size_t idx = (size_t) (r % 21u);
@@ -964,6 +995,11 @@ private:
     // silent. A step of the loop section uses the loop section's sounds, volume and chance.
     void stepStarted()
     {
+        // a step with its STUTTER lane on fires the stutter (unless it has just fired, as when a pick restarts the sequence)
+        if (numActive > 0 && stutterFiredAt != sampleClock
+            && lanes[(size_t) Lane::Stutter][(size_t) active[(size_t) seqIdx]] > 0.5f
+            && steps[(size_t) active[(size_t) seqIdx]].kind != mapping::Step::Kind::Mute)
+            fireStutter(true);
         const bool inLoop = loopFirst >= 0 && seqIdx >= loopFirst && seqIdx <= loopLast;
         const SampleSet* set = inLoop && blk.loopSampleSet != nullptr ? blk.loopSampleSet : blk.sampleSet;
         const float gain = inLoop ? blk.loopSampleGain : blk.sampleGain;
@@ -1095,7 +1131,11 @@ private:
     std::array<mapping::Step, kNumSteps> steps {};
     std::array<SeqType, kNumSteps> stepType {}; // what each step controls
     std::array<int, kNumSteps> active {};
-    int numActive = 0, seqIdx = 0, seqCycles = 0, seqRepeats = 0;
+    LaneValues lanes = neutralLanes();
+    std::array<float, kNumLanes> laneNow = kLaneNeutral; // the lanes as heard now (glided)
+    bool lanesPrimed = false;
+    int numActive = 0, seqIdx = 0, seqCycles = 0, seqRepeats = 0, seqLength = kDefaultSeqLength;
+    std::int64_t sampleClock = 0, stutterFiredAt = -1;
     int loopFirst = -1, loopLast = -1, loopPlays = 0, loopCount = 0; // the loop section, as indices into active
     bool seqRunning = false;
     double seqPhase = 0.0, stepLength = 1.0, beatSamples = 24000.0, beatPhase = 0.0;

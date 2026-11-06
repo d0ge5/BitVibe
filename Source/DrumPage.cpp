@@ -672,8 +672,10 @@ void DrumPage::paintFeed(Graphics& g)
     g.setColour(inkDim);
     g.setFont(bold(9.5f));
     g.drawText("SEQUENCER", 22, 498, 62, 14, Justification::centredLeft);
-    for (int i = 0; i < kNumSteps; ++i)
-        drawLed(g, { (float) (kLaneX + 8 + i * 22), 505.0f }, 4.5f, accent, current == i);
+    const int length = juce::jlimit(1, kNumSteps, juce::roundToInt(proc.apvts.getRawParameterValue(ids::seqLength)->load()));
+    const float spacing = juce::jmin(22.0f, 128.0f / (float) length); // sixteen steps fit where six had room
+    for (int i = 0; i < length; ++i)
+        drawLed(g, { (float) kLaneX + 8.0f + (float) i * spacing, 505.0f }, length > 6 ? 3.0f : 4.5f, accent, current == i);
     g.setFont(plain(9.5f));
     const bool pickOn = proc.apvts.getRawParameterValue(ids::pickTriggers)->load() > 0.5f;
     g.drawText(pickOn ? "picks on your guitar also trigger" : "only the drum hits trigger", kLaneX + 140, 498, 232, 14,

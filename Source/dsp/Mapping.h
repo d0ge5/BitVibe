@@ -7,10 +7,43 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 
 namespace bitvibe
 {
-inline constexpr int kNumSteps = 6;
+// The sequence has up to sixteen steps; LENGTH says how many of them play (six, as on the pedal, unless changed).
+inline constexpr int kNumSteps = 16;
+inline constexpr int kDefaultSeqLength = 6;
+
+// Besides what its main value controls (pitch, filter or sample rate), each step has a value in each of these lanes,
+// which act on the sequenced sound while that step plays:
+//   CRUSH   fewer bits than the BITS knob gives: 0 = as the knob, 1 = one bit
+//   LEVEL   how loud the step is: 1 = as it is, 0 = silent
+//   TREM    how much of the tremolo the step gets: 1 = as its panel says, 0 = none
+//   DELAY   how much of the step goes into the delay: 1 = all of it, 0 = none
+//   REVERB  how much of the step goes into the reverb: 1 = all of it, 0 = none
+//   STUTTER on (above half) = the stutter fires as the step begins
+// The neutral value of each lane changes nothing.
+enum class Lane
+{
+    Crush = 0,
+    Level,
+    Trem,
+    Delay,
+    Reverb,
+    Stutter
+};
+inline constexpr int kNumLanes = 6;
+inline constexpr std::array<float, kNumLanes> kLaneNeutral { 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f };
+using LaneValues = std::array<std::array<float, kNumSteps>, kNumLanes>;
+
+inline LaneValues neutralLanes()
+{
+    LaneValues v {};
+    for (int l = 0; l < kNumLanes; ++l)
+        v[(size_t) l].fill(kLaneNeutral[(size_t) l]);
+    return v;
+}
 
 // Exact equality of two floats, written so that the compiler's -Wfloat-equal stays quiet where an exact
 // comparison is what is meant (change detection, identical settings).
@@ -148,6 +181,38 @@ namespace mapping
     inline float pitchStepKnob(int semitones)
     {
         return ((float) (std::clamp(semitones, -12, 12) + 13) + 0.5f) / 27.0f;
+    }
+
+    // The step knobs as they start: the first six as the pedal ships them, the rest unshifted (DRY), so lengthening
+    // the sequence adds steps that play the note as it is.
+    inline std::array<float, kNumSteps> defaultStepKnobs()
+    {
+        std::array<float, kNumSteps> s {};
+        s.fill(pitchStepKnob(0));
+        const int first[6] { -7, -3, -12, 7, 4, 0 };
+        for (int i = 0; i < 6; ++i)
+            s[(size_t) i] = pitchStepKnob(first[i]);
+        return s;
+    }
+
+    // The first steps as given, the rest unshifted.
+    inline std::array<float, kNumSteps> stepKnobs(std::initializer_list<float> first)
+    {
+        std::array<float, kNumSteps> s {};
+        s.fill(pitchStepKnob(0));
+        size_t i = 0;
+        for (float v : first)
+            if (i < s.size())
+                s[i++] = v;
+        return s;
+    }
+
+    // Each step of the sequence follows the SEQ TYPE (-1) unless given a type of its own.
+    inline std::array<int, kNumSteps> followSeqType()
+    {
+        std::array<int, kNumSteps> t {};
+        t.fill(-1);
+        return t;
     }
 } // namespace mapping
 } // namespace bitvibe

@@ -8,6 +8,7 @@
 #include "EqPanel.h"
 #include "TremoloPanel.h"
 #include "EffectGraphs.h"
+#include "StepEditor.h"
 #include "UiSettings.h"
 
 #include <functional>
@@ -537,16 +538,18 @@ void FootSwitch::mouseUp(const MouseEvent&)
         onRelease();
 }
 
-void StepStrip::set(const std::array<Step, 6>& steps, int playing, int loopFrom, int loopTo)
+void StepStrip::set(const std::array<Step, bitvibe::kNumSteps>& steps, int newCount, int playing, int loopFrom, int loopTo)
 {
-    const int lo = loopFrom < 0 || loopTo < 0 ? -1 : jmin(loopFrom, loopTo);
-    const int hi = loopFrom < 0 || loopTo < 0 ? -1 : jmax(loopFrom, loopTo);
-    bool changed = playing != current || lo != loopLo || hi != loopHi;
-    for (size_t i = 0; i < 6 && !changed; ++i)
+    newCount = jlimit(1, bitvibe::kNumSteps, newCount);
+    const int lo = loopFrom < 0 || loopTo < 0 ? -1 : jlimit(0, newCount - 1, jmin(loopFrom, loopTo));
+    const int hi = loopFrom < 0 || loopTo < 0 ? -1 : jlimit(0, newCount - 1, jmax(loopFrom, loopTo));
+    bool changed = playing != current || lo != loopLo || hi != loopHi || newCount != count;
+    for (size_t i = 0; i < (size_t) newCount && !changed; ++i)
         changed = std::abs(steps[i].knob - shown[i].knob) > 0.002f || steps[i].kind != shown[i].kind || steps[i].type != shown[i].type;
     if (changed)
     {
         shown = steps;
+        count = newCount;
         current = playing;
         loopLo = lo;
         loopHi = hi;
@@ -556,7 +559,7 @@ void StepStrip::set(const std::array<Step, 6>& steps, int playing, int loopFrom,
 
 int StepStrip::stepAt(float x) const
 {
-    return jlimit(0, 5, (int) std::floor(x / ((float) getWidth() / 6.0f)));
+    return jlimit(0, count - 1, (int) std::floor(x / ((float) getWidth() / (float) count)));
 }
 
 void StepStrip::mouseDown(const MouseEvent& e)
@@ -603,15 +606,16 @@ void StepStrip::paint(Graphics& g)
     const auto b = getLocalBounds().toFloat();
     g.setColour(kTheme.well.withAlpha(0.8f));
     g.fillRoundedRectangle(b, 3.0f);
-    const float slot = b.getWidth() / 6.0f;
+    const float slot = b.getWidth() / (float) count;
+    const float inset = count > 8 ? 1.0f : 3.0f;
     if (loopLo >= 0) // the loop section: a frame around its steps
     {
         g.setColour(kAccent.withAlpha(0.14f));
         g.fillRoundedRectangle(Rectangle<float>(b.getX() + slot * (float) loopLo, b.getY(), slot * (float) (loopHi - loopLo + 1), b.getHeight()), 3.0f);
     }
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        const auto cell = Rectangle<float>(b.getX() + slot * (float) i, b.getY(), slot, b.getHeight()).reduced(3.0f, 4.0f);
+        const auto cell = Rectangle<float>(b.getX() + slot * (float) i, b.getY(), slot, b.getHeight()).reduced(inset, 4.0f);
         const bool lit = i == current;
         const auto& s = shown[(size_t) i];
         const Colour colour = pedalstyle::stepTypeColour(s.type);
@@ -632,7 +636,7 @@ void StepStrip::paint(Graphics& g)
         if (lit) // the step playing now
         {
             g.setColour(kInk.withAlpha(0.85f));
-            g.drawRoundedRectangle(cell.expanded(1.5f, 2.0f), 2.0f, 1.2f);
+            g.drawRoundedRectangle(cell.expanded(jmin(1.5f, inset), 2.0f), 2.0f, 1.2f);
         }
     }
     g.setColour(kTheme.outline);
@@ -643,46 +647,6 @@ void StepStrip::paint(Graphics& g)
         g.drawRoundedRectangle(Rectangle<float>(b.getX() + slot * (float) loopLo, b.getY(), slot * (float) (loopHi - loopLo + 1), b.getHeight()).reduced(1.0f),
                                3.0f, 1.5f);
     }
-}
-
-void StepTypeTags::set(int newOwn, int newEffective)
-{
-    if (newOwn != own || newEffective != effective)
-    {
-        own = newOwn;
-        effective = newEffective;
-        repaint();
-    }
-}
-
-void StepTypeTags::paint(Graphics& g)
-{
-    static const char* letters[3] { "P", "F", "R" };
-    const float w = ((float) getWidth() - 4.0f) / 3.0f;
-    for (int i = 0; i < 3; ++i)
-    {
-        const auto r = Rectangle<float>((w + 2.0f) * (float) i, 0.0f, w, (float) getHeight()).reduced(0.5f);
-        const Colour colour = pedalstyle::stepTypeColour(i);
-        const bool chosen = own == i + 1, following = own == 0 && effective == i;
-        if (chosen)
-        {
-            g.setColour(colour);
-            g.fillRoundedRectangle(r, 3.0f);
-        }
-        g.setColour(chosen || following ? colour : kInkDim.withAlpha(0.45f));
-        g.drawRoundedRectangle(r, 3.0f, following ? 1.4f : 1.0f);
-        g.setColour(chosen ? kTheme.onAccent : (following ? colour : kInkDim.withAlpha(0.6f)));
-        g.setFont(bold(10.5f));
-        g.drawText(letters[i], r, Justification::centred);
-    }
-}
-
-void StepTypeTags::mouseUp(const MouseEvent& e)
-{
-    if (!getLocalBounds().contains(e.getPosition()) || !onPick)
-        return;
-    const int i = jlimit(0, 2, (int) std::floor(e.position.x / ((float) getWidth() / 3.0f)));
-    onPick(own == i + 1 ? 0 : i + 1);
 }
 
 void HelpOverlay::showPage(int newPage)
@@ -759,9 +723,9 @@ void HelpOverlay::paintQuickStart(Graphics& g, Rectangle<int> area)
     static const char* steps[] = {
         "1.  Play. A picked note starts the STUTTER and the SEQUENCER. TRIGGER sets how hard you must pick; the meter "
         "next to it shows your playing against that line and lights up when a pick is caught. Set HEADROOM first.",
-        "2.  Turn up SEQUENCER (how many times the six-step sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
-        "the steps change: pitch, filter or rate. The coloured bars above TEMPO are the steps: click one to see its knob, "
-        "drag across them to loop those steps.",
+        "2.  Turn up SEQUENCER (how many times the sequence plays) and STUTTER (how many repeats). SEQ TYPE picks what "
+        "the steps change: pitch, filter or rate. ALT shows the steps (up to 16) to drag, with their lanes; the coloured bars "
+        "above TEMPO are the steps at a glance: drag across them to loop those steps.",
         "3.  RATE, FILTER and BITS crush and darken the sound. DRY/WET blends it with your clean signal (SEQ ONLY cuts the clean "
         "signal and sends out only the sequenced sound); OUTPUT sets the level. Drag the big tempo number to change the tempo.",
         "4.  On the right, the BEAT PATTERN can start the sequence on chosen steps of a bar. Below it, the numbered panels work on "
@@ -857,8 +821,8 @@ void HelpOverlay::paintTriggers(Graphics& g, Rectangle<int> area)
              "Repeats a slice of what you just played: STUTTER sets 1 to 16 repeats at normal, fast or slow speed, or random. "
              "STUTTER HOLD freezes it.", true);
     chartBox(g, sequencer, "SEQUENCER",
-             "Plays the six steps from step 1, SEQUENCER times (once to 8 times, or continuously). Skipped steps are left out and the "
-             "SEQUENCE LOOP repeats its steps. Each step:", true);
+             "Plays its steps (LENGTH, 1 to 16) from step 1, SEQUENCER times (once to 8 times, or continuously). Skipped steps are "
+             "left out and the SEQUENCE LOOP repeats its steps. Each step, plus its lanes:", true);
     {
         // what a step can do, in the colours of the step strip
         static const char* chips[4] { "PITCH", "FILTER", "RATE", "MUTE" };
@@ -1134,15 +1098,13 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         auto& k = knobs[(size_t) i];
         k.label = labels[i];
         configureKnob(k.front, ticks[i]);
-        configureKnob(k.step, 11);
-        k.step.getProperties().set("alt", true);
         k.frontAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, frontIds[i], k.front);
-        k.stepAttachment = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::step(i), k.step);
         addKnobHelpers(k.front, frontIds[i]);
-        addKnobHelpers(k.step, ids::step(i));
         content.addAndMakeVisible(k.front);
-        content.addChildComponent(k.step);
     }
+    stepEditor = std::make_unique<StepEditor>(proc);
+    stepEditor->onStepMenu = [this](int step) { showStepMenu(step, stepEditor.get()); };
+    content.addChildComponent(*stepEditor);
 
     // global panel
     auto smallKnob = [this](Slider& s, std::unique_ptr<APVTS::SliderAttachment>& att, const char* id)
@@ -1163,12 +1125,11 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
                            "light on top turns red when it goes over (click the light to put it out). If it does, turn OUTPUT down.");
     content.addAndMakeVisible(outputMeter);
     stepStrip.setTooltip("THE SEQUENCE: one bar per step, coloured by what it controls (blue = pitch, green = filter, purple = rate; "
-                         "a dash = skipped, a cross = muted). Click a step to show its knob. Drag across steps to loop them. Right-click a step for more.");
+                         "a dash = skipped, a cross = muted). Click a step to show it on ALT. Drag across steps to loop them. Right-click for more.");
     stepStrip.onStepClick = [this](int step)
     {
         setAltLayer(true);
-        flashStep = step;
-        flashStepUntil = Time::getMillisecondCounterHiRes() + 1200.0;
+        stepEditor->flash(step);
     };
     stepStrip.onLoopDrag = [this](int first, int last) { setLoopFromStrip(first, last); };
     stepStrip.onLoopDragEnd = [this]
@@ -1178,7 +1139,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
                 proc.apvts.getParameter(id)->endChangeGesture();
         loopDragging = false;
     };
-    stepStrip.onStepMenu = [this](int step) { showStepMenu(step); };
+    stepStrip.onStepMenu = [this](int step) { showStepMenu(step, &stepStrip); };
     content.addAndMakeVisible(stepStrip);
     beatDog = std::make_unique<BeatDog>(laf);
     beatDog->beatSource = [this] {
@@ -1351,17 +1312,6 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
         content.addAndMakeVisible(*b);
     showSeqType();
 
-    // what each step controls (Alt layer): the sequencer type, or a type of its own
-    for (int i = 0; i < kKnobs; ++i)
-    {
-        auto& tags = stepTypeTags[(size_t) i];
-        tags.setTooltip("STEP " + String(i + 1) + " CONTROLS: P = pitch, F = filter, R = rate (the sample rate). A lit letter is this step's own choice; "
-                        "with none lit it follows the SEQ TYPE buttons (outlined). Click the lit letter again to follow them.");
-        tags.setMouseCursor(MouseCursor::PointingHandCursor);
-        tags.onPick = [this, i](int choice) { setStepType(i, choice); };
-        content.addChildComponent(tags);
-    }
-
     // preset bar: previous / next slot, the name (a click opens the preset menu) and SAVE
     // the tempo read-out in the middle of the pedal: drag it up or down, or double-click it and type a BPM (Enter to set,
     // Esc to cancel). It is the one tempo control on the page (with TAP and SYNC).
@@ -1447,13 +1397,10 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &syncButton, &holdButton, &fxTrigButton, &seqOnlyButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
-                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel,
+                        &headroomBox, &stutterLenBox, &loopButton, &loopFromBox, &loopToBox, &loopRepeatsBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(),
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
-    {
         pedalComponents.push_back(&k.front);
-        pedalComponents.push_back(&k.step);
-    }
 
     // tabs
     pedalTab.onClick = [this] { showDrums(false); };
@@ -1533,10 +1480,7 @@ BitVibeEditor::~BitVibeEditor()
 {
     stopTimer();
     for (auto& k : knobs)
-    {
         k.front.setLookAndFeel(nullptr);
-        k.step.setLookAndFeel(nullptr);
-    }
     for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayLowSlider, &delayHighSlider })
         s->setLookAndFeel(nullptr);
@@ -1608,12 +1552,8 @@ void BitVibeEditor::setAltLayer(bool on)
 {
     altLayer = on;
     for (auto& k : knobs)
-    {
         k.front.setVisible(!on);
-        k.step.setVisible(on);
-    }
-    for (auto& tags : stepTypeTags)
-        tags.setVisible(on);
+    stepEditor->setVisible(on);
     updateLiveState();
     altButton.lit = on;
     altButton.repaint();
@@ -1957,20 +1897,6 @@ String BitVibeEditor::readoutText(int i) const
 {
     using namespace bitvibe;
 
-    if (altLayer)
-    {
-        const float v = rawValue(ids::step(i).toRawUTF8());
-        const auto type = stepType(i);
-        const auto step = mapping::decodeStep(v, type);
-        if (step.kind == mapping::Step::Kind::Skip)
-            return "SKIP";
-        if (step.kind == mapping::Step::Kind::Mute)
-            return "MUTE";
-        if (type == SeqType::Pitch)
-            return step.semitones == 0.0f ? String("DRY") : String(step.semitones > 0 ? "+" : "") + String((int) step.semitones) + " st";
-        return String(roundToInt(step.factor * 100.0f)) + "%";
-    }
-
     switch (i)
     {
         case 0: return hzText(mapping::sampleRateHz(rawValue(ids::sampleRate)));
@@ -2007,24 +1933,23 @@ void BitVibeEditor::setTooltips()
         "BITS: lowers the bit depth for digital distortion. Turn left for more. Fully right = off.",
         "STUTTER: after each picked note, repeats a short slice of it. Left = off, then 1 to 16 repeats at normal, "
         "double or half speed. Fully right = random.",
-        "SEQUENCER: how many times the 6-step sequence plays after each picked note: off, once, twice, 4 or 8 times, or "
-        "continuously.",
+        "SEQUENCER: how many times the sequence (its LENGTH is on ALT) plays after each picked note: off, once, twice, 4 or 8 "
+        "times, or continuously.",
         "SEQ MULT: how fast the sequencer runs, as a multiple of the tempo (x1 to x128)."
     };
     for (int i = 0; i < kKnobs; ++i)
         knobs[(size_t) i].front.setTooltip(frontTips[i]);
-    updateStepTooltips();
 
     // footswitches and buttons
     bypassSwitch.setTooltip("BYPASS: switches the effect on or off. The red light shows it is on.");
     tapSwitch.setTooltip("TAP: tap to set the tempo. Press and hold to freeze the stutter.");
     altButton.setTooltip("ALT: switch the six knobs to the six step settings of the sequencer (the light is on while they show).");
-    typePitchButton.setTooltip("SEQ TYPE: PITCH. The six step knobs set a pitch shift for each step, from -12 to +12 semitones. "
-                              "Each type remembers its own step knobs: switch away and back and they are where you left them.");
-    typeFilterButton.setTooltip("SEQ TYPE: FILTER. The six step knobs set the filter cutoff of each step, as a percent of the FILTER knob. "
-                                "Each type remembers its own step knobs: switch away and back and they are where you left them.");
-    typeRateButton.setTooltip("SEQ TYPE: RATE. The six step knobs set the sample rate of each step, as a percent of the RATE knob. "
-                              "Each type remembers its own step knobs: switch away and back and they are where you left them.");
+    typePitchButton.setTooltip("SEQ TYPE: PITCH. The steps (on ALT) set a pitch shift for each step, from -12 to +12 semitones. "
+                              "Each type remembers its own steps: switch away and back and they are where you left them.");
+    typeFilterButton.setTooltip("SEQ TYPE: FILTER. The steps (on ALT) set the filter cutoff of each step, as a percent of the FILTER knob. "
+                                "Each type remembers its own steps: switch away and back and they are where you left them.");
+    typeRateButton.setTooltip("SEQ TYPE: RATE. The steps (on ALT) set the sample rate of each step, as a percent of the RATE knob. "
+                              "Each type remembers its own steps: switch away and back and they are where you left them.");
 
     // global panel
     inSlider.setTooltip("INPUT: how hard your signal drives the effect. The clean signal used by MIX is not changed.");
@@ -2100,8 +2025,6 @@ void BitVibeEditor::setTooltips()
     morphButton.setTooltip("MORPH: when on, the sound follows the expression slider instead of the knobs.");
 }
 
-// The step knobs' descriptions follow what each step controls. tooltipSeqType remembers the types they were written
-// for (one base-3 digit per step).
 void BitVibeEditor::nameControls()
 {
     // The knobs and boxes have their names painted beside them, so a screen reader would only hear "slider" or
@@ -2120,22 +2043,6 @@ void BitVibeEditor::nameControls()
     };
     name(content);
     presetMenuButton.setTitle("PRESET MENU");
-}
-
-void BitVibeEditor::updateStepTooltips()
-{
-    int types = 0;
-    for (int i = kKnobs - 1; i >= 0; --i)
-    {
-        const auto type = stepType(i);
-        types = types * 3 + (int) type;
-        const char* what = type == bitvibe::SeqType::Pitch
-                               ? "its pitch shift, from -12 to +12 semitones (centre = unshifted)"
-                               : (type == bitvibe::SeqType::Filter ? "its filter cutoff, as a percent of the FILTER knob"
-                                                                   : "its sample rate, as a percent of the RATE knob");
-        knobs[(size_t) i].step.setTooltip("STEP " + String(i + 1) + ": " + what + ". Fully left skips this step, fully right mutes it.");
-    }
-    tooltipSeqType = types;
 }
 
 // A step's own type (0 = follow SEQ TYPE, 1..3 = pitch, filter, sample rate), from its P / F / S tags or the strip's menu.
@@ -2163,8 +2070,8 @@ void BitVibeEditor::setLoopFromStrip(int first, int last)
     loopDragging = true;
 }
 
-// Right-click on a step of the strip: what the step controls, and the loop section.
-void BitVibeEditor::showStepMenu(int step)
+// Right-click on a step (of the strip or the step editor): what the step controls, the loop section and the length.
+void BitVibeEditor::showStepMenu(int step, Component* target)
 {
     const int own = jlimit(0, 3, roundToInt(rawValue(ids::stepType(step).toRawUTF8())));
     static const char* typeNames[3] { "PITCH", "FILTER", "RATE" };
@@ -2175,12 +2082,17 @@ void BitVibeEditor::showStepMenu(int step)
     menu.addItem(3, "Filter", true, own == 2);
     menu.addItem(4, "Rate (sample rate)", true, own == 3);
     menu.addSeparator();
-    menu.addItem(10, "Show this step's knob");
+    menu.addSeparator();
+    const int length = roundToInt(rawValue(ids::seqLength));
+    menu.addItem(13, "End the sequence here (" + String(step + 1) + (step == 0 ? " step)" : " steps)"), step + 1 != length);
+    menu.addItem(14, "Put this step back");
+    if (target != stepEditor.get() || !altLayer)
+        menu.addItem(10, "Show this step");
     menu.addItem(11, "Loop this step only");
     const bool loopOn = rawValue(ids::loopOn) > 0.5f;
     menu.addItem(12, "Loop off", loopOn);
     Component::SafePointer<BitVibeEditor> safe(this);
-    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&stepStrip), [safe, step](int result)
+    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(target), [safe, step](int result)
     {
         if (safe == nullptr || result == 0)
             return;
@@ -2194,8 +2106,24 @@ void BitVibeEditor::showStepMenu(int step)
             safe->stepStrip.onLoopDragEnd();
         }
         else if (result == 12)
+        {
             if (auto* param = safe->proc.apvts.getParameter(ids::loopOn))
+            {
+                param->beginChangeGesture();
                 param->setValueNotifyingHost(0.0f);
+                param->endChangeGesture();
+            }
+        }
+        else if (result == 13 || result == 14)
+        {
+            auto* param = safe->proc.apvts.getParameter(result == 13 ? String(ids::seqLength) : ids::step(step));
+            if (param != nullptr)
+            {
+                param->beginChangeGesture();
+                param->setValueNotifyingHost(result == 13 ? param->convertTo0to1((float) (step + 1)) : param->getDefaultValue());
+                param->endChangeGesture();
+            }
+        }
     });
 }
 
@@ -2292,12 +2220,8 @@ void BitVibeEditor::resized()
     auto face = [](Rectangle<int> r) { return r.translated(0, kFaceDy); };
 
     for (int i = 0; i < kKnobs; ++i)
-    {
         knobs[(size_t) i].front.setBounds(face(knobBounds(i)));
-        knobs[(size_t) i].step.setBounds(face(knobBounds(i)));
-        const auto c = knobCentre(i).toInt();
-        stepTypeTags[(size_t) i].setBounds(face({ c.x + 8, c.y - 70, 58, 16 }).translated(0, kTabsH)); // not in pedalComponents: shown with the Alt layer only
-    }
+    stepEditor->setBounds(face({ 16, 70, StepEditor::kWidth, StepEditor::kHeight }));
 
     typePitchButton.setBounds(face({ 18, 371, 50, 22 }));
     typeFilterButton.setBounds(face({ 71, 371, 50, 22 }));
@@ -2422,37 +2346,18 @@ void BitVibeEditor::paintContent(Graphics& g)
     g.setFont(plain(10.5f));
     g.drawText("UNOFFICIAL  -  INDEPENDENT PROJECT", Rectangle<int>(kFace.getX(), 54, kFace.getWidth(), 14), Justification::centred);
 
-    const int currentStep = proc.getEngine().getCurrentStep();
     const bool morphOn = rawValue(ids::morph) > 0.5f;
 
-    // Knob labels and readouts
-    for (int i = 0; i < kKnobs; ++i)
+    // Knob labels and readouts (on the Alt layer the step editor draws itself)
+    for (int i = 0; i < kKnobs && !altLayer; ++i)
     {
         const auto c = knobCentre(i);
-        // on the Alt layer a step is drawn in the colour of what it controls, its name moved left of its P / F / S tags
-        const Colour ink = altLayer ? pedalstyle::stepTypeColour((int) stepType(i)) : kInk;
-
-        g.setColour(ink);
+        g.setColour(kInk);
         g.setFont(bold(12.5f));
-        if (altLayer)
-            g.drawText("STEP " + String(i + 1), Rectangle<int>((int) c.x - 66, (int) c.y - 70, 70, 16), Justification::centredRight);
-        else
-            g.drawText(knobs[(size_t) i].label, Rectangle<int>(112, 16).withCentre({ (int) c.x, (int) c.y - 62 }), Justification::centred);
-
-        g.setColour(ink.withAlpha(morphOn ? 0.4f : 0.75f)); // with the morph on, the knob values are not what you hear
+        g.drawText(knobs[(size_t) i].label, Rectangle<int>(112, 16).withCentre({ (int) c.x, (int) c.y - 62 }), Justification::centred);
+        g.setColour(kInk.withAlpha(morphOn ? 0.4f : 0.75f)); // with the morph on, the knob values are not what you hear
         g.setFont(plain(11.5f));
         g.drawText(readoutText(i), Rectangle<int>(120, 16).withCentre({ (int) c.x, (int) c.y + 56 }), Justification::centred);
-
-        if (altLayer && currentStep == i)
-        {
-            g.setColour(ink.withAlpha(0.85f));
-            g.drawEllipse(c.x - 49.0f, c.y - 49.0f, 98.0f, 98.0f, 2.0f);
-        }
-        if (altLayer && flashStep == i && Time::getMillisecondCounterHiRes() < flashStepUntil) // the step the strip pointed at
-        {
-            g.setColour(kInk.withAlpha(0.8f));
-            g.drawEllipse(c.x - 53.0f, c.y - 53.0f, 106.0f, 106.0f, 2.5f);
-        }
     }
 
     // Footswitch area
@@ -2651,46 +2556,28 @@ void BitVibeEditor::paintContent(Graphics& g)
     }
 }
 
-// What follows the parameters and the playing sequence: the step strip, the P / F / S tags, the step knobs' colours
-// and descriptions, and the effect panels' power lights and dimming. Run by the timer, and straight away when the
+// What follows the parameters and the playing sequence: the step strip, the step editor (on the Alt layer), and the
+// effect panels' power lights and dimming. Run by the timer, and straight away when the
 // editor opens or the Alt layer changes, so nothing shows a stale state first.
 void BitVibeEditor::updateLiveState()
 {
     beatDog->setBeat(proc.getEngine().getBeatInBarPhase(), proc.getEngine().getBeatInBar(), proc.getEffectiveBpm(), proc.getEngine().getBarSteps()); // repaints only on a change
     {
-        std::array<StepStrip::Step, 6> steps {};
-        for (int i = 0; i < 6; ++i)
+        std::array<StepStrip::Step, bitvibe::kNumSteps> steps {};
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
         {
             const float knob = rawValue(ids::step(i).toRawUTF8());
             const auto type = stepType(i);
             const auto decoded = bitvibe::mapping::decodeStep(knob, type);
             steps[(size_t) i] = { knob, decoded.kind == bitvibe::mapping::Step::Kind::Skip ? 0 : (decoded.kind == bitvibe::mapping::Step::Kind::Mute ? 1 : 2),
                                   (int) type };
-            stepTypeTags[(size_t) i].set(jlimit(0, 3, roundToInt(rawValue(ids::stepType(i).toRawUTF8()))), (int) type);
         }
         const bool loop = rawValue(ids::loopOn) > 0.5f;
-        stepStrip.set(steps, proc.getEngine().getCurrentStep(), loop ? roundToInt(rawValue(ids::loopFrom)) : -1,
+        const int playing = proc.getEngine().getCurrentStep();
+        stepStrip.set(steps, roundToInt(rawValue(ids::seqLength)), playing, loop ? roundToInt(rawValue(ids::loopFrom)) : -1,
                       loop ? roundToInt(rawValue(ids::loopTo)) : -1);
-    }
-    {
-        int types = 0;
-        for (int i = kKnobs - 1; i >= 0; --i)
-            types = types * 3 + (int) stepType(i);
-        if (types != tooltipSeqType)
-            updateStepTooltips();
-    }
-    for (int i = 0; i < kKnobs; ++i)
-    {
-        auto& k = knobs[(size_t) i];
-        const int ticks = stepType(i) == bitvibe::SeqType::Pitch ? 27 : 11;
-        if ((int) k.step.getProperties().getWithDefault("ticks", 11) != ticks)
-            k.step.getProperties().set("ticks", ticks);
-        const int colour = (int) pedalstyle::stepTypeColour((int) stepType(i)).getARGB(); // the knob is drawn in its type's colour
-        if ((int) k.step.getProperties().getWithDefault("inkColour", 0) != colour)
-        {
-            k.step.getProperties().set("inkColour", colour);
-            k.step.repaint();
-        }
+        if (altLayer)
+            stepEditor->refresh(playing);
     }
     {
         mixSlider.setAlpha(rawValue(ids::seqOnly) > 0.5f ? kOffAlpha : 1.0f); // SEQ ONLY makes DRY/WET do nothing

@@ -28,10 +28,7 @@ struct KnobSet
     int stutter = 0; // 0..22
     int seqPlay = 5; // 0..5
     int seqMult = 1; // 0..7
-    std::array<float, kNumSteps> steps {
-        mapping::pitchStepKnob(-7), mapping::pitchStepKnob(-3), mapping::pitchStepKnob(-12),
-        mapping::pitchStepKnob(7),  mapping::pitchStepKnob(4),  mapping::pitchStepKnob(0)
-    };
+    std::array<float, kNumSteps> steps = mapping::defaultStepKnobs();
     SeqType seqType = SeqType::Pitch;
 
     bool operator==(const KnobSet& o) const

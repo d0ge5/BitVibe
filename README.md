@@ -33,8 +33,10 @@ under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releas
 - **Sample-rate reduction** (48 kHz down to 48 Hz) and **bit-depth reduction** (24 bit down to 1 bit).
 - **Ladder-style low-pass filter**, 96 Hz to 24 kHz.
 - **Stutter** with 23 positions (3 speeds, 7 repeat counts, off and random) and a hold to freeze it.
-- **6-step sequencer** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole sequence or
-  for each step on its own. Each step can be skipped or muted; speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
+- **Step sequencer of up to 16 steps** for pitch (+/-12 semitones), filter cutoff or sample rate, chosen for the whole
+  sequence or for each step on its own. Each step can be skipped or muted, and has **lanes** for what else it does while
+  it plays: crush the bits further, set its level, its share of the tremolo, the delay and the reverb, or fire the
+  stutter. Speed is a 1x to 128x multiple of the tempo (up to 240 BPM, dragged, typed or tapped in). A **loop section**
   can keep some of the steps going (a set number of times or forever) while a restart still plays the first ones.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
 - **Expression morph** between two stored sets of knobs, and **16 preset slots** with editable names.
@@ -143,29 +145,43 @@ on afterwards. The tempo clock sets the speed of all of it.
 
 ### The pedal
 
-<img src="artifacts/editor_alt_filter.png" align="right" width="300" alt="The ALT layer: the six step knobs, each with a menu for what it controls">
+| Knob | What it does |
+| --- | --- |
+| **Rate** | Sample-rate reduction (fully clockwise = off) |
+| **Filter** | Ladder low-pass (fully clockwise = off) |
+| **Bits** | Bit depth, 24 to 1 bit (fully clockwise = off) |
+| **Stutter** | Off, then three speeds with 1 to 16 repeats, then random |
+| **Sequencer** | Number of passes: off, once, twice, 4x, 8x, continuous |
+| **Seq Mult** | Sequencer speed as a multiple of the tempo |
 
-| Knob | What it does | Alt layer |
-| --- | --- | --- |
-| **Rate** | Sample-rate reduction (fully clockwise = off) | Step 1 |
-| **Filter** | Ladder low-pass (fully clockwise = off) | Step 2 |
-| **Bits** | Bit depth, 24 to 1 bit (fully clockwise = off) | Step 3 |
-| **Stutter** | Off, then three speeds with 1 to 16 repeats, then random | Step 4 |
-| **Sequencer** | Number of passes: off, once, twice, 4x, 8x, continuous | Step 5 |
-| **Seq Mult** | Sequencer speed as a multiple of the tempo | Step 6 |
+- **ALT** swaps the knobs for the **step editor**:
 
-- **ALT** swaps the knobs for the six sequencer steps. A step at minimum is skipped, at maximum muted.
-- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **RATE** (the sample rate). On the ALT layer each step
-  has **P**, **F** and **R** tags next to its name: with none lit it follows those buttons; click one to make that step
-  change pitch, the filter or the sample rate on its own (click it again to follow the buttons). Steps are drawn in
-  the colour of what they control: blue for pitch, green for filter, purple for sample rate. It is saved with the preset.
-  **Each type remembers its own step knobs**: set the six steps for pitch, press FILTER and set them for the filter, and
+  <p align="center"><img src="artifacts/steps.png" width="480" alt="The step editor: sixteen steps as bars (pitch in blue, one filter step in green, one rate step in purple, one muted), the step numbers with the END marker, the P / F / R letters, the lane tabs and the LEVEL lane"></p>
+
+  - **LENGTH** (top left) sets how many steps play, 1 to 16; click **-** / **+** or drag the orange **END** marker under
+    the bars. It starts at 6. Steps past the end are dimmed and keep their values for when you lengthen it again.
+  - **The bars** are the steps. Drag one up or down, or **drag across several to draw them**. A pitch step moves in
+    semitones up or down from the middle line (its value is written by it); a filter or rate step is a percent of
+    its knob. Right at the bottom the step is **skipped**, right at the top **muted** (a cross). **Shift** for fine
+    control, a **double-click** puts a step back, a **right-click** opens its menu (what it controls, loop it, end the
+    sequence there). The playing step lights up; the loop section is framed.
+  - **P / F / R** under the step numbers say what each step controls. A lit letter is the step's own choice, an outlined
+    one follows **SEQ TYPE**; click to go round them (follow, pitch, filter, rate). Blue is pitch, green filter, purple
+    sample rate.
+  - **The lanes** are what else each step does while it plays. Pick one with its tab (a dot marks a lane that does
+    something) and drag in it like the bars; a double-click puts a step back:
+    **CRUSH** fewer bits than the BITS knob (up to one bit), **LEVEL** how loud the step is, **TREM** how much of the
+    tremolo it gets, **DELAY** and **REVERB** how much of it goes into them, **STUTTER** fires the stutter as the step
+    begins (two repeats if the STUTTER knob is off). They change nothing until you move them.
+  - Everything on it is saved with the preset; presets from before keep their six steps and loop.
+- **SEQ TYPE** chooses what the steps control: **PITCH**, **FILTER** or **RATE** (the sample rate). It is saved with the
+  preset. **Each type remembers its own steps**: set the steps for pitch, press FILTER and set them for the filter, and
   pressing PITCH again brings the pitch steps back exactly as you left them (a type you have not used yet starts from
-  the knobs as they are). Steps with a P / F / R choice of their own keep their knob through the switch. The
-  remembered knobs are saved with the preset and travel in exported preset files.
-- **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step, the playing step
-  outlined, the loop section framed. Click a step to see its knob, **drag across steps** to make them the loop
-  section, and **right-click** a step to set what it controls or to loop it alone.
+  the steps as they are). Steps with a P / F / R choice of their own stay put through the switch. The remembered
+  steps are saved with the preset and travel in exported preset files.
+- **The step strip** (the coloured bars above TEMPO) is the sequence at a glance: one bar per step that plays, the
+  playing step outlined, the loop section framed. Click a step to see it on ALT, **drag across steps** to make them
+  the loop section, and **right-click** a step to set what it controls, loop it alone or end the sequence there.
 - **TEMPO** is the big number in the middle: drag it up or down, double-click it to type a BPM, or tap **TAP**.
   **SYNC** under it follows your DAW's tempo instead. Holding TAP freezes the stutter for as long as you hold it.
 - **BYPASS** switches the effect off.

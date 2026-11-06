@@ -106,12 +106,21 @@ inline constexpr const char* patternLock = "patternLock";
 inline constexpr const char* stepClock = "stepClock";
 inline constexpr const char* beatOutput = "beatOutput";
 
+inline constexpr const char* seqLength = "seqLength";
+
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
 inline juce::String stepType(int index) { return "stepType" + juce::String(index + 1); }
 // Where each sequencer type (0 = pitch, 1 = filter, 2 = sample rate) keeps the step knobs while another type is in use:
-// stepMem0_1 .. stepMem2_6. -1 = that type has not been used yet in this preset.
+// stepMem0_1 .. stepMem2_16. -1 = that type has not been used yet in this preset.
 inline juce::String stepMem(int type, int index) { return "stepMem" + juce::String(type) + "_" + juce::String(index + 1); }
+// A step's value in a lane (bitvibe::Lane): laneCrush1 .. laneStutter16.
+inline const char* laneName(int lane)
+{
+    static constexpr const char* names[bitvibe::kNumLanes] { "Crush", "Level", "Trem", "Delay", "Reverb", "Stutter" };
+    return names[juce::jlimit(0, bitvibe::kNumLanes - 1, lane)];
+}
+inline juce::String lane(int laneIndex, int index) { return "lane" + juce::String(laneName(laneIndex)) + juce::String(index + 1); }
 } // namespace ids
 
 class BitVibeProcessor : public juce::AudioProcessor
@@ -392,6 +401,8 @@ private:
     std::atomic<float>* pBeatOutput = nullptr;
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pSteps {};
     std::array<std::atomic<float>*, bitvibe::kNumSteps> pStepTypes {};
+    std::array<std::array<std::atomic<float>*, bitvibe::kNumSteps>, bitvibe::kNumLanes> pLanes {};
+    std::atomic<float>* pSeqLength = nullptr;
 
     // Morph sets: written on the message thread, read by the audio thread through a try-lock copy.
     mutable juce::SpinLock morphLock;

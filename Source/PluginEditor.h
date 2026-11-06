@@ -364,9 +364,9 @@ private:
     float threshold = -30.0f;
 };
 
-// A small picture of the six sequencer steps on the front of the pedal, and the quickest way to set the sequence up:
-// one bar per step (its knob position) in the colour of what the step controls, skipped steps drawn as a dash, muted
-// ones as a cross, the playing step outlined and the loop section framed. Click a step to see its knob, drag across
+// A small picture of the sequence on the front of the pedal (the steps that play, up to sixteen), and the quickest way to
+// set it up: one bar per step in the colour of what the step controls, skipped steps drawn as a dash, muted ones as a
+// cross, the playing step outlined and the loop section framed. Click a step to see it on the Alt layer, drag across
 // steps to make them the loop section, right-click a step for its menu.
 class StepStrip : public juce::Component, public juce::SettableTooltipClient
 {
@@ -382,34 +382,22 @@ public:
     std::function<void()> onLoopDragEnd;
     std::function<void(int step)> onStepMenu;
 
-    void set(const std::array<Step, 6>& steps, int playing, int loopFrom = -1, int loopTo = -1); // loop: -1 = none
+    // count: how many steps play (1 .. kNumSteps). loop: -1 = none.
+    void set(const std::array<Step, bitvibe::kNumSteps>& steps, int count, int playing, int loopFrom = -1, int loopTo = -1);
     int stepAt(float x) const; // the step under x (clamped to the strip)
+    int getCount() const { return count; }
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
 
 private:
-    std::array<Step, 6> shown {};
+    std::array<Step, bitvibe::kNumSteps> shown {};
+    int count = bitvibe::kDefaultSeqLength;
     int current = -1;
     int loopLo = -1, loopHi = -1;
     int downStep = -1;
     bool dragged = false, menuClick = false;
-};
-
-// On the Alt layer, next to each step's name: P, F and S, what the step controls. A lit letter is the step's own
-// choice; with none lit the step follows the SEQ TYPE buttons, and the letter in use is outlined. Clicking the lit
-// letter again goes back to following.
-class StepTypeTags : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    std::function<void(int choice)> onPick; // 0 = follow SEQ TYPE, 1..3 = pitch, filter, sample rate
-    void set(int own, int effective);       // own: 0..3 as above; effective: 0..2
-    void paint(juce::Graphics&) override;
-    void mouseUp(const juce::MouseEvent&) override;
-
-private:
-    int own = 0, effective = 0;
 };
 
 // HELP, over the whole window, in two pages: the quick start (what to do first), and WHAT TRIGGERS WHAT, a flow chart of
@@ -442,6 +430,7 @@ class DelayGraph;
 class ReverbGraph;
 class SamplerPage;
 class BeatDog;
+class StepEditor;
 
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -457,8 +446,9 @@ public:
     // so the window can be resized freely (the shape stays fixed).
     juce::Component& getContent() { return content; }
 
-    // Swaps the six front-panel knobs for the six sequencer-step knobs (the pedal's Alt layer).
+    // Swaps the six front-panel knobs for the step editor (the pedal's Alt layer): up to sixteen steps and their lanes.
     void setAltLayer(bool on);
+    StepEditor& getStepEditor() { return *stepEditor; }
     // The SAMPLER page over the whole window (the sample blend panel's SAMPLER button opens it).
     void showSampler(bool show);
     SamplerPage* getSamplerPage() { return samplerPage.get(); }
@@ -494,8 +484,8 @@ private:
 
     struct Knob
     {
-        KnobSlider front, step;
-        std::unique_ptr<APVTS::SliderAttachment> frontAttachment, stepAttachment;
+        KnobSlider front;
+        std::unique_ptr<APVTS::SliderAttachment> frontAttachment;
         const char* label = "";
     };
 
@@ -535,7 +525,6 @@ private:
     void buildBackground();
     void setTooltips();        // plain-language hover text for every control
     void nameControls();       // a name for a screen reader on every knob and box (the first words of its tooltip)
-    void updateStepTooltips(); // the text of the step knobs depends on the sequencer type
     void stepProgram(int direction);
     void refreshPresetName();
     void configureKnob(juce::Slider&, int ticks);
@@ -579,14 +568,11 @@ private:
     juce::Image background;
 
     std::array<Knob, kKnobs> knobs;
-    // on the Alt layer, next to each step's name: what the step controls
-    std::array<StepTypeTags, kKnobs> stepTypeTags;
+    std::unique_ptr<StepEditor> stepEditor; // the Alt layer: the steps and their lanes
     void setStepType(int step, int choice); // 0 = follow SEQ TYPE, 1..3 = pitch, filter, sample rate
-    void showStepMenu(int step);
+    void showStepMenu(int step, juce::Component* target);
     void setLoopFromStrip(int first, int last);
     bool loopDragging = false;
-    int flashStep = -1;        // the step whose knob the strip pointed at, ringed for a moment
-    double flashStepUntil = 0.0;
 
     // global panel
     KnobSlider inSlider, mixSlider, outSlider, trigSlider;
@@ -668,7 +654,6 @@ private:
     bool drumsShown = false;
 
     juce::TooltipWindow tooltipWindow { this, 600 }; // shows setTooltip() text after a short hover
-    int tooltipSeqType = -1;
 
     bool altLayer = false;
     bool tapDown = false, holdFromTap = false;

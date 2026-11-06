@@ -62,7 +62,7 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         id(ids::seqMult), "Seq Mult",
         StringArray { "x1", "x2", "x4", "x8", "x16", "x32", "x64", "x128" }, 1));
 
-    // ---- second layer (Alt): six sequencer steps ----------------------------------------
+    // ---- second layer (Alt): the sequencer steps (up to sixteen) ---------------------------
     inGroup("sequencer", "Sequencer");
     const Params defaults;
     for (int i = 0; i < kNumSteps; ++i)
@@ -87,9 +87,31 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
                                                           StringArray { "Sequencer Type", "Pitch", "Filter", "Sample Rate" }, 0));
 
+    // how many of the steps play, and each step's lanes (stored in the preset slots; the lanes are hidden from the host's
+    // automation, as there are so many)
+    add(std::make_unique<AudioParameterInt>(id(ids::seqLength), "Sequence Length", 1, kNumSteps, kDefaultSeqLength));
+    {
+        static const char* laneTitles[kNumLanes] { "Crush", "Level", "Tremolo", "Delay Send", "Reverb Send", "Stutter" };
+        for (int l = 0; l < kNumLanes; ++l)
+            for (int i = 0; i < kNumSteps; ++i)
+            {
+                const String name = "Step " + String(i + 1) + " " + laneTitles[l];
+                if (l == (int) Lane::Stutter)
+                    add(std::make_unique<AudioParameterBool>(id(ids::lane(l, i).toRawUTF8()), name, false,
+                                                             AudioParameterBoolAttributes().withAutomatable(false)));
+                else
+                    add(std::make_unique<AudioParameterFloat>(id(ids::lane(l, i).toRawUTF8()), name, NormalisableRange<float>(0.0f, 1.0f),
+                                                              kLaneNeutral[(size_t) l],
+                                                              AudioParameterFloatAttributes().withAutomatable(false).withStringFromValueFunction(
+                                                                  [](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })));
+            }
+    }
+
     // ---- the loop section of the sequence (stored in the preset slots) ----------------------
     {
-        const StringArray stepNames { "Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6" };
+        StringArray stepNames;
+        for (int i = 0; i < kNumSteps; ++i)
+            stepNames.add("Step " + String(i + 1));
         add(std::make_unique<AudioParameterBool>(id(ids::loopOn), "Sequence Loop", false));
         add(std::make_unique<AudioParameterChoice>(id(ids::loopFrom), "Loop From", stepNames, 3));
         add(std::make_unique<AudioParameterChoice>(id(ids::loopTo), "Loop To", stepNames, 5));
@@ -369,8 +391,12 @@ std::vector<String> presetParameterIds()
     for (int t = 0; t < 3; ++t)
         for (int i = 0; i < bitvibe::kNumSteps; ++i)
             list.push_back(ids::stepMem(t, i));
-    for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats })
+    for (const char* id : { ids::seqType, ids::tempo, ids::stutterLen, ids::morph, ids::loopOn, ids::loopFrom, ids::loopTo, ids::loopRepeats,
+                            ids::seqLength })
         list.emplace_back(id);
+    for (int l = 0; l < bitvibe::kNumLanes; ++l)
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+            list.push_back(ids::lane(l, i));
     return list;
 }
 
@@ -515,6 +541,10 @@ BitVibeProcessor::BitVibeProcessor()
         pSteps[(size_t) i] = raw(ids::step(i).toRawUTF8());
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         pStepTypes[(size_t) i] = apvts.getRawParameterValue(ids::stepType(i));
+    for (int l = 0; l < bitvibe::kNumLanes; ++l)
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+            pLanes[(size_t) l][(size_t) i] = apvts.getRawParameterValue(ids::lane(l, i));
+    pSeqLength = raw(ids::seqLength);
 
     bypassParam = apvts.getParameter(ids::bypass);
 
@@ -608,6 +638,10 @@ bitvibe::Params BitVibeProcessor::readParams()
 
     for (int i = 0; i < bitvibe::kNumSteps; ++i)
         p.stepTypes[(size_t) i] = jlimit(0, 3, roundToInt(pStepTypes[(size_t) i]->load())) - 1;
+    p.seqLength = jlimit(1, bitvibe::kNumSteps, roundToInt(pSeqLength->load()));
+    for (int l = 0; l < bitvibe::kNumLanes; ++l)
+        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+            p.lanes[(size_t) l][(size_t) i] = pLanes[(size_t) l][(size_t) i]->load();
     p.loopOn = pLoopOn->load() > 0.5f;
     p.loopFrom = roundToInt(pLoopFrom->load());
     p.loopTo = roundToInt(pLoopTo->load());
@@ -1393,12 +1427,17 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromTree(const ValueTree& t, 
 {
     PresetSlot s = makeFactorySlot(index); // anything the file does not say stays as shipped
     s.name = cleanPresetName(t["name"].toString(), s.name);
+    // A slot saved before the sequence could be longer than six steps has no length; its loop steps were stored as a
+    // fraction of six choices (step 1 .. step 6), which now has sixteen.
+    const bool sixSteps = !t.hasProperty(Identifier(ids::seqLength));
     for (size_t i = 0; i < presetParams.size(); ++i)
     {
         const Identifier key(presetParams[i].id);
         if (t.hasProperty(key))
         {
-            const double v = (double) t[key];
+            double v = (double) t[key];
+            if (sixSteps && (presetParams[i].id == ids::loopFrom || presetParams[i].id == ids::loopTo))
+                v = std::round(jlimit(0.0, 1.0, v) * 5.0) / (double) (bitvibe::kNumSteps - 1);
             if (std::isfinite(v))
                 s.values[i] = (float) jlimit(0.0, 1.0, v);
         }

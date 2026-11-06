@@ -34,8 +34,8 @@ namespace presets
 
     inline std::array<float, kNumSteps> pitchSteps(int a, int b, int c, int d, int e, int f)
     {
-        return { mapping::pitchStepKnob(a), mapping::pitchStepKnob(b), mapping::pitchStepKnob(c),
-                 mapping::pitchStepKnob(d), mapping::pitchStepKnob(e), mapping::pitchStepKnob(f) };
+        return mapping::stepKnobs({ mapping::pitchStepKnob(a), mapping::pitchStepKnob(b), mapping::pitchStepKnob(c),
+                                    mapping::pitchStepKnob(d), mapping::pitchStepKnob(e), mapping::pitchStepKnob(f) });
     }
 } // namespace presets
 
@@ -88,7 +88,7 @@ inline FactoryPreset factoryPreset(int slot)
             f.knobs.seqMult = 1;
             f.knobs.seqType = SeqType::Filter;
             f.knobs.filter = 0.8f;
-            f.knobs.steps = { 0.93f, 0.15f, 0.45f, 0.80f, 0.25f, 0.60f };
+            f.knobs.steps = mapping::stepKnobs({ 0.93f, 0.15f, 0.45f, 0.80f, 0.25f, 0.60f });
             break;
         case 8:
             f.name = "Rate Hops";
@@ -96,14 +96,14 @@ inline FactoryPreset factoryPreset(int slot)
             f.knobs.seqMult = 1;
             f.knobs.seqType = SeqType::SampleRate;
             f.knobs.sampleRate = 0.7f;
-            f.knobs.steps = { 0.95f, 0.30f, 0.65f, 0.10f, 0.80f, 0.45f };
+            f.knobs.steps = mapping::stepKnobs({ 0.95f, 0.30f, 0.65f, 0.10f, 0.80f, 0.45f });
             break;
         case 9:
             f.name = "Ring Mod";
             f.tempoBpm = 240.0f;
             f.knobs.seqPlay = 5;
             f.knobs.seqMult = 7;
-            f.knobs.steps = { 0.5f, 1.0f, 0.5f, 1.0f, 0.5f, 1.0f }; // dry / mute alternating
+            f.knobs.steps = mapping::stepKnobs({ 0.5f, 1.0f, 0.5f, 1.0f, 0.5f, 1.0f }); // dry / mute alternating
             break;
         case 10: // morph: clean at toe up, heavily crushed with stutter at toe down
             f.name = "Morph Clean-Crush";

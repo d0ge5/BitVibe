@@ -13,6 +13,7 @@
 #include "SamplerPage.h"
 #include "BeatDog.h"
 #include "TremoloPanel.h"
+#include "StepEditor.h"
 #include "EffectGraphs.h"
 #include "BeatDogMesh.h"
 #include "UiSettings.h"
@@ -1332,6 +1333,242 @@ void testVisuals(const File& outDir)
     }
 }
 
+// The step editor on the Alt layer: LENGTH, drawing the steps, what each step controls, the lanes, and old preset slots
+// (saved when the sequence had six steps) keeping their loop section.
+void testStepEditor(const File& outDir)
+{
+    std::puts("step editor");
+    auto p = makeProcessor();
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ed->setAltLayer(true);
+    auto& se = ed->getStepEditor();
+    check(se.isVisible() && se.getWidth() == StepEditor::kWidth && se.getHeight() == StepEditor::kHeight, "ALT shows the step editor");
+    ed->setAltLayer(false);
+    check(!se.isVisible(), "and the front knobs hide it again");
+    ed->setAltLayer(true);
+    auto& undo = p->getUndo();
+    undo.endStep();
+
+    const ModifierKeys left(ModifierKeys::leftButtonModifier), right(ModifierKeys::rightButtonModifier);
+    auto mouse = [&](Point<float> at, ModifierKeys mods, bool wasDragged)
+    {
+        const auto now = Time::getCurrentTime();
+        return MouseEvent(Desktop::getInstance().getMainMouseSource(), at, mods, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &se, &se, now, at, now, 1,
+                          wasDragged);
+    };
+    auto click = [&](Point<float> at, ModifierKeys mods)
+    {
+        se.mouseDown(mouse(at, mods, false));
+        se.mouseUp(mouse(at, mods, false));
+        undo.endStep();
+    };
+    auto dragFromTo = [&](Point<float> from, Point<float> to, ModifierKeys mods)
+    {
+        se.mouseDown(mouse(from, mods, false));
+        for (int k = 1; k <= 4; ++k)
+            se.mouseDrag(mouse(from + (to - from) * ((float) k / 4.0f), mods, true));
+        se.mouseUp(mouse(to, mods, true));
+        undo.endStep();
+    };
+    auto length = [&] { return roundToInt(getValue(*p, ids::seqLength)); };
+    auto at = [](int step, Rectangle<float> row, float yFraction = 0.5f)
+    {
+        const auto c = StepEditor::column(step, row);
+        return Point<float>(c.getCentreX(), c.getY() + c.getHeight() * yFraction);
+    };
+
+    // LENGTH
+    check(length() == 6, "the sequence starts six steps long");
+    click(StepEditor::plusButton().getCentre(), left);
+    check(length() == 7, "+ makes it seven");
+    click(StepEditor::minusButton().getCentre(), left);
+    click(StepEditor::minusButton().getCentre(), left);
+    check(length() == 5, "- twice makes it five");
+    dragFromTo(at(4, StepEditor::numbersArea()), at(11, StepEditor::numbersArea()), left);
+    check(length() == 12, "dragging the END marker to step 12 makes it twelve (" + String(length()) + ")");
+
+    // drawing the bars: from high on step 1 down to the middle of step 8
+    const auto bars = StepEditor::barsArea();
+    const std::array<float, 8> before { getValue(*p, ids::step(0).toRawUTF8()), getValue(*p, ids::step(3).toRawUTF8()),
+                                        getValue(*p, ids::step(7).toRawUTF8()) };
+    dragFromTo(at(0, bars, 0.15f), at(7, bars, 0.5f), left);
+    auto semis = [&](int step)
+    {
+        return bitvibe::mapping::decodeStep(getValue(*p, ids::step(step).toRawUTF8()), bitvibe::SeqType::Pitch).semitones;
+    };
+    check(semis(0) >= 7.0f && semis(7) == 0.0f && semis(3) > 0.0f && semis(3) < semis(0),
+          "a drag across the bars draws the steps it passes: step 1 " + String(semis(0)) + " st, step 4 " + String(semis(3)) + " st, step 8 "
+              + String(semis(7)) + " st");
+    check(undo.canUndo(), "and can be undone");
+    undo.undo();
+    check(std::abs(getValue(*p, ids::step(0).toRawUTF8()) - before[0]) < 0.002f && std::abs(getValue(*p, ids::step(3).toRawUTF8()) - before[1]) < 0.002f
+              && std::abs(getValue(*p, ids::step(7).toRawUTF8()) - before[2]) < 0.002f && length() == 12,
+          "in one go: undo puts every step of the drag back, and nothing before it");
+    undo.redo();
+    check(semis(0) >= 7.0f, "redo draws them again");
+
+    // the top mutes, the bottom skips
+    click(at(9, bars, 0.0f) + Point<float>(0.0f, 1.0f), left);
+    click(at(10, bars, 1.0f) - Point<float>(0.0f, 1.0f), left);
+    check(bitvibe::mapping::decodeStep(getValue(*p, ids::step(9).toRawUTF8()), bitvibe::SeqType::Pitch).kind == bitvibe::mapping::Step::Kind::Mute
+              && bitvibe::mapping::decodeStep(getValue(*p, ids::step(10).toRawUTF8()), bitvibe::SeqType::Pitch).kind == bitvibe::mapping::Step::Kind::Skip,
+          "a click at the very top mutes a step, at the very bottom skips it");
+
+    // Shift: fine control of the step it began on
+    {
+        const float start = getValue(*p, ids::step(5).toRawUTF8()), other = getValue(*p, ids::step(8).toRawUTF8());
+        const auto shift = left.withFlags(ModifierKeys::shiftModifier);
+        dragFromTo(at(5, bars, 0.5f), at(8, bars, 0.25f), shift);
+        const float moved = getValue(*p, ids::step(5).toRawUTF8()) - start;
+        check(moved > 0.02f && moved < 0.08f && std::abs(getValue(*p, ids::step(8).toRawUTF8()) - other) < 1.0e-5f,
+              "a Shift-drag moves only its own step, a fifth as far (" + String(moved, 3) + ")");
+    }
+
+    // double-click puts a step back
+    se.mouseDoubleClick(mouse(at(0, bars), left, false));
+    check(std::abs(getValue(*p, ids::step(0).toRawUTF8()) - bitvibe::mapping::pitchStepKnob(-7)) < 0.002f,
+          "a double-click puts step 1 back as it started (-7 st)");
+
+    // what each step controls: a click goes round follow, pitch, filter, rate
+    click(at(1, StepEditor::typesArea()), left);
+    check(roundToInt(getValue(*p, ids::stepType(1).toRawUTF8())) == 1, "a click on step 2's letter gives it its own type (pitch)");
+    click(at(1, StepEditor::typesArea()), left);
+    click(at(1, StepEditor::typesArea()), left);
+    check(roundToInt(getValue(*p, ids::stepType(1).toRawUTF8())) == 3, "two more make it rate");
+    click(at(1, StepEditor::typesArea()), left);
+    check(roundToInt(getValue(*p, ids::stepType(1).toRawUTF8())) == 0, "and one more follows SEQ TYPE again");
+
+    // right-click asks for the step's menu
+    {
+        int menuFor = -1;
+        auto saved = se.onStepMenu;
+        se.onStepMenu = [&](int s) { menuFor = s; };
+        click(at(6, bars), right);
+        check(menuFor == 6, "a right-click on step 7 asks for its menu");
+        se.onStepMenu = saved;
+    }
+
+    // the lanes
+    const auto tabs = StepEditor::tabsArea();
+    const float tabW = tabs.getWidth() / (float) bitvibe::kNumLanes;
+    for (int l = 0; l < bitvibe::kNumLanes; ++l)
+    {
+        click({ tabs.getX() + tabW * ((float) l + 0.5f), tabs.getCentreY() }, left);
+        check(se.getLane() == l, String("the ") + StepEditor::laneTitle(l) + " tab shows its lane");
+    }
+    click({ tabs.getX() + tabW * 1.5f, tabs.getCentreY() }, left); // LEVEL
+    const auto laneRow = StepEditor::laneArea();
+    dragFromTo(at(2, laneRow, 0.95f), at(4, laneRow, 0.5f), left);
+    auto lane = [&](int l, int step) { return getValue(*p, ids::lane(l, step).toRawUTF8()); };
+    check(lane(1, 2) < 0.15f && lane(1, 4) > 0.35f && lane(1, 4) < 0.65f && std::abs(lane(1, 5) - 1.0f) < 1.0e-4f,
+          "a drag in the LEVEL lane sets the steps it crosses (" + String(lane(1, 2), 2) + ", " + String(lane(1, 4), 2) + ")");
+    se.mouseDoubleClick(mouse(at(2, laneRow), left, false));
+    check(std::abs(lane(1, 2) - 1.0f) < 1.0e-4f, "a double-click puts a lane step back to neutral");
+    click({ tabs.getX() + tabW * 5.5f, tabs.getCentreY() }, left); // STUTTER
+    dragFromTo(at(3, laneRow), at(5, laneRow), left);
+    check(lane(5, 3) > 0.5f && lane(5, 4) > 0.5f && lane(5, 5) > 0.5f && lane(5, 2) < 0.5f, "a drag across the STUTTER lane switches steps 4 to 6 on");
+    click(at(4, laneRow), left);
+    check(lane(5, 4) < 0.5f && lane(5, 3) > 0.5f, "a click switches one off again");
+
+    // what the engine makes of it: twelve steps play
+    {
+        setValue(*p, ids::seqPlay, 5.0f);
+        setValue(*p, ids::seqMult, 3.0f);
+        setValue(*p, ids::pickTriggers, 0.0f);
+        AudioBuffer<float> buffer(2, 512);
+        MidiBuffer midi;
+        int most = -1;
+        for (int i = 0; i < 200; ++i)
+        {
+            buffer.clear();
+            p->processBlock(buffer, midi);
+            most = jmax(most, p->getEngine().getCurrentStep());
+        }
+        check(most == 11, "the engine plays the twelve steps (the last played is step " + String(most + 1) + ")");
+    }
+
+    // a picture for the README: sixteen steps, some of their own type, the LEVEL lane in use
+    {
+        setValue(*p, ids::seqLength, 16.0f);
+        const int notes[16] { 0, 7, 12, 7, 3, 7, 12, 19, 0, -5, 0, 5, 7, 12, -12, 0 };
+        for (int i = 0; i < 16; ++i)
+        {
+            setValue(*p, ids::step(i).toRawUTF8(), bitvibe::mapping::pitchStepKnob(jlimit(-12, 12, notes[i])));
+            setValue(*p, ids::stepType(i).toRawUTF8(), 0.0f);
+            setValue(*p, ids::lane(1, i).toRawUTF8(), i % 4 == 0 ? 1.0f : 0.45f + 0.04f * (float) (i % 4));
+            setValue(*p, ids::lane(5, i).toRawUTF8(), i == 7 || i == 15 ? 1.0f : 0.0f);
+        }
+        setValue(*p, ids::stepType(7).toRawUTF8(), 2.0f);
+        setValue(*p, ids::step(7).toRawUTF8(), 0.35f);
+        setValue(*p, ids::stepType(13).toRawUTF8(), 3.0f);
+        setValue(*p, ids::step(13).toRawUTF8(), 0.2f);
+        setValue(*p, ids::step(14).toRawUTF8(), 1.0f); // muted
+        setValue(*p, ids::loopOn, 1.0f);
+        setValue(*p, ids::loopFrom, 12.0f);
+        setValue(*p, ids::loopTo, 15.0f);
+        se.setLane(1);
+        se.mouseExit(mouse({ -10.0f, -10.0f }, left, false));
+        se.refresh(-1);
+        const auto shot = snapshot(*ed, 1.5f);
+        const auto b = se.getBounds().expanded(16, 0).withTop(se.getY() - 52).withBottom(se.getBottom() + 8);
+        const auto crop = shot.getClippedImage(Rectangle<int>(roundToInt(b.getX() * 1.5f), roundToInt(b.getY() * 1.5f), roundToInt(b.getWidth() * 1.5f),
+                                                              roundToInt(b.getHeight() * 1.5f)));
+        int lit = 0;
+        for (int y = 0; y < crop.getHeight(); y += 2)
+            for (int x = 0; x < crop.getWidth(); x += 2)
+                lit += crop.getPixelAt(x, y).getBrightness() > 0.5f ? 1 : 0;
+        check(lit > 1500, "the step editor draws its steps and lanes (" + String(lit) + " bright pixels)");
+        const File file = outDir.getChildFile("steps.png");
+        file.deleteFile();
+        if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+            PNGImageFormat().writeImageToStream(crop, *out);
+        std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
+    }
+    ed.reset();
+
+    // A preset slot saved when the sequence had six steps: its loop steps were stored as a fraction of six choices.
+    {
+        auto q = makeProcessor();
+        setValue(*q, ids::loopOn, 1.0f);
+        setValue(*q, ids::loopFrom, 2.0f);
+        setValue(*q, ids::loopTo, 4.0f);
+        q->saveCurrentPreset();
+        MemoryBlock state;
+        q->getStateInformation(state);
+        auto xml = AudioProcessor::getXmlFromBinary(state.getData(), (int) state.getSize());
+        bool edited = false;
+        if (xml != nullptr)
+            if (auto* bank = xml->getChildByName("PRESETS"))
+                if (auto* slot = bank->getFirstChildElement())
+                {
+                    slot->removeAttribute(ids::seqLength);
+                    for (int l = 0; l < bitvibe::kNumLanes; ++l)
+                        for (int i = 0; i < bitvibe::kNumSteps; ++i)
+                            slot->removeAttribute(ids::lane(l, i));
+                    slot->setAttribute(ids::loopFrom, 2.0 / 5.0); // how six choices stored step 3
+                    slot->setAttribute(ids::loopTo, 4.0 / 5.0);   // and step 5
+                    edited = true;
+                }
+        MemoryBlock oldState;
+        if (xml != nullptr)
+            AudioProcessor::copyXmlToBinary(*xml, oldState);
+        auto r = makeProcessor();
+        r->setStateInformation(oldState.getData(), (int) oldState.getSize());
+        r->setCurrentProgram(1);
+        r->setCurrentProgram(0);
+        check(edited && roundToInt(getValue(*r, ids::loopFrom)) == 2 && roundToInt(getValue(*r, ids::loopTo)) == 4
+                  && roundToInt(getValue(*r, ids::seqLength)) == 6,
+              "an old slot keeps its loop section (steps " + String(roundToInt(getValue(*r, ids::loopFrom)) + 1) + " to "
+                  + String(roundToInt(getValue(*r, ids::loopTo)) + 1) + ") and plays six steps");
+        // and a slot saved now keeps its steps as they are
+        auto s = makeProcessor();
+        s->setStateInformation(state.getData(), (int) state.getSize());
+        s->setCurrentProgram(1);
+        s->setCurrentProgram(0);
+        check(roundToInt(getValue(*s, ids::loopFrom)) == 2 && roundToInt(getValue(*s, ids::loopTo)) == 4, "a slot saved now loads as it was saved");
+    }
+}
+
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
 // looks off while it is off, and the sample blend says when there are no sounds to blend.
 void testEasierStart()
@@ -2259,7 +2496,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         const bool interactive = dynamic_cast<Slider*>(c) != nullptr || dynamic_cast<Button*>(c) != nullptr
                                  || dynamic_cast<ComboBox*>(c) != nullptr || dynamic_cast<Label*>(c) != nullptr
                                  || dynamic_cast<FootSwitch*>(c) != nullptr || dynamic_cast<PedalButton*>(c) != nullptr
-                                 || dynamic_cast<StepTypeTags*>(c) != nullptr || dynamic_cast<StepStrip*>(c) != nullptr
+                                 || dynamic_cast<StepEditor*>(c) != nullptr || dynamic_cast<StepStrip*>(c) != nullptr
                                  || dynamic_cast<OutputMeter*>(c) != nullptr;
         if (!interactive)
             continue;
@@ -2268,15 +2505,15 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         const String text = tip != nullptr ? tip->getTooltip() : String();
         missing += text.isEmpty() ? 1 : 0;
         tooLong += text.length() > 260 ? 1 : 0;
-        if (text.startsWith("STEP 1:"))
+        if (text.startsWith("THE STEPS:"))
             stepOneTips.add(text);
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 76 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 76 and 0)");
+    check(controls == 65 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 65 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
-          "the step knobs describe the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
+          "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
 
     // What a tooltip looks like in the editor's own style: show one for the MIX knob.
     if (imageFile != nullptr)
@@ -2416,7 +2653,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 197, "197 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 344, "344 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -2970,10 +3207,10 @@ int main(int argc, char** argv)
         // the step strip frames the loop section
         StepStrip strip;
         strip.setSize(100, 24);
-        std::array<StepStrip::Step, 6> steps {};
-        strip.set(steps, 4);
+        std::array<StepStrip::Step, bitvibe::kNumSteps> steps {};
+        strip.set(steps, 6, 4);
         const auto without = snapshot(strip, 2.0f);
-        strip.set(steps, 4, 5, 3);
+        strip.set(steps, 6, 4, 5, 3);
         const auto with = snapshot(strip, 2.0f);
         const auto framed = with.getPixelAt(2 * 52, 3), plainPx = without.getPixelAt(2 * 52, 3), outside = with.getPixelAt(2 * 20, 3);
         check(framed != plainPx && outside == without.getPixelAt(2 * 20, 3), "the step strip frames steps 4 to 6 (given either way round) and nothing else");
@@ -3046,6 +3283,7 @@ int main(int argc, char** argv)
     testPageTools();
     testTremoloPanel(outDir);
     testVisuals(outDir);
+    testStepEditor(outDir);
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }
