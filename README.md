@@ -12,17 +12,19 @@ with a distortion, reverb, random-sample and EQ section that works only on the s
 plug-in (plus **Audio Unit** on macOS and a **Standalone** app), written from scratch in C++ with
 [JUCE](https://juce.com) and inspired by a hardware pedal (see [Credits](#credits-and-licence)).
 
-> **Status: early version (0.3.0), work in progress.** The sound engine is covered by automated tests
+> **Status: early version (0.4.0), work in progress.** The sound engine is covered by automated tests
 > and the plug-in loads and runs in a test host, but it has had little real-world use in DAWs, and the
 > macOS build has not been run on a real Mac yet. Bug reports are welcome.
 >
 > BitVibe is an independent, unofficial project. It is not affiliated with or endorsed by the makers of
 > the hardware that inspired it, and it contains none of their code, firmware or artwork.
 
-**New in 0.3.0:** a tempo-synced **delay** on the sequenced sound, a **sampler** that records another program on
-your PC and turns a part of it into a sound, **EFFECT ONLY** (HEAR) to hear only the sequenced sound, step knobs remembered per
-sequencer type, **MAX BEATS** for the sample blend, and **DOG5**, a headbanging wireframe husky that keeps time
-under the pedal. See the [release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.3.0).
+**New in 0.4.0:** a **16-step sequencer** with **lanes** (crush, level, tremolo, delay and reverb sends, stutter) in
+a step editor, six **stutter types** (repeat, reverse, rise, tape stop, scratch, freeze), five **filter types** with a
+**RESONANCE** knob (ladder, low pass, band pass, high pass and an envelope auto-wah), a **tremolo**, **tape wobble**
+on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset menu by what each one uses, six
+**themes** (SYNTHWAVE to start), and a simpler page with the effects as tabs. See the
+[release notes](https://github.com/d0ge5/BitVibe/releases/tag/v0.4.0).
 
 [Features](#features) · [Install](#install) · [Using it](#using-it) · [Building](#building-from-source) · [Credits & licence](#credits-and-licence)
 
@@ -231,7 +233,7 @@ and a **FILTER** row: the filter's type and its **RESONANCE**:
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
 
-**DOG5** (in the right-hand column, under the effects) is a green wireframe husky
+**DOG5** (in the right-hand column, under the effects) is a wireframe husky in the theme's screen colour
 that headbangs in time: its head nods forward on the beat and pulls back again, ears flopping, with the beat of the
 bar beside it. It follows the tempo, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
 animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
