@@ -81,6 +81,7 @@ if(BITVIBE_BUILD_PLUGIN)
         Source/PluginEditor.cpp
         Source/DrumPage.cpp
         Source/PatternPanel.cpp
+        Source/ReplayPanel.cpp
         Source/SamplePanel.cpp
         Source/EqPanel.cpp
         Source/TremoloPanel.cpp
@@ -146,6 +147,7 @@ if(BITVIBE_BUILD_PLUGIN)
             Source/PluginEditor.cpp
             Source/DrumPage.cpp
         Source/PatternPanel.cpp
+        Source/ReplayPanel.cpp
         Source/SamplePanel.cpp
         Source/EqPanel.cpp
         Source/TremoloPanel.cpp

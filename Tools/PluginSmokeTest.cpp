@@ -157,7 +157,7 @@ int main(int argc, char** argv)
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 362 && findParam(*plugin, "Program") != nullptr
+    check(plugin->getParameters().size() == 368 && findParam(*plugin, "Program") != nullptr && findParam(*plugin, "Replay On") != nullptr
               && findParam(*plugin, "Dry/Wet") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
               && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
               && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr

@@ -510,6 +510,7 @@ private:
 };
 
 class PatternPanel;
+class ReplayPanel;
 class EqPanel;
 class SamplePanel;
 class TremoloPanel;
@@ -604,6 +605,7 @@ private:
     // tabs, the one effect panel showing (sample blend, distortion / fuzz, tremolo, delay, reverb or, in ADVANCED, the EQ;
     // the area is the size of the tallest), then DOG5. The pattern panel changes height, so everything below it moves.
     int patternTop() const;
+    int replayTop() const;  // the REPLAY panel, under the beat pattern
     int samplesTop() const; // the tab strip
     juce::Rectangle<int> effectsArea() const;
     void applyEffectTab(); // shows the chosen panel's controls and hides the others
@@ -759,6 +761,7 @@ private:
     EffectTabs effectTabs;
     int effectTab = 0;
     std::unique_ptr<PatternPanel> patternPanel;
+    std::unique_ptr<ReplayPanel> replayPanel; // under the beat pattern
     std::unique_ptr<APVTS::ComboBoxAttachment> headroomAtt, stutterLenAtt, stutterTypeAtt;
 
     // footswitches and buttons

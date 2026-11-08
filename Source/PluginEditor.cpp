@@ -2,6 +2,7 @@
 
 #include "DrumPage.h"
 #include "PatternPanel.h"
+#include "ReplayPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
 #include "BeatDog.h"
@@ -1361,6 +1362,8 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     }
     patternPanel = std::make_unique<PatternPanel>(proc, laf);
     content.addAndMakeVisible(*patternPanel);
+    replayPanel = std::make_unique<ReplayPanel>(proc, laf);
+    content.addAndMakeVisible(*replayPanel);
 
     for (auto* b : { &syncButton, &holdButton })
     {
@@ -1515,7 +1518,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &levelSlider, &syncButton, &holdButton,
                         &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox, &modRateSlider, &modDepthSlider,
-                        &modFeedbackSlider, &modMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(),
+                        &modFeedbackSlider, &modMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(), replayPanel.get(),
                         &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &pingButton, &pingLevelSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
     for (auto& k : knobs)
@@ -2032,6 +2035,16 @@ void BitVibeEditor::applyRightMode()
         resized();
         repaint();
     };
+    replayPanel->onHeightChange = [this]
+    {
+        if (!drumsShown && pedalPageHeight() != baseHeight) // the window grows with the panel
+            applyRightMode();
+        else
+        {
+            resized();
+            repaint();
+        }
+    };
     simpleButton.lit = !advancedRight;
     advancedButton.lit = advancedRight;
     simpleButton.repaint();
@@ -2050,7 +2063,8 @@ void BitVibeEditor::applyRightMode()
 }
 
 int BitVibeEditor::patternTop() const { return kColY; }
-int BitVibeEditor::samplesTop() const { return patternTop() + patternPanel->currentHeight() + kPanelGap; }
+int BitVibeEditor::replayTop() const { return patternTop() + patternPanel->currentHeight() + kPanelGap; }
+int BitVibeEditor::samplesTop() const { return replayTop() + replayPanel->currentHeight() + kPanelGap; }
 Rectangle<int> BitVibeEditor::effectsArea() const { return { kSideX, samplesTop() + EffectTabs::kHeight + 6, 456, kEffectsH }; }
 Rectangle<int> BitVibeEditor::distArea() const { return effectsArea(); }
 Rectangle<int> BitVibeEditor::ringArea() const { return effectsArea(); }
@@ -2635,6 +2649,7 @@ void BitVibeEditor::resized()
     for (EffectGraph* graph : std::initializer_list<EffectGraph*> { distGraph.get(), delayGraph.get(), reverbGraph.get() })
         graph->setBounds(face({ kSideX + kGraphX, dist.getY() + 28, kGraphW, kEffectsH - 40 }));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, patternPanel->currentHeight() }));
+    replayPanel->setBounds(face({ kSideX, replayTop(), ReplayPanel::kWidth, replayPanel->currentHeight() }));
 
     // Everything above was laid out as if the pedal started at the top: move it below the tab strip.
     for (auto* c : pedalComponents)
@@ -2987,7 +3002,10 @@ void BitVibeEditor::updateLiveState()
             stepEditor->refresh(playing);
     }
     {
-        mixSlider.setAlpha(rawValue(ids::seqOnly) > 0.5f ? kOffAlpha : 1.0f); // EFFECT ONLY makes DRY/WET do nothing
+        // EFFECT ONLY makes DRY/WET do nothing, and REPLAY makes both it and HEAR do nothing
+        const bool replayOn = rawValue(ids::replayOn) > 0.5f;
+        mixSlider.setAlpha(rawValue(ids::seqOnly) > 0.5f || replayOn ? kOffAlpha : 1.0f);
+        hearBox.setAlpha(replayOn ? kOffTextAlpha : 1.0f);
         if (hearBox.getSelectedId() != hearChoice() + 1)
             hearBox.setSelectedId(hearChoice() + 1, dontSendNotification);
         // the power buttons glow while their effect acts; a switched-off panel's controls are dimmed
@@ -3137,6 +3155,7 @@ void BitVibeEditor::timerCallback()
         if (tremoloPanel->isVisible())
             tremoloPanel->refresh();
         patternPanel->refresh();
+        replayPanel->refresh();
         repaint();
     }
 }

@@ -73,6 +73,8 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   or save it as a WAV.
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
+- **Replay:** play, and you hear only your clean guitar. Stop, and the phrase you just played loops through the
+  sequence and the effects until you play again.
 - **SIMPLE or ADVANCED** view, so you only see what you need, and the effects as **tabs**, one panel at a time, so the
   whole window fits a laptop screen.
 - **Seven themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS, CONTRAST, and
@@ -306,6 +308,15 @@ keeps them with it.
   action (restart, step or stutter), or use **RANDOM** and the ready-made patterns. **RESTART BAR** lines the bar
   up with what you are playing. **PATTERN LOCK** makes the pattern the only thing that restarts the sequence. While
   the action is *Off* the pattern does nothing, and the grid is dimmed to show it.
+- **Replay** (under the beat pattern): switch it on, and while you play you hear only your clean guitar. When you
+  stop, the phrase you just played loops through the sequence and the effects, and the sequence starts with it.
+  Playing again cuts the loop at once, and the next stop loops the new phrase. **LOOK BACK** sets how much is
+  looped, counting back from your last note (never further back than the start of the phrase). **WAIT** is how long
+  you have to stop for before the loop starts. **LENGTH** is how long the loop plays (*FOREVER*, the default, plays
+  until you play again). **DRY** blends in the loop as you played it, and **THRESHOLD** is how loud the guitar has
+  to be to count as playing. The title row says what it is doing and shows how far through the loop it is. While
+  replay is on, DRY/WET and HEAR have no effect, and your picks cut the loop instead of firing the stutter or the
+  sequence. Replay is a setting of your rig, like TRIGGER: presets leave it as it is.
 - **Sample blend:** put your own WAV, AIFF, FLAC or OGG files (up to 20 seconds) in `Documents/BitVibe/Sounds`
   (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. With no sounds at all the panel says
   **NO SOUNDS YET** and shows the folder button; the first sounds you add are found and picked by themselves. Subfolders are read too, and CHOOSE

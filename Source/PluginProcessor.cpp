@@ -443,6 +443,30 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
     // Where the beat's sound goes (see BeatRoute.h). Also a rig setting.
     add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
+
+    // ---- REPLAY: when the player stops, what they just played loops through the sequencer (see Replay.h). How the
+    // plug-in listens to the player, like TRIGGER: global, never part of a preset. ----
+    inGroup("replay", "Replay");
+    auto secondsText = [](float v, int) { return v < 1.0f ? String(roundToInt(v * 1000.0f)) + " ms" : String(v, v < 10.0f ? 2 : 1) + " s"; };
+    auto seconds = [](float lo, float hi, float centre)
+    {
+        NormalisableRange<float> r(lo, hi, 0.01f);
+        r.setSkewForCentre(centre);
+        return r;
+    };
+    add(std::make_unique<AudioParameterBool>(id(ids::replayOn), "Replay On", false));
+    add(std::make_unique<AudioParameterFloat>(id(ids::replayBack), "Replay Look Back",
+                                              seconds(kReplayMinLookBack, kReplayMaxLookBack, 2.0f), kReplayDefaultLookBack, withText(secondsText)));
+    add(std::make_unique<AudioParameterFloat>(id(ids::replayWait), "Replay Wait",
+                                              seconds(kReplayMinWait, kReplayMaxWait, 0.5f), kReplayDefaultWait, withText(secondsText)));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::replayLength), "Replay Length", seconds(kReplayMinLength, kReplayForever, 12.0f), kReplayForever,
+        withText([secondsText](float v, int n) { return v >= kReplayForever - 0.005f ? String("Forever") : secondsText(v, n); })));
+    add(std::make_unique<AudioParameterFloat>(id(ids::replayDry), "Replay Dry", NormalisableRange<float>(0.0f, 1.0f), 0.0f,
+                                              withText([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::replayThreshold), "Replay Threshold", NormalisableRange<float>(kReplayMinThresholdDb, kReplayMaxThresholdDb, 0.5f),
+        kReplayDefaultThresholdDb, withText([](float v, int) { return String(roundToInt(v)) + " dB"; })));
     for (auto& g : groups)
         layout.add(std::move(g));
     return layout;
@@ -595,6 +619,12 @@ BitVibeProcessor::BitVibeProcessor()
     pOutGain = raw(ids::outputGain);
     pHeadroom = raw(ids::headroom);
     pSensitivity = raw(ids::sensitivity);
+    pReplayOn = raw(ids::replayOn);
+    pReplayBack = raw(ids::replayBack);
+    pReplayWait = raw(ids::replayWait);
+    pReplayLength = raw(ids::replayLength);
+    pReplayDry = raw(ids::replayDry);
+    pReplayThreshold = raw(ids::replayThreshold);
     pStutterLen = raw(ids::stutterLen);
     pExpression = raw(ids::expression);
     pMorph = raw(ids::morph);
@@ -826,6 +856,12 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.outputGainDb = pOutGain->load();
     p.lineHeadroom = roundToInt(pHeadroom->load()) == 1;
     p.triggerSensitivity = pSensitivity->load();
+    p.replay.on = pReplayOn->load() > 0.5f;
+    p.replay.lookBackSeconds = pReplayBack->load();
+    p.replay.waitSeconds = pReplayWait->load();
+    p.replay.lengthSeconds = pReplayLength->load() >= bitvibe::kReplayForever - 0.005f ? bitvibe::kReplayForever : pReplayLength->load();
+    p.replay.dry = pReplayDry->load();
+    p.replay.thresholdDb = pReplayThreshold->load();
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.stutterKind = (bitvibe::StutterKind) jlimit(0, bitvibe::kNumStutterKinds - 1, roundToInt(pStutterType->load()));
     p.mix = pMix->load();

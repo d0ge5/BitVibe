@@ -10,6 +10,7 @@
 #include "PluginEditor.h"
 #include "EqPanel.h"
 #include "PatternPanel.h"
+#include "ReplayPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
 #include "BeatDog.h"
@@ -1329,6 +1330,45 @@ void testTremoloPanel(const File& outDir)
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
 }
 
+// The REPLAY panel: folded while off; switched on it opens (and the window grows to fit), and after a phrase and a
+// stop it says the loop is playing.
+void testReplayPanel(const File& outDir)
+{
+    std::puts("replay panel");
+    auto p = makeProcessor();
+    uisettings::setAdvancedRight(true);
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    ReplayPanel* panel = nullptr;
+    for (auto* c : ed->getContent().getChildren())
+        if (panel == nullptr)
+            panel = dynamic_cast<ReplayPanel*>(c);
+    check(panel != nullptr && panel->getHeight() == ReplayPanel::kCollapsedHeight && panel->statusText().startsWith("Off"),
+          "REPLAY is off and folded at first");
+    if (panel == nullptr)
+        return;
+    const int closedHeight = ed->getHeight();
+    setValue(*p, ids::replayOn, 1.0f);
+    panel->refresh();
+    check(panel->getHeight() == ReplayPanel::kHeight && ed->getHeight() > closedHeight,
+          "switched on, it opens and the window grows to fit (" + String(closedHeight) + " then " + String(ed->getHeight()) + ")");
+    check(panel->statusText().startsWith("Listening"), "and it listens: " + panel->statusText());
+
+    // a phrase (the plucks), then a stop longer than the WAIT: the loop plays
+    AudioBuffer<float> in(2, 48000 * 2);
+    in.clear();
+    const auto phrase = makeInput(48000);
+    for (int c = 0; c < 2; ++c)
+        in.copyFrom(c, 0, phrase, c, 0, 48000);
+    run(*p, in);
+    panel->refresh();
+    check(panel->statusText().startsWith("Looping"), "after a phrase and a stop, the loop plays: " + panel->statusText());
+    save(*ed, outDir.getChildFile("editor_replay.png"));
+
+    setValue(*p, ids::replayOn, 0.0f);
+    panel->refresh();
+    check(panel->getHeight() == ReplayPanel::kCollapsedHeight && ed->getHeight() == closedHeight, "switched off, it folds and the window shrinks back");
+}
+
 // The pictures of the sound: the input history beside TRIGGER, the SCOPE on DOG5's screen and the graphs of the
 // distortion, the delay and the reverb.
 void testVisuals(const File& outDir)
@@ -1983,7 +2023,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 818, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 856, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -2957,7 +2997,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 361, "361 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 367, "367 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -3588,6 +3628,7 @@ int main(int argc, char** argv)
     testThemes(outDir);
     testPageTools();
     testTremoloPanel(outDir);
+    testReplayPanel(outDir);
     testVisuals(outDir);
     testStepEditor(outDir);
     testPresetPack(outDir);

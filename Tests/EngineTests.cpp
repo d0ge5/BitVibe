@@ -3990,6 +3990,121 @@ void testBeatPattern()
     }
 }
 
+// REPLAY: the clean signal alone while the player plays; when they stop, the last LOOK BACK of what they played loops
+// (after the WAIT) through the sequencer until they play again or LENGTH runs out.
+void testReplay()
+{
+    std::puts("replay");
+    // a phrase: 440 Hz for 1 s, silence, 660 Hz from 4 to 5 s, silence
+    Signal in((size_t) (7.0 * kFs), 0.0f);
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        const double t = (double) i / kFs;
+        if (t < 1.0)
+            in[i] = 0.3f * (float) std::sin(2.0 * 3.14159265358979 * 440.0 * t);
+        else if (t >= 4.0 && t < 5.0)
+            in[i] = 0.3f * (float) std::sin(2.0 * 3.14159265358979 * 660.0 * (t - 4.0));
+    }
+    Params p = neutral();
+    p.replay.on = true;
+    p.replay.lookBackSeconds = 0.4567f; // not a whole number of cycles: the seam has to be crossfaded
+    p.replay.waitSeconds = 0.3f;
+    auto maxDiff = [&](const Signal& out, double t0, double t1)
+    {
+        double d = 0.0;
+        for (size_t i = (size_t) (t0 * kFs); i < (size_t) (t1 * kFs); ++i)
+            d = std::max(d, (double) std::abs(out[i] - in[i]));
+        return d;
+    };
+    Signal out = render(p, in);
+    CHECK(maxDiff(out, 0.0, 1.0) < 1.0e-6, "while the player plays, only the clean signal comes out (diff %g)", maxDiff(out, 0.0, 1.0));
+    CHECK(rms(out, 1.01, 1.29) < 1.0e-5, "during the WAIT, silence (rms %g)", rms(out, 1.01, 1.29));
+    CHECK(std::abs(db(rms(out, 1.4, 3.9) / rms(in, 0.2, 0.9))) < 1.5, "then the loop plays at the level it was played (%g dB)",
+          db(rms(out, 1.4, 3.9) / rms(in, 0.2, 0.9)));
+    CHECK(tonePower(out, 1.4, 3.9, 440.0) > 1000.0 * tonePower(out, 1.4, 3.9, 660.0), "the loop is the phrase just played (440 Hz)");
+    double step = 0.0;
+    for (size_t i = (size_t) (1.35 * kFs); i < (size_t) (3.9 * kFs); ++i)
+        step = std::max(step, (double) std::abs(out[i] - out[i - 1]));
+    CHECK(step < 0.03, "the loop wraps without a click (largest step %g, a 440 Hz sine moves up to 0.017)", step);
+    CHECK(maxDiff(out, 4.03, 5.0) < 1.0e-3, "playing again cuts the loop at once: the clean signal only (diff %g)", maxDiff(out, 4.03, 5.0));
+    CHECK(tonePower(out, 5.4, 6.9, 660.0) > 1000.0 * tonePower(out, 5.4, 6.9, 440.0), "and the next stop loops the new phrase (660 Hz)");
+
+    // LENGTH: the loop fades out after it, and stays quiet until the player plays again
+    Params timed = p;
+    timed.replay.lengthSeconds = 1.0f;
+    out = render(timed, in);
+    CHECK(rms(out, 1.4, 2.2) > 0.1 && rms(out, 2.9, 3.9) < 1.0e-5, "LENGTH 1 s: the loop plays, then stops (rms %g then %g)", rms(out, 1.4, 2.2),
+          rms(out, 2.9, 3.9));
+
+    // the sequence plays with the loop, and only with it; DRY brings the clean loop back
+    Params seq = p;
+    seq.seqType = SeqType::Pitch;
+    seq.seqPlay = 5; // continuous
+    seq.tempoBpm = 600.0f;
+    seq.seqMult = 0;
+    seq.steps.fill(mapping::pitchStepKnob(12));
+    {
+        Engine e;
+        e.prepare(kFs);
+        Signal o = in;
+        int stepWhilePlaying = -2, stepWhileLooping = -2;
+        ReplayLooper::State whilePlaying = ReplayLooper::State::Off, whileLooping = ReplayLooper::State::Off;
+        for (size_t pos = 0; pos < in.size(); pos += 256)
+        {
+            const int n = (int) std::min<size_t>(256, in.size() - pos);
+            float* ch = o.data() + pos;
+            e.process(&ch, 1, n, seq);
+            if (pos <= (size_t) (0.5 * kFs) && (size_t) (0.5 * kFs) < pos + (size_t) n)
+            {
+                stepWhilePlaying = e.getCurrentStep();
+                whilePlaying = e.getReplayState();
+            }
+            if (pos <= (size_t) (2.0 * kFs) && (size_t) (2.0 * kFs) < pos + (size_t) n)
+            {
+                stepWhileLooping = e.getCurrentStep();
+                whileLooping = e.getReplayState();
+            }
+        }
+        out = o;
+        CHECK(stepWhilePlaying == -1 && whilePlaying == ReplayLooper::State::Live, "while the player plays the sequence waits (step %d)", stepWhilePlaying);
+        CHECK(stepWhileLooping >= 0 && whileLooping == ReplayLooper::State::Looping, "it runs while the loop plays (step %d)", stepWhileLooping);
+    }
+    CHECK(maxDiff(out, 0.0, 1.0) < 1.0e-6, "a continuous sequence leaves the playing clean (diff %g)", maxDiff(out, 0.0, 1.0));
+    CHECK(dominantRatio(out, 1.5, 3.9, 440.0, 880.0) > 10.0, "the loop goes through the sequence (an octave up, ratio %g)",
+          dominantRatio(out, 1.5, 3.9, 440.0, 880.0));
+    seq.replay.dry = 1.0f;
+    out = render(seq, in);
+    CHECK(dominantRatio(out, 1.5, 3.9, 880.0, 440.0) > 10.0, "DRY all the way: the loop as it was played (ratio %g)",
+          dominantRatio(out, 1.5, 3.9, 880.0, 440.0));
+
+    // picks never restart the sequence or fire the stutter while the player plays
+    Params picks = seq;
+    picks.replay.dry = 0.0f;
+    picks.stutter = 5;
+    picks.seqPlay = 1;
+    const Signal plucks = [&]
+    {
+        Signal x((size_t) (1.0 * kFs), 0.0f);
+        for (size_t i = 0; i < x.size(); ++i)
+        {
+            const double t = std::fmod((double) i / kFs, 0.25);
+            x[i] = (float) (0.4 * std::exp(-8.0 * t) * std::sin(2.0 * 3.14159265358979 * 330.0 * (double) i / kFs));
+        }
+        return x;
+    }();
+    const Signal heard = render(picks, plucks);
+    double d = 0.0;
+    for (size_t i = 0; i < plucks.size(); ++i)
+        d = std::max(d, (double) std::abs(heard[i] - plucks[i]));
+    CHECK(d < 1.0e-6, "picked notes pass clean: no stutter, no sequence (diff %g)", d);
+
+    // switched off, the plug-in is as before
+    Params off = p;
+    off.replay.on = false;
+    out = render(off, in);
+    CHECK(maxDiff(out, 0.0, 7.0) < 1.0e-6, "REPLAY off: the neutral settings pass the input (diff %g)", maxDiff(out, 0.0, 7.0));
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0); // so a crash still shows how far the checks got
@@ -4030,6 +4145,7 @@ int main(int argc, char** argv)
     testBloom();
     testFormant();
     testPhaserFlanger();
+    testReplay();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

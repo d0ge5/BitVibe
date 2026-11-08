@@ -17,6 +17,7 @@
 #include "Equalizer.h"
 #include "Fuzz.h"
 #include "Mapping.h"
+#include "Replay.h"
 #include "Reverb.h"
 #include "Samples.h"
 #include "Scope.h"
@@ -196,6 +197,12 @@ struct Params
     // the drum hits can still fire the stutter, but they no longer restart the sequence.
     bool patternLock = false;
 
+    // REPLAY (see Replay.h): while the player plays only their clean signal comes out; when they stop, what they just
+    // played loops through the sequencer and the effects until they play again. While it is on, MIX and SEQ ONLY have
+    // no say (the clean signal always passes, and REPLAY's DRY sets how much of the loop is heard clean), picks and
+    // trigger events only act while the loop plays, and the sequence starts with the loop.
+    ReplaySettings replay;
+
     // Pick attacks on the input start the stutter and the sequence (off: only trigger events do).
     bool pickTriggers = true;
     // Steps move only on NextStep trigger events instead of with the tempo.
@@ -256,6 +263,7 @@ public:
             ch.phaser.reset();
         }
         samplePlayer.prepare(fs);
+        replay.prepare(fs);
         for (auto& ch : channels)
         {
             ch.dist.prepare(fs);
@@ -341,6 +349,7 @@ public:
         patternPhase = 0.0;
         patternFresh = true;
         samplePlayer.reset();
+        replay.reset();
     }
 
     // Processes in place. io points at numChannels channel buffers (1 or 2). events (sorted by offset)
@@ -375,12 +384,29 @@ public:
             }
             const float mono = nCh == 2 ? 0.5f * (x[0] + x[1]) : x[0];
 
+            // ---- REPLAY: while the loop plays it takes the input's place in the chain --------
+            std::array<float, ReplayLooper::kChannels> loopDry {};
+            float replayGate = 0.0f;
+            if (blk.replay.on)
+            {
+                replay.process(dry.data(), nCh, mono, blk.replay, loopDry.data());
+                if (replay.loopStarted())
+                    onReplayStart();
+                if (replay.loopCut())
+                    onReplayCut();
+                replayGate = replay.getGate();
+                for (int c = 0; c < nCh; ++c)
+                    x[(size_t) c] = std::clamp(loopDry[(size_t) c] * inGain * headroomScale, -1.0f, 1.0f);
+            }
+            // what the chain hears (the loop, while REPLAY is on): the filter's envelope and the low-bit gate follow it
+            const float chainMono = blk.replay.on ? (nCh == 2 ? 0.5f * (x[0] + x[1]) : x[0]) : mono;
+
             // ---- control: attack, sequencer ---------------------------------------------
             inputPeak = std::max(inputPeak, std::abs(mono));
             if (detector.process(mono))
             {
                 ++attacksHeard; // shown on the input meter, whether or not picks are allowed to trigger
-                if (blk.pickTriggers)
+                if (blk.pickTriggers && !blk.replay.on) // with REPLAY on, playing cuts the loop instead
                     onAttack();
             }
             advanceSequencer();
@@ -461,11 +487,11 @@ public:
                 cache.levels = std::exp2(bitsF - 1.0f);
             }
             const float levels = cache.levels;
-            updateGate(mono, bitsF);
+            updateGate(chainMono, bitsF);
 
             // Filter: the knob (by the type's range) times the step's factor is the cutoff; the ENVELOPE type opens it
             // further with each picked note. A change of type fades the filter out, swaps it and fades it back in.
-            const float envelopeOpen = filterEnvelope.process(mono);
+            const float envelopeOpen = filterEnvelope.process(chainMono);
             const float filterKnob = filterKnobSm.next(blk.filter);
             if (!sameFloat(filterKnob, cache.filterKnob) || blk.filterType != cache.filterType)
             {
@@ -648,7 +674,7 @@ public:
             // SEQ ONLY: the sequenced sound only, with the same quick fade in and out as the reverb's send
             const float seqTarget = (seqRunning || channels[0].stutter.isActive() || samplePlayer.isPreviewing()) ? 1.0f : 0.0f;
             seqOnlyGate += (seqTarget - seqOnlyGate) * (seqTarget > seqOnlyGate ? fxAttack : fxRelease);
-            const float seqGate = blk.seqOnly ? seqOnlyGate : 1.0f;
+            const float seqGate = blk.seqOnly && !blk.replay.on ? seqOnlyGate : 1.0f;
             const float wetAmount = blk.seqOnly ? 1.0f : mixAmount;
 
             // ---- per-channel audio path --------------------------------------------------
@@ -748,7 +774,10 @@ public:
                 }
 
                 y *= soundGain; // the preset's own level, on everything the sequenced sound has become
-                if (!audition) // the clip is heard on its own, without the clean signal
+                // the EQ's captured clip is heard on its own, without the clean signal
+                if (!audition && blk.replay.on) // the clean signal always, and the loop (DRY of it clean) while it plays
+                    y = dry[(size_t) c] + lerpExact(y, loopDry[(size_t) c], blk.replay.dry) * replayGate;
+                else if (!audition)
                     y = lerpExact(dry[(size_t) c], y, wetAmount);
                 y *= outGain;
 
@@ -790,6 +819,9 @@ public:
             barStepsOut.store(blk.patternBarSteps, std::memory_order_relaxed);
         }
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
+        replayStateOut.store((int) replay.getState(), std::memory_order_relaxed);
+        replayLoopOut.store(replay.isLooping() ? replay.loopSeconds() : 0.0f, std::memory_order_relaxed);
+        replayPositionOut.store(replay.isLooping() ? replay.loopPosition() : replay.waitProgress(), std::memory_order_relaxed);
         if (inputPeak > inputPeakOut.load(std::memory_order_relaxed))
             inputPeakOut.store(inputPeak, std::memory_order_relaxed);
         inputPeak = 0.0f;
@@ -814,6 +846,11 @@ public:
     bool isEffectSideActive() const { return effectsActiveOut.load(std::memory_order_relaxed); }
     int getCurrentStep() const { return stepOut.load(std::memory_order_relaxed); }
     bool isStuttering() const { return stutterOut.load(std::memory_order_relaxed); }
+    // REPLAY, for its panel: what the looper is doing, the loop's length in seconds (0 while none plays) and how far
+    // through it the loop is (while it plays) or how far through the WAIT (while the player has just stopped), 0..1.
+    ReplayLooper::State getReplayState() const { return (ReplayLooper::State) replayStateOut.load(std::memory_order_relaxed); }
+    float getReplayLoopSeconds() const { return replayLoopOut.load(std::memory_order_relaxed); }
+    float getReplayPosition() const { return replayPositionOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
     // How far through the current quarter-note beat the bar clock is (0 = on the beat), and which beat of the bar it is.
     float getBeatInBarPhase() const { return beatInBarPhaseOut.load(std::memory_order_relaxed); }
@@ -892,6 +929,7 @@ private:
         const SampleSet* loopSampleSet = nullptr;
         int stutterLength = 0;
         StutterKind stutterKind = StutterKind::Repeat;
+        ReplaySettings replay;
     };
 
     void beginBlock(const Params& p)
@@ -981,6 +1019,10 @@ private:
         blk.reverbLowCut = std::clamp(p.reverbLowCutHz, 20.0f, 2000.0f);
         blk.reverbHighCut = std::clamp(p.reverbHighCutHz, 200.0f, 20000.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
+        blk.replay = p.replay;
+        blk.replay.dry = std::isfinite(p.replay.dry) ? std::clamp(p.replay.dry, 0.0f, 1.0f) : 0.0f;
+        if (!blk.replay.on)
+            replay.switchOff();
 
         if (!primed)
         {
@@ -1076,7 +1118,9 @@ private:
                 }
         }
 
-        if (seqRepeats == 0 || numActive == 0)
+        // with REPLAY on, the sequence only plays with the loop (it starts when the loop does)
+        const bool replayHolds = blk.replay.on && !replay.isLooping();
+        if (seqRepeats == 0 || numActive == 0 || replayHolds)
             seqRunning = false;
         else if (seqRepeats < 0 && !seqRunning)
             startSequence();
@@ -1107,6 +1151,37 @@ private:
 
     void onAttack() { applyExternalTrigger(TriggerAction::RestartAndStutter); }
 
+    // REPLAY's loop has started: the chain starts afresh (no tails of the last loop, no half-played stutter) and so
+    // does the sequence.
+    void onReplayStart()
+    {
+        for (auto& ch : channels)
+        {
+            ch.stutter.reset();
+            ch.pitch.reset();
+            ch.reverb.reset();
+            ch.delay.reset();
+            ch.ladder.reset();
+            ch.svf.reset();
+            for (auto& f : ch.formants)
+                f.reset();
+            ch.phaser.reset();
+            ch.flanger.reset();
+        }
+        samplePlayer.reset();
+        if (seqRepeats != 0 && numActive > 0)
+            startSequence();
+    }
+
+    // The player has played again: the sequence and the stutter stop with the loop.
+    void onReplayCut()
+    {
+        seqRunning = false;
+        for (auto& ch : channels)
+            ch.stutter.reset();
+        samplePlayer.release();
+    }
+
     // A trigger that does not come from the beat pattern (a picked note, a drum hit). With the pattern lock on it can
     // still fire the stutter, but it cannot restart or step the sequence.
     void applyExternalTrigger(TriggerAction action)
@@ -1123,6 +1198,8 @@ private:
 
     void applyTrigger(TriggerAction action)
     {
+        if (blk.replay.on && !replay.isLooping()) // REPLAY: nothing is effected while the player plays
+            return;
         switch (action)
         {
             case TriggerAction::RestartSequence: restartSequence(); break;
@@ -1441,5 +1518,8 @@ private:
     float inputPeak = 0.0f;
     int attacksHeard = 0;
     std::atomic<bool> stutterOut { false };
+    ReplayLooper replay;
+    std::atomic<int> replayStateOut { 0 };
+    std::atomic<float> replayLoopOut { 0.0f }, replayPositionOut { 0.0f };
 };
 } // namespace bitvibe

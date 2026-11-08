@@ -124,6 +124,12 @@ inline constexpr const char* soundLevel = "soundLevel";
 inline constexpr const char* ringOn = "ringOn";
 inline constexpr const char* ringHz = "ringHz";
 inline constexpr const char* ringMix = "ringMix";
+inline constexpr const char* replayOn = "replayOn";
+inline constexpr const char* replayBack = "replayBack";
+inline constexpr const char* replayWait = "replayWait";
+inline constexpr const char* replayLength = "replayLength";
+inline constexpr const char* replayDry = "replayDry";
+inline constexpr const char* replayThreshold = "replayThreshold";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
@@ -404,6 +410,12 @@ private:
     std::atomic<float>* pOutGain = nullptr;
     std::atomic<float>* pHeadroom = nullptr;
     std::atomic<float>* pSensitivity = nullptr;
+    std::atomic<float>* pReplayOn = nullptr;
+    std::atomic<float>* pReplayBack = nullptr;
+    std::atomic<float>* pReplayWait = nullptr;
+    std::atomic<float>* pReplayLength = nullptr;
+    std::atomic<float>* pReplayDry = nullptr;
+    std::atomic<float>* pReplayThreshold = nullptr;
     std::atomic<float>* pStutterLen = nullptr;
     std::atomic<float>* pExpression = nullptr;
     std::atomic<float>* pMorph = nullptr;
