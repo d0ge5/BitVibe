@@ -1738,6 +1738,8 @@ PopupMenu BitVibeEditor::presetMenu()
             all.addSectionHeader("YOUR SLOTS");
         else if (i == bitvibe::kFirstPackSlot)
             all.addSectionHeader("PRESET PACK");
+        else if (i > bitvibe::kFirstPackSlot && BitVibeProcessor::packSection(i - bitvibe::kFirstPackSlot) != BitVibeProcessor::packSection(i - bitvibe::kFirstPackSlot - 1))
+            all.addSectionHeader(BitVibeProcessor::packSection(i - bitvibe::kFirstPackSlot).toUpperCase());
         item(all, i);
     }
     menu.addSubMenu("All presets (" + String(count) + ")", all);

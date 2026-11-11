@@ -1021,6 +1021,11 @@ private:
         blk.stutter = mapping::stutterMode(p.stutter);
         blk.replay = p.replay;
         blk.replay.dry = std::isfinite(p.replay.dry) ? std::clamp(p.replay.dry, 0.0f, 1.0f) : 0.0f;
+        blk.replay.speed = std::isfinite(p.replay.speed) ? std::clamp(p.replay.speed, 0.125f, 2.0f) : 1.0f;
+        blk.replay.direction = (ReplayDirection) std::clamp((int) p.replay.direction, 0, kNumReplayDirections - 1);
+        blk.replay.stretch = std::isfinite(p.replay.stretch) ? std::clamp(p.replay.stretch, 1.0f, kReplayMaxStretch) : 1.0f;
+        blk.replay.swellSeconds = std::isfinite(p.replay.swellSeconds) ? std::clamp(p.replay.swellSeconds, 0.0f, kReplayMaxSwell) : 0.0f;
+        blk.replay.wear = std::isfinite(p.replay.wear) ? std::clamp(p.replay.wear, 0.0f, 1.0f) : 0.0f;
         if (!blk.replay.on)
             replay.switchOff();
 

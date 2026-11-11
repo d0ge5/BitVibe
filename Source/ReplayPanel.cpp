@@ -7,6 +7,7 @@ using namespace pedalstyle;
 namespace
 {
 constexpr int kKnobY = 50, kLabelY = 74, kKnobSize = 40;
+constexpr int kRow2Caption = 110, kRow2Box = 124, kRow2KnobY = 134, kRow2LabelY = 158; // the second row
 constexpr std::array<int, 5> kKnobX { 52, 140, 228, 316, 404 };
 constexpr int kStatusX = 150; // the status text and the loop's playhead, right of the title
 
@@ -47,7 +48,15 @@ ReplayPanel::ReplayPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
                                   "effects. Left = only the sequenced loop." },
                            Knob { &thresholdSlider, &thresholdAtt, ids::replayThreshold,
                                   "THRESHOLD: how loud the guitar has to be to count as playing. Lower it if the loop starts while you "
-                                  "still play softly; raise it if hum or noise keeps cutting the loop." } })
+                                  "still play softly; raise it if hum or noise keeps cutting the loop." },
+                           Knob { &stretchSlider, &stretchAtt, ids::replayStretch,
+                                  "STRETCH: the loop plays slower without dropping in pitch, up to four times, as overlapping grains. "
+                                  "Smears a phrase into a pad; the sequence keeps its own tempo." },
+                           Knob { &swellSlider, &swellAtt, ids::replaySwell,
+                                  "SWELL: how long the loop takes to fade in when it starts, up to four seconds. Off, it starts at once." },
+                           Knob { &wearSlider, &wearAtt, ids::replayWear,
+                                  "WEAR: every pass of the loop comes back a little darker and quieter, like a tape loop wearing out. "
+                                  "All the way up it is gone in a dozen passes." } })
     {
         auto& s = *k.slider;
         s.setSliderStyle(Slider::RotaryVerticalDrag);
@@ -62,12 +71,35 @@ ReplayPanel::ReplayPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         s.onValueChange = [this] { repaint(); };
         addChildComponent(s);
     }
+    struct Box
+    {
+        juce::ComboBox* box;
+        std::unique_ptr<APVTS::ComboBoxAttachment>* att;
+        const char* id;
+        const char* tip;
+    };
+    for (const auto& k : { Box { &speedBox, &speedAtt, ids::replaySpeed,
+                                 "SPEED: how fast the loop plays, tape style: half speed is an octave down and twice as long, quarter speed two "
+                                 "octaves down." },
+                           Box { &directionBox, &directionAtt, ids::replayDirection,
+                                 "PLAY: which way the loop plays: forward, in reverse, or back and forth (forward, then backwards from its end, "
+                                 "with no seam)." } })
+    {
+        auto& box = *k.box;
+        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*>(proc.apvts.getParameter(k.id)))
+            box.addItemList(choice->choices, 1);
+        box.setLookAndFeel(&laf);
+        *k.att = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, k.id, box);
+        box.setTooltip(k.tip);
+        addChildComponent(box);
+    }
     refresh();
 }
 
 ReplayPanel::~ReplayPanel()
 {
-    for (Component* c : std::initializer_list<Component*> { &onButton, &backSlider, &waitSlider, &lengthSlider, &drySlider, &thresholdSlider })
+    for (Component* c : std::initializer_list<Component*> { &onButton, &backSlider, &waitSlider, &lengthSlider, &drySlider, &thresholdSlider,
+                                                            &speedBox, &directionBox, &stretchSlider, &swellSlider, &wearSlider })
         c->setLookAndFeel(nullptr);
 }
 
@@ -79,12 +111,18 @@ void ReplayPanel::resized()
     int i = 0;
     for (auto* s : { &backSlider, &waitSlider, &lengthSlider, &drySlider, &thresholdSlider })
         s->setBounds(Rectangle<int>(kKnobSize, kKnobSize).withCentre({ kKnobX[(size_t) i++], kKnobY }));
+    speedBox.setBounds(12, kRow2Box, 92, 22);
+    directionBox.setBounds(112, kRow2Box, 104, 22);
+    i = 2;
+    for (auto* s : { &stretchSlider, &swellSlider, &wearSlider })
+        s->setBounds(Rectangle<int>(kKnobSize, kKnobSize).withCentre({ kKnobX[(size_t) i++], kRow2KnobY }));
 }
 
 void ReplayPanel::applyCollapse()
 {
     const bool open = isOn();
-    for (Component* c : std::initializer_list<Component*> { &backSlider, &waitSlider, &lengthSlider, &drySlider, &thresholdSlider })
+    for (Component* c : std::initializer_list<Component*> { &backSlider, &waitSlider, &lengthSlider, &drySlider, &thresholdSlider,
+                                                            &speedBox, &directionBox, &stretchSlider, &swellSlider, &wearSlider })
         c->setVisible(open);
     if (getHeight() != currentHeight())
     {
@@ -167,4 +205,14 @@ void ReplayPanel::paint(Graphics& g)
     drawControlLabel(g, kKnobX[2], kLabelY, "LENGTH", length >= kReplayForever - 0.005f ? String("FOREVER") : secondsText(length));
     drawControlLabel(g, kKnobX[3], kLabelY, "DRY", String(roundToInt(value(proc, ids::replayDry) * 100.0f)) + "%");
     drawControlLabel(g, kKnobX[4], kLabelY, "THRESHOLD", String(roundToInt(value(proc, ids::replayThreshold))) + " dB");
+
+    // the second row: how the loop plays back
+    g.setColour(inkDim);
+    g.setFont(bold(10.0f));
+    g.drawText("SPEED", 12, kRow2Caption, 92, 12, Justification::centredLeft);
+    g.drawText("PLAY", 112, kRow2Caption, 104, 12, Justification::centredLeft);
+    const float stretch = value(proc, ids::replayStretch), swell = value(proc, ids::replaySwell);
+    drawControlLabel(g, kKnobX[2], kRow2LabelY, "STRETCH", stretch < 1.005f ? String("OFF") : String(stretch, 1) + "x");
+    drawControlLabel(g, kKnobX[3], kRow2LabelY, "SWELL", swell < 0.005f ? String("OFF") : secondsText(swell));
+    drawControlLabel(g, kKnobX[4], kRow2LabelY, "WEAR", String(roundToInt(value(proc, ids::replayWear) * 100.0f)) + "%");
 }

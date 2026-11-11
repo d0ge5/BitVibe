@@ -130,6 +130,11 @@ inline constexpr const char* replayWait = "replayWait";
 inline constexpr const char* replayLength = "replayLength";
 inline constexpr const char* replayDry = "replayDry";
 inline constexpr const char* replayThreshold = "replayThreshold";
+inline constexpr const char* replaySpeed = "replaySpeed";
+inline constexpr const char* replayDirection = "replayDirection";
+inline constexpr const char* replayStretch = "replayStretch";
+inline constexpr const char* replaySwell = "replaySwell";
+inline constexpr const char* replayWear = "replayWear";
 
 inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
@@ -184,7 +189,7 @@ public:
     // One bank of preset slots: the twelve factory sounds, eight empty slots for the player's own (13 to 20), then the
     // preset pack (from slot 21), as many slots as the pack has presets. A slot holds the whole sound, as a preset file
     // does: the knobs, steps, lanes, tempo and morph sets, the effects on the right-hand side (distortion, tremolo,
-    // delay, reverb, the sample blend switch, EQ) and the beat pattern. What belongs to the player's rig or the moment is
+    // delay, reverb, the sample blend switch, EQ, REPLAY) and the beat pattern. What belongs to the player's rig or the moment is
     // left alone when a slot is recalled: bypass, stutter hold, host sync, the expression position, input / output
     // gain, headroom, trigger sensitivity, dry/wet, HEAR and the sample blend's levels (remembered per player). (A slot saved by an older version holds no effects; recalling
     // it leaves the effects as they are, as it did then.)
@@ -212,6 +217,12 @@ public:
     // The preset pack that ships inside the plug-in (the files in Presets/), in file-name order: slots kFirstPackSlot on.
     static int numPackPresets();
     static juce::String packPresetName(int index);
+    // The sections after the pack itself (LOOPER, DREAMY LOOPS): a pack preset's section ("" for the pack itself), the
+    // first slot of a section by name (numSlots() when there is none), and the first of the LOOPER section, where REPLAY
+    // presets begin.
+    static juce::String packSection(int index);
+    static int firstSlotOfSection(const juce::String& section);
+    static int firstLooperSlot();
 
     // What the sound in a slot makes use of, for the preset menu's groups: a bit per feature (1u << feature).
     enum PresetFeature
@@ -223,10 +234,11 @@ public:
         featCrush, featFilterTypes, featFormant, featPing,
         featDistortion, featRingMod, featPhaser, featFlanger, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
+        featReplay,
         kNumPresetFeatures
     };
     static const char* presetFeatureName(int feature);  // "Pitch steps", "Tape wobble", ...
-    static const char* presetFeatureGroup(int feature); // "SEQUENCER", "STUTTER", "SOUND", "EFFECTS" or "MORPH"
+    static const char* presetFeatureGroup(int feature); // "SEQUENCER", "STUTTER", "SOUND", "EFFECTS", "MORPH" or "LOOPER"
     uint32_t presetFeatures(int slot) const;
 
     // ---- the sampler ----------------------------------------------------------------------------------------
@@ -416,6 +428,11 @@ private:
     std::atomic<float>* pReplayLength = nullptr;
     std::atomic<float>* pReplayDry = nullptr;
     std::atomic<float>* pReplayThreshold = nullptr;
+    std::atomic<float>* pReplaySpeed = nullptr;
+    std::atomic<float>* pReplayDirection = nullptr;
+    std::atomic<float>* pReplayStretch = nullptr;
+    std::atomic<float>* pReplaySwell = nullptr;
+    std::atomic<float>* pReplayWear = nullptr;
     std::atomic<float>* pStutterLen = nullptr;
     std::atomic<float>* pExpression = nullptr;
     std::atomic<float>* pMorph = nullptr;

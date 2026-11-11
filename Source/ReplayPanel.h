@@ -6,11 +6,13 @@
 // when they stop, what they just played loops through the sequencer and the effects until they play again. The title
 // row says what the looper is doing (and shows how far through the loop it is); the knobs set how much is looped
 // (LOOK BACK), how long a stop is (WAIT), how long the loop plays (LENGTH), how much of it is heard clean (DRY) and how
-// loud playing has to be to count (THRESHOLD). It folds to its title row while it is off (its settings stay).
+// loud playing has to be to count (THRESHOLD). A second row says how the loop plays back: its tape SPEED, which way
+// it PLAYs, a granular STRETCH, a SWELL in and the WEAR of each pass. It folds to its title row while it is off (its
+// settings stay).
 class ReplayPanel : public juce::Component
 {
 public:
-    static constexpr int kWidth = 456, kHeight = 104, kCollapsedHeight = 30;
+    static constexpr int kWidth = 456, kHeight = 188, kCollapsedHeight = 30;
     int currentHeight() const { return isOn() ? kHeight : kCollapsedHeight; }
     std::function<void()> onHeightChange; // the editor lays the column out again
 
@@ -35,6 +37,11 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> onAtt;
     KnobSlider backSlider, waitSlider, lengthSlider, drySlider, thresholdSlider;
     std::unique_ptr<APVTS::SliderAttachment> backAtt, waitAtt, lengthAtt, dryAtt, thresholdAtt;
+    // the second row, how the loop plays back: SPEED and PLAY (direction) boxes, STRETCH, SWELL and WEAR knobs
+    juce::ComboBox speedBox, directionBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> speedAtt, directionAtt;
+    KnobSlider stretchSlider, swellSlider, wearSlider;
+    std::unique_ptr<APVTS::SliderAttachment> stretchAtt, swellAtt, wearAtt;
     juce::String shownStatus;
     float shownPosition = -1.0f;
 

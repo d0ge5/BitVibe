@@ -173,8 +173,12 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 86 && p->getCurrentProgram() == 0,
-          "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack), starts on slot 1");
+    check(p->getNumPrograms() == slotCount && slotCount == 111 && p->getCurrentProgram() == 0,
+          "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack, the looper, the dreamy loops), starts on slot 1");
+    check(BitVibeProcessor::firstLooperSlot() == slotCount - 25 && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == slotCount - 10
+              && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
+          "the LOOPER section is the 15 slots from " + String(BitVibeProcessor::firstLooperSlot() + 1) + ", DREAMY LOOPS the 10 from "
+              + String(BitVibeProcessor::firstSlotOfSection("Dreamy Loops") + 1));
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
               && p->getProgramName(slotCount).isEmpty(),
@@ -1843,7 +1847,7 @@ void testPresetPack(const File& outDir)
     const auto dry = presetpack::pluckTestSignal();
     const double dryRms = dry.getRMSLevel(0, 0, dry.getNumSamples());
 
-    int good = 0, matched = 0;
+    int good = 0, matched = 0, looperPlaced = 0;
     double quietest = 1.0e9, loudest = 0.0;
     for (int i = 0; i < BitVibeProcessor::numPackPresets(); ++i)
     {
@@ -1855,11 +1859,17 @@ void testPresetPack(const File& outDir)
                        || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f
                        || roundToInt(getValue(*p, ids::filterType)) != 0 || std::abs(getValue(*p, ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.05f
                        || getValue(*p, ids::swing) > 0.005f || getValue(*p, ids::ringOn) > 0.5f || getValue(*p, ids::pingOn) > 0.5f
-                       || getValue(*p, ids::modOn) > 0.5f;
+                       || getValue(*p, ids::modOn) > 0.5f || getValue(*p, ids::replayOn) > 0.5f;
         for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
 
+        // a LOOPER preset passes the plucks clean (they never stop for long enough to loop): its sound is checked with
+        // REPLAY off, the way it was levelled, and the section is checked instead
+        const bool looper = getValue(*p, ids::replayOn) > 0.5f;
+        looperPlaced += looper == (bitvibe::kFirstPackSlot + i >= BitVibeProcessor::firstLooperSlot()) ? 1 : 0;
+        if (looper)
+            setValue(*p, ids::replayOn, 0.0f);
         const auto wet = presetpack::playThrough(*p, dry);
         bool finite = true;
         double diff = 0.0;
@@ -1884,6 +1894,26 @@ void testPresetPack(const File& outDir)
     check(good == count, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of " + String(count) + ")");
     check(matched == count, "and every one plays at the dry pluck's loudness, or as near as its peaks allow (" + String(matched) + " of "
                                 + String(count) + "; levels x" + String(quietest, 2) + " to x" + String(loudest, 2) + ")");
+    check(looperPlaced == count, "REPLAY is on in every LOOPER preset and off in every other (" + String(looperPlaced) + " of " + String(count) + ")");
+
+    // a LOOPER preset answers a phrase: the plucks pass clean, and after a stop the loop plays through the sequence
+    {
+        auto p = makeProcessor();
+        p->setCurrentProgram(BitVibeProcessor::firstLooperSlot());
+        AudioBuffer<float> in(2, 48000 * 3);
+        in.clear();
+        const auto phrase = makeInput(48000);
+        for (int c = 0; c < 2; ++c)
+            in.copyFrom(c, 0, phrase, c, 0, 48000);
+        const auto out = presetpack::playThrough(*p, in);
+        double clean = 0.0;
+        for (int n = 0; n < 48000; ++n)
+            clean = std::max(clean, (double) std::abs(out.getSample(0, n) - in.getSample(0, n)));
+        const float later = out.getRMSLevel(0, 48000 * 2, 48000);
+        check(clean < 1.0e-5 && later > 0.02f,
+              "'" + p->getProgramName(p->getCurrentProgram()) + "' passes the phrase clean (diff " + String(clean, 6) + ") and loops it after the stop (rms "
+                  + String(later, 3) + ")");
+    }
 }
 
 // What makes a first run go right: the window fits the screen, effects that are on can be heard, the beat pattern
@@ -2997,7 +3027,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 367, "367 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 372, "372 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

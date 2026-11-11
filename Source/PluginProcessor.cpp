@@ -467,6 +467,17 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     add(std::make_unique<AudioParameterFloat>(
         id(ids::replayThreshold), "Replay Threshold", NormalisableRange<float>(kReplayMinThresholdDb, kReplayMaxThresholdDb, 0.5f),
         kReplayDefaultThresholdDb, withText([](float v, int) { return String(roundToInt(v)) + " dB"; })));
+    // how the loop plays back: tape speed, direction, a granular stretch, a swell in and the wear of each pass
+    add(std::make_unique<AudioParameterChoice>(id(ids::replaySpeed), "Replay Speed", StringArray { "Normal", "Half speed", "Quarter speed" }, 0));
+    add(std::make_unique<AudioParameterChoice>(id(ids::replayDirection), "Replay Direction", StringArray { "Forward", "Reverse", "Back and forth" }, 0));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::replayStretch), "Replay Stretch", NormalisableRange<float>(1.0f, kReplayMaxStretch, 0.01f), 1.0f,
+        withText([](float v, int) { return v < 1.005f ? String("Off") : String(v, 1) + "x slower"; })));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::replaySwell), "Replay Swell", seconds(0.0f, kReplayMaxSwell, 1.0f), 0.0f,
+        withText([secondsText](float v, int n) { return v < 0.005f ? String("Off") : secondsText(v, n); })));
+    add(std::make_unique<AudioParameterFloat>(id(ids::replayWear), "Replay Wear", NormalisableRange<float>(0.0f, 1.0f), 0.0f,
+                                              withText([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })));
     for (auto& g : groups)
         layout.add(std::move(g));
     return layout;
@@ -500,7 +511,7 @@ std::vector<String> presetParameterIds()
 // effects, and a slot as its effects.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq" })
+    for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq", "replay" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
@@ -516,7 +527,7 @@ bool isRigSetting(const String& id)
 
 struct PackPreset
 {
-    String file, name;
+    String file, name, section; // the section of the bank the preset is listed under ("" = the pack itself)
     const char* data = nullptr;
     int size = 0;
 };
@@ -535,10 +546,13 @@ const std::vector<PackPreset>& presetPack()
             const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
             if (data == nullptr)
                 continue;
-            String name = file.upToLastOccurrenceOf(".", false, false);
+            String name = file.upToLastOccurrenceOf(".", false, false), section;
             if (auto xml = XmlDocument::parse(String::fromUTF8(data, size)))
+            {
                 name = xml->getStringAttribute("name", name);
-            list.push_back({ file, name, data, size });
+                section = xml->getStringAttribute("section", "");
+            }
+            list.push_back({ file, name, section, data, size });
         }
         std::sort(list.begin(), list.end(), [](const PackPreset& a, const PackPreset& b) { return a.file.compareNatural(b.file) < 0; });
         return list;
@@ -625,6 +639,11 @@ BitVibeProcessor::BitVibeProcessor()
     pReplayLength = raw(ids::replayLength);
     pReplayDry = raw(ids::replayDry);
     pReplayThreshold = raw(ids::replayThreshold);
+    pReplaySpeed = raw(ids::replaySpeed);
+    pReplayDirection = raw(ids::replayDirection);
+    pReplayStretch = raw(ids::replayStretch);
+    pReplaySwell = raw(ids::replaySwell);
+    pReplayWear = raw(ids::replayWear);
     pStutterLen = raw(ids::stutterLen);
     pExpression = raw(ids::expression);
     pMorph = raw(ids::morph);
@@ -862,6 +881,11 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.replay.lengthSeconds = pReplayLength->load() >= bitvibe::kReplayForever - 0.005f ? bitvibe::kReplayForever : pReplayLength->load();
     p.replay.dry = pReplayDry->load();
     p.replay.thresholdDb = pReplayThreshold->load();
+    p.replay.speed = bitvibe::kReplaySpeeds[(size_t) jlimit(0, (int) bitvibe::kReplaySpeeds.size() - 1, roundToInt(pReplaySpeed->load()))];
+    p.replay.direction = (bitvibe::ReplayDirection) jlimit(0, bitvibe::kNumReplayDirections - 1, roundToInt(pReplayDirection->load()));
+    p.replay.stretch = pReplayStretch->load();
+    p.replay.swellSeconds = pReplaySwell->load();
+    p.replay.wear = pReplayWear->load();
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.stutterKind = (bitvibe::StutterKind) jlimit(0, bitvibe::kNumStutterKinds - 1, roundToInt(pStutterType->load()));
     p.mix = pMix->load();
@@ -1511,6 +1535,23 @@ File BitVibeProcessor::presetFolder()
 
 int BitVibeProcessor::numPackPresets() { return (int) presetPack().size(); }
 
+int BitVibeProcessor::firstSlotOfSection(const String& section)
+{
+    const auto& pack = presetPack();
+    for (size_t i = 0; i < pack.size(); ++i)
+        if (pack[i].section.equalsIgnoreCase(section))
+            return bitvibe::kFirstPackSlot + (int) i;
+    return numSlots();
+}
+
+int BitVibeProcessor::firstLooperSlot() { return firstSlotOfSection("Looper"); }
+
+String BitVibeProcessor::packSection(int index)
+{
+    const auto& pack = presetPack();
+    return index >= 0 && index < (int) pack.size() ? pack[(size_t) index].section : String();
+}
+
 namespace
 {
 struct FeatureText
@@ -1534,6 +1575,7 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "EFFECTS", "Delay" },                  { "EFFECTS", "Tape wobble" },
     { "EFFECTS", "Reverb" },                 { "EFFECTS", "EQ" },
     { "MORPH", "Expression morph" },
+    { "LOOPER", "Replay looper" },
 };
 } // namespace
 
@@ -1633,6 +1675,7 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     mark(featReverb, effect(ids::reverbOn) > 0.5f && effect(ids::reverbMix) > 0.005f);
     mark(featEq, effect(ids::eqOn) > 0.5f);
     mark(featMorph, plain(ids::morph) > 0.5f);
+    mark(featReplay, effect(ids::replayOn) > 0.5f);
     return f;
 }
 

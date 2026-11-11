@@ -170,6 +170,17 @@
     <PARAM id="delayHighCut" value="20000.0"/>
     <PARAM id="delayWobble" value="0.0"/>
     <PARAM id="patternLock" value="1.0"/>
+    <PARAM id="replayOn" value="0.0"/>
+    <PARAM id="replayBack" value="2.0"/>
+    <PARAM id="replayWait" value="0.5"/>
+    <PARAM id="replayLength" value="64.0"/>
+    <PARAM id="replayDry" value="0.0"/>
+    <PARAM id="replayThreshold" value="-45.0"/>
+    <PARAM id="replaySpeed" value="0.0"/>
+    <PARAM id="replayDirection" value="0.0"/>
+    <PARAM id="replayStretch" value="1.0"/>
+    <PARAM id="replaySwell" value="0.0"/>
+    <PARAM id="replayWear" value="0.0"/>
   </EFFECTS>
   <PATTERN action="0" steps="0" randomBeats="31" signature="0"/>
 </BITVIBE_PRESET>

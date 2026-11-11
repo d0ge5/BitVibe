@@ -48,7 +48,7 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   **SWING** delays every second step, from straight up to a triplet shuffle, and **PING** rings the filter with a
   click at every step, a drum synth that needs no input; both are saved with the preset.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **one bank of 86 preset slots** with editable names,
+- **Expression morph** between two stored sets of knobs, and **one bank of 111 preset slots** with editable names,
   grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
@@ -74,7 +74,9 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
 - **Beat pattern:** trigger the sequence on chosen steps of the bar, with ten time signatures, a random
   option, a restart-the-bar button and a lock so only the pattern restarts the sequence.
 - **Replay:** play, and you hear only your clean guitar. Stop, and the phrase you just played loops through the
-  sequence and the effects until you play again.
+  sequence and the effects until you play again, at tape speed or half or quarter speed, forward, backwards or back
+  and forth, stretched (slower at the same pitch), swelling in, and wearing out a little with every pass. Fifteen
+  **LOOPER** presets and ten **DREAMY LOOPS** are built around it.
 - **SIMPLE or ADVANCED** view, so you only see what you need, and the effects as **tabs**, one panel at a time, so the
   whole window fits a laptop screen.
 - **Seven themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS, CONTRAST, and
@@ -314,9 +316,14 @@ keeps them with it.
   looped, counting back from your last note (never further back than the start of the phrase). **WAIT** is how long
   you have to stop for before the loop starts. **LENGTH** is how long the loop plays (*FOREVER*, the default, plays
   until you play again). **DRY** blends in the loop as you played it, and **THRESHOLD** is how loud the guitar has
-  to be to count as playing. The title row says what it is doing and shows how far through the loop it is. While
+  to be to count as playing. A second row says how the loop plays back: **SPEED** (normal, half = an octave down,
+  quarter = two octaves down, tape style), **PLAY** (forward, reverse, or back and forth, which has no seam),
+  **STRETCH** (up to four times slower at the same pitch, as overlapping grains, which smears a phrase into a pad),
+  **SWELL** (the loop fades in over up to four seconds) and **WEAR** (every pass comes back a little darker and quieter,
+  like a tape loop wearing out). The title row says what it is doing and shows how far through the loop it is. While
   replay is on, DRY/WET and HEAR have no effect, and your picks cut the loop instead of firing the stutter or the
-  sequence. Replay is a setting of your rig, like TRIGGER: presets leave it as it is.
+  sequence. Replay and its knobs are part of a preset, like the other effects: the **LOOPER** presets switch it on,
+  and the rest switch it off.
 - **Sample blend:** put your own WAV, AIFF, FLAC or OGG files (up to 20 seconds) in `Documents/BitVibe/Sounds`
   (the **OPEN SOUNDS FOLDER** button gets you there), then **CHOOSE SOUNDS**. With no sounds at all the panel says
   **NO SOUNDS YET** and shows the folder button; the first sounds you add are found and picked by themselves. Subfolders are read too, and CHOOSE
@@ -402,9 +409,9 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **one bank of 86 preset slots** (they also appear as programs in your DAW). `<` and `>`
-  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, and 21 to 86 are the preset
-  pack. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
+- The bar at the top holds **one bank of 111 preset slots** (they also appear as programs in your DAW). `<` and `>`
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, 21 to 86 are the preset
+  pack, 87 to 101 its **LOOPER** section and 102 to 111 its **DREAMY LOOPS**. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
   sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then.
@@ -416,7 +423,7 @@ Only record what you have the right to use.
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
   rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 86 in order
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 111 in order
   and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
@@ -424,7 +431,9 @@ Only record what you have the right to use.
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
 - **Preset pack:** sixty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble, the filter types, swing, the ping, the ring mod and the phaser / flanger, in slots 21 to 86 (your picked sounds stay as they are). Save over
+  the delay's tape wobble, the filter types, swing, the ping, the ring mod and the phaser / flanger, in slots 21 to 86, and fifteen
+  **LOOPER** sounds built around REPLAY in slots 87 to 101 and ten **DREAMY LOOPS** (REPLAY's speed, direction,
+  stretch, swell and wear, for atmospheres) in slots 102 to 111 (your picked sounds stay as they are). Save over
   one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 

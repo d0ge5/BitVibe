@@ -4105,6 +4105,75 @@ void testReplay()
     CHECK(maxDiff(out, 0.0, 7.0) < 1.0e-6, "REPLAY off: the neutral settings pass the input (diff %g)", maxDiff(out, 0.0, 7.0));
 }
 
+// REPLAY's playback: speed (tape style), direction, the granular stretch, the swell and the wear.
+void testReplayPlayback()
+{
+    std::puts("replay playback");
+    // a phrase whose pitch changes half way: 440 Hz for half a second, then 660 Hz for half a second, then silence
+    Signal in((size_t) (4.0 * kFs), 0.0f);
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        const double t = (double) i / kFs;
+        if (t < 0.5)
+            in[i] = 0.3f * (float) std::sin(2.0 * 3.14159265358979 * 440.0 * t);
+        else if (t < 1.0)
+            in[i] = 0.3f * (float) std::sin(2.0 * 3.14159265358979 * 660.0 * t);
+    }
+    Params p = neutral();
+    p.replay.on = true;
+    p.replay.lookBackSeconds = 1.0f; // the whole phrase: 440 then 660
+    p.replay.waitSeconds = 0.3f;
+    // the loop starts at 1.3 s: forward, the first 0.4 s of it are the 440 Hz half
+    Signal out = render(p, in);
+    CHECK(tonePower(out, 1.35, 1.7, 440.0) > 100.0 * tonePower(out, 1.35, 1.7, 660.0), "forward: the loop begins with the 440 Hz half");
+    CHECK(tonePower(out, 1.85, 2.2, 660.0) > 100.0 * tonePower(out, 1.85, 2.2, 440.0), "and goes on to the 660 Hz half");
+
+    p.replay.direction = ReplayDirection::Reverse;
+    out = render(p, in);
+    CHECK(tonePower(out, 1.35, 1.7, 660.0) > 100.0 * tonePower(out, 1.35, 1.7, 440.0), "REVERSE: it begins with the 660 Hz half (from the end)");
+
+    p.replay.direction = ReplayDirection::BackAndForth;
+    out = render(p, in);
+    // forward for a second (440 then 660), then back (660 then 440): 2.3 to 2.8 s is the backward 660 half, 2.8 on the 440
+    CHECK(tonePower(out, 1.35, 1.7, 440.0) > 100.0 * tonePower(out, 1.35, 1.7, 660.0)
+              && tonePower(out, 2.35, 2.7, 660.0) > 100.0 * tonePower(out, 2.35, 2.7, 440.0)
+              && tonePower(out, 2.85, 3.2, 440.0) > 100.0 * tonePower(out, 2.85, 3.2, 660.0),
+          "BACK AND FORTH: forward through the loop, then backwards from its end");
+
+    p.replay.direction = ReplayDirection::Forward;
+    p.replay.speed = 0.5f;
+    out = render(p, in);
+    CHECK(tonePower(out, 1.35, 2.2, 220.0) > 100.0 * tonePower(out, 1.35, 2.2, 440.0), "HALF SPEED: an octave down (220 Hz)");
+    CHECK(tonePower(out, 2.4, 3.2, 330.0) > 100.0 * tonePower(out, 2.4, 3.2, 220.0), "and the 660 Hz half arrives a second later than at full speed, at 330 Hz");
+
+    p.replay.speed = 1.0f;
+    p.replay.stretch = 2.0f;
+    out = render(p, in);
+    CHECK(tonePower(out, 1.35, 2.2, 440.0) > 30.0 * tonePower(out, 1.35, 2.2, 660.0), "STRETCH 2x: the 440 Hz half lasts a second, still at 440 Hz (ratio %g)",
+          tonePower(out, 1.35, 2.2, 440.0) / std::max(1.0e-18, tonePower(out, 1.35, 2.2, 660.0)));
+    CHECK(tonePower(out, 2.4, 3.2, 660.0) > 30.0 * tonePower(out, 2.4, 3.2, 440.0), "then the 660 Hz half, at 660 Hz");
+    CHECK(rms(out, 1.4, 3.9) > 0.5 * rms(in, 0.1, 0.9) && rms(out, 1.4, 3.9) < 1.5 * rms(in, 0.1, 0.9), "the grains add up to about the loop's own level (rms %g vs %g)",
+          rms(out, 1.4, 3.9), rms(in, 0.1, 0.9));
+
+    p.replay.stretch = 1.0f;
+    p.replay.swellSeconds = 2.0f;
+    out = render(p, in);
+    CHECK(rms(out, 1.3, 1.5) < 0.35 * rms(out, 3.3, 3.5) && rms(out, 3.3, 3.5) > 0.7 * rms(in, 0.1, 0.9),
+          "SWELL 2 s: the loop starts quiet and is up to level two seconds later (rms %g then %g)", rms(out, 1.3, 1.5), rms(out, 3.3, 3.5));
+
+    p.replay.swellSeconds = 0.0f;
+    p.replay.wear = 1.0f;
+    Signal longer(in);
+    longer.resize((size_t) (8.0 * kFs), 0.0f);
+    out = render(p, longer);
+    // the loop is a second long: pass one at 1.3 s, pass six at 6.3 s
+    const double first660 = tonePower(out, 1.85, 2.25, 660.0), later660 = tonePower(out, 6.85, 7.25, 660.0);
+    const double first440 = tonePower(out, 1.35, 1.75, 440.0), later440 = tonePower(out, 6.35, 6.75, 440.0);
+    CHECK(later660 < 0.2 * first660 && later440 < 0.4 * first440 && later660 / first660 < later440 / first440,
+          "WEAR: six passes on, the loop is quieter and the 660 Hz has gone more than the 440 Hz (%g and %g of the first pass)",
+          later660 / first660, later440 / first440);
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0); // so a crash still shows how far the checks got
@@ -4146,6 +4215,7 @@ int main(int argc, char** argv)
     testFormant();
     testPhaserFlanger();
     testReplay();
+    testReplayPlayback();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

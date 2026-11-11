@@ -107,6 +107,27 @@ struct Builder
         set(ids::modFeedback, feedback);
         set(ids::modMix, mix);
     }
+    // REPLAY (the LOOPER section): what you just played loops through the sequence when you stop. Seconds of LOOK
+    // BACK and WAIT, the LENGTH (kReplayForever = until you play again), DRY 0..1 and the THRESHOLD in dB.
+    void replay(float lookBack, float wait, float length = bitvibe::kReplayForever, float dry = 0.0f, float thresholdDb = -45.0f)
+    {
+        on(ids::replayOn);
+        set(ids::replayBack, lookBack);
+        set(ids::replayWait, wait);
+        set(ids::replayLength, length);
+        set(ids::replayDry, dry);
+        set(ids::replayThreshold, thresholdDb);
+    }
+    // How REPLAY's loop plays back: speed 0 = normal, 1 = half (an octave down), 2 = quarter; direction 0 = forward,
+    // 1 = reverse, 2 = back and forth; stretch 1..4 (times slower, same pitch); the swell in seconds; wear 0..1.
+    void replayPlayback(int speed, int direction, float stretch = 1.0f, float swell = 0.0f, float wear = 0.0f)
+    {
+        set(ids::replaySpeed, (float) speed);
+        set(ids::replayDirection, (float) direction);
+        set(ids::replayStretch, stretch);
+        set(ids::replaySwell, swell);
+        set(ids::replayWear, wear);
+    }
     // The STUTTER knob: speed 0 = normal, 1 = fast, 2 = slow; repeats 1, 2, 3, 4, 6, 8 or 16.
     void stutter(int speed, int repeats, int type, int length)
     {
@@ -141,7 +162,13 @@ struct Preset
 {
     const char* name;
     std::function<void(Builder&)> build;
+    const char* section = nullptr; // the section of the bank it is listed under (nullptr = the pack itself)
 };
+// The sections after the pack, as the preset menu shows them: LOOPER (presets built around REPLAY) and DREAMY LOOPS
+// (REPLAY's playback: speed, direction, stretch, swell and wear, for atmospheres)
+constexpr const char* kLooper = "Looper", *kDreamy = "Dreamy Loops";
+constexpr int kForward = 0, kBackwards = 1, kBackAndForth = 2; // REPLAY directions
+constexpr int kNormalSpeed = 0, kHalfSpeed = 1, kQuarterSpeed = 2;
 
 inline const std::vector<Preset>& presets()
 {
@@ -860,6 +887,273 @@ inline const std::vector<Preset>& presets()
              b.sweep(kFlanger, kRateQuarter, 0.6f, 0.6f);
              b.dist(1, 0.45f, 0.5f, 0.5f);
          } },
+        // ---- LOOPER: REPLAY on, so each of these answers what you play once you stop. A pick cuts the loop rather than
+        // restarting the sequence, so none of them needs PATTERN LOCK; the sequence starts with the loop. ----
+        { "Loop Octaves", [](Builder& b) {
+             // the plainest answer: your phrase back in octaves and fifths, in eighths, with a little plate
+             b.set(ids::tempo, 120.0f);
+             b.sequence(4, 5, 1);
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.reverb(kPlate, 0.2f, 0.5f);
+             b.replay(2.0f, 0.5f);
+         }, kLooper },
+        { "Ghost Phrase", [](Builder& b) {
+             // the last four seconds come back half clean, half through a slow resonant sweep into a hall
+             b.set(ids::tempo, 70.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 0);
+             b.set(ids::filter, 0.7f);
+             b.set(ids::filterRes, 0.6f);
+             b.steps({ pct(0.1f), pct(0.2f), pct(0.35f), pct(0.5f), pct(0.6f), pct(0.45f), pct(0.3f), pct(0.15f) });
+             b.reverb(kHall, 0.4f, 0.75f);
+             b.replay(4.0f, 0.8f, bitvibe::kReplayForever, 0.6f);
+         }, kLooper },
+        { "Chop Shop", [](Builder& b) {
+             // the last second of your playing diced into a sixteenth-note gate, with short echoes
+             b.set(ids::tempo, 128.0f);
+             b.sequence(16, 5, 2);
+             b.steps({ P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0) });
+             b.lane(Lane::Level, { 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1 });
+             b.delay(k16th, 0.25f, 0.45f, 3);
+             b.replay(1.0f, 0.3f);
+         }, kLooper },
+        { "Riff Grinder", [](Builder& b) {
+             // your riff an octave down through the fuzz and a low ring mod, grinding on for eight seconds
+             b.set(ids::tempo, 100.0f);
+             b.sequence(8, 5, 1);
+             b.steps({ P(-12), P(0), P(-12), P(7), P(-12), P(0), P(-5), P(0) });
+             b.dist(1, 0.5f, 0.45f, 0.5f);
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 80.0f);
+             b.set(ids::ringMix, 0.35f);
+             b.replay(1.5f, 0.4f, 8.0f);
+         }, kLooper },
+        { "Half Time Dream", [](Builder& b) {
+             // every other beat of the loop drops to HALF SPEED, under a shimmer
+             b.set(ids::tempo, 90.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(0), P(0), P(0) });
+             b.stutter(0, 4, kHalf, 0);
+             b.lane(Lane::Stutter, { 1, 0, 1, 0 });
+             b.reverb(kShimmer, 0.4f, 0.75f);
+             b.replay(3.0f, 0.6f);
+         }, kLooper },
+        { "Reverse Memory", [](Builder& b) {
+             // a long pause, then the phrase back with slices REVERSED on beats one and three, in a reversed hall
+             b.set(ids::tempo, 110.0f);
+             b.sequence(8, 5, 1);
+             b.steps({ P(0), P(0), P(12), P(0), P(0), P(0), P(7), P(0) });
+             b.stutter(0, 2, kReverse, 1);
+             b.lane(Lane::Stutter, { 1, 0, 0, 0, 1, 0, 0, 0 });
+             b.reverb(kHall, 0.3f, 0.6f, true);
+             b.replay(2.0f, 1.0f);
+         }, kLooper },
+        { "Talk Back", [](Builder& b) {
+             // the FORMANT filter answers you: your phrase mouthed as vowels over a light drive, a third of it clean
+             b.set(ids::tempo, 100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.set(ids::filterType, (float) kFormant);
+             b.set(ids::filterRes, 0.5f);
+             b.set(ids::filter, 0.85f);
+             b.steps({ pct(0.02f), pct(0.15f), pct(0.4f), pct(1.0f), pct(0.4f), pct(0.15f), pct(0.05f), pct(1.0f) });
+             b.dist(0, 0.3f, 0.6f, 0.75f);
+             b.replay(2.0f, 0.5f, bitvibe::kReplayForever, 0.3f);
+         }, kLooper },
+        { "Bit Loop", [](Builder& b) {
+             // a four-second glitch reply: the last second at sixteenth-note sample rates, crushed in between
+             b.set(ids::tempo, 120.0f);
+             b.set(ids::seqType, 2.0f);
+             b.sequence(8, 5, 2);
+             b.steps({ pct(1.0f), pct(0.3f), pct(0.1f), pct(0.5f), pct(1.0f), pct(0.05f), pct(0.2f), pct(0.08f) });
+             b.lane(Lane::Crush, { 0.0f, 0.4f, 0.8f, 0.2f });
+             b.set(ids::bits, 0.6f);
+             b.replay(1.0f, 0.3f, 4.0f);
+         }, kLooper },
+        { "Climb Then Rest", [](Builder& b) {
+             // the loop climbs a major scale four times, then settles down to play on as it was
+             b.set(ids::tempo, 120.0f);
+             b.sequence(8, 3, 1);
+             b.steps({ P(0), P(2), P(4), P(5), P(7), P(9), P(11), P(12) });
+             b.delay(k8th, 0.3f, 0.5f, 4);
+             b.reverb(kPlate, 0.25f, 0.5f);
+             b.replay(2.0f, 0.5f);
+         }, kLooper },
+        { "Swing Looper", [](Builder& b) {
+             // your phrase swung hard in eighths, bouncing between octaves, with dotted echoes
+             b.set(ids::tempo, 96.0f);
+             b.sequence(8, 5, 1);
+             b.steps({ P(0), P(12), P(7), P(12), P(0), P(10), P(7), P(5) });
+             b.set(ids::swing, 0.6f);
+             b.lane(Lane::Level, { 1.0f, 0.6f });
+             b.delay(k8thDotted, 0.3f, 0.45f, 4);
+             b.replay(2.0f, 0.5f);
+         }, kLooper },
+        { "Tremolo Pulse", [](Builder& b) {
+             // the loop under a tremolo that speeds up over a bar, swept by a slow phaser
+             b.set(ids::tempo, 110.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(0), P(0), P(0) });
+             b.tremolo(4.0f, 0.9f, 0.5f, 2.0f, 0.3f, 4);
+             b.sweep(kPhaser, kRateBar, 0.7f, 0.4f);
+             b.replay(2.5f, 0.5f);
+         }, kLooper },
+        { "Shuffle Deck", [](Builder& b) {
+             // the SHUFFLE deals your phrase out in a new order every other eighth
+             b.set(ids::tempo, 118.0f);
+             b.sequence(8, 5, 1);
+             b.steps({ P(0), P(0), P(3), P(0), P(0), P(0), P(10), P(0) });
+             b.stutter(1, 4, kShuffle, 2);
+             b.lane(Lane::Stutter, { 1, 0, 1, 0, 1, 0, 1, 0 });
+             b.delay(k16th, 0.2f, 0.4f, 2);
+             b.replay(1.5f, 0.4f);
+         }, kLooper },
+        { "Long Memory", [](Builder& b) {
+             // the last eight seconds, half clean, swelling slowly through a low-pass into a long hall and wobbling echoes
+             b.set(ids::tempo, 60.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(16, 5, 0);
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filter, 0.6f);
+             b.set(ids::filterRes, 0.5f);
+             b.steps({ pct(0.1f), pct(0.15f), pct(0.2f), pct(0.3f), pct(0.4f), pct(0.5f), pct(0.6f), pct(0.7f),
+                       pct(0.7f), pct(0.6f), pct(0.5f), pct(0.4f), pct(0.3f), pct(0.2f), pct(0.15f), pct(0.1f) });
+             b.reverb(kHall, 0.5f, 0.9f);
+             b.delay(kQuarter, 0.3f, 0.6f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 0.3f);
+             b.replay(8.0f, 1.5f, bitvibe::kReplayForever, 0.5f, -50.0f);
+         }, kLooper },
+        { "Quick Answer", [](Builder& b) {
+             // the shortest reply: the last half second, an octave up and gated, the moment you stop, for two seconds
+             b.set(ids::tempo, 140.0f);
+             b.sequence(4, 5, 2);
+             b.steps({ P(12), P(12), P(0), P(12) });
+             b.lane(Lane::Level, { 1, 0, 1, 0 });
+             b.reverb(kRoom, 0.15f, 0.4f);
+             b.replay(0.5f, 0.15f, 2.0f);
+         }, kLooper },
+        { "Fading Ghost", [](Builder& b) {
+             // an octave below, swelling into a reversed hall over wobbling echoes, and gone after six seconds
+             b.set(ids::tempo, 80.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(-12), P(-12), P(-5), P(-12) });
+             b.reverb(kHall, 0.4f, 0.7f, true);
+             b.delay(kQuarter, 0.3f, 0.55f, 6);
+             b.set(ids::delayWobble, 0.4f);
+             b.replay(3.0f, 0.7f, 6.0f, 0.4f);
+         }, kLooper },
+        // ---- DREAMY LOOPS: REPLAY's playback (speed, direction, stretch, swell and wear) for atmospheres ----
+        { "Slow Tide", [](Builder& b) {
+             // the last six seconds at half speed, swelling in over three, under a slow low-pass swell into a long hall
+             b.set(ids::tempo, 60.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 0);
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filter, 0.5f);
+             b.set(ids::filterRes, 0.45f);
+             b.steps({ pct(0.15f), pct(0.25f), pct(0.4f), pct(0.6f), pct(0.75f), pct(0.6f), pct(0.4f), pct(0.25f) });
+             b.reverb(kHall, 0.5f, 0.9f);
+             b.replay(6.0f, 1.0f, bitvibe::kReplayForever, 0.3f);
+             b.replayPlayback(kHalfSpeed, kForward, 1.0f, 3.0f);
+         }, kDreamy },
+        { "Backwards Lullaby", [](Builder& b) {
+             // your phrase played backwards, an octave and a fifth above, swelling into a shimmer
+             b.set(ids::tempo, 72.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(12), P(7), P(12), P(0) });
+             b.reverb(kShimmer, 0.45f, 0.8f);
+             b.replay(3.0f, 0.8f, bitvibe::kReplayForever, 0.2f);
+             b.replayPlayback(kNormalSpeed, kBackwards, 1.0f, 1.5f);
+         }, kDreamy },
+        { "Frozen Lake", [](Builder& b) {
+             // STRETCHed four times: two seconds of playing become eight of glassy pad, filtered low into a huge hall
+             b.set(ids::tempo, 80.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(4, 5, 0);
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filter, 0.45f);
+             b.steps({ pct(0.3f), pct(0.5f), pct(0.4f), pct(0.6f) });
+             b.reverb(kHall, 0.6f, 0.95f);
+             b.replay(2.0f, 0.6f);
+             b.replayPlayback(kNormalSpeed, kForward, 4.0f, 2.0f);
+         }, kDreamy },
+        { "Tape Memory", [](Builder& b) {
+             // a half-speed loop that wears out: darker and quieter every pass, over wobbling echoes, until it is dust
+             b.set(ids::tempo, 90.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(0), P(0), P(0) });
+             b.delay(kQuarter, 0.3f, 0.55f, 6);
+             b.set(ids::delayWobble, 0.5f);
+             b.reverb(kRoom, 0.2f, 0.5f);
+             b.replay(4.0f, 0.8f, bitvibe::kReplayForever, 0.5f);
+             b.replayPlayback(kHalfSpeed, kForward, 1.0f, 0.5f, 0.8f);
+         }, kDreamy },
+        { "Pendulum", [](Builder& b) {
+             // back and forth, each swing an octave apart, under a slow smooth tremolo and a plate
+             b.set(ids::tempo, 70.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(12), P(0), P(12) });
+             b.tremolo(1.5f, 0.6f, 0.0f);
+             b.reverb(kPlate, 0.35f, 0.6f);
+             b.replay(2.5f, 0.6f, bitvibe::kReplayForever, 0.25f);
+             b.replayPlayback(kNormalSpeed, kBackAndForth, 1.0f, 1.0f);
+         }, kDreamy },
+        { "Quarter Light", [](Builder& b) {
+             // two octaves down and half as fast again: a subterranean drone under a shimmer, a little of the loop clean
+             b.set(ids::tempo, 60.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(0), P(7), P(0) });
+             b.reverb(kShimmer, 0.5f, 0.85f);
+             b.replay(4.0f, 1.0f, bitvibe::kReplayForever, 0.2f);
+             b.replayPlayback(kQuarterSpeed, kForward, 1.5f, 2.0f);
+         }, kDreamy },
+        { "Breathing Room", [](Builder& b) {
+             // stretched to twice its length, breathing on a sixteen-step level swell, with a slow tremolo and a hall
+             b.set(ids::tempo, 100.0f);
+             b.sequence(16, 5, 1);
+             b.steps({ P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0) });
+             b.lane(Lane::Level, { 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f, 0.9f, 0.8f, 0.7f, 0.6f, 0.5f, 0.4f, 0.35f, 0.35f });
+             b.tremolo(2.0f, 0.3f, 0.0f);
+             b.reverb(kHall, 0.45f, 0.8f);
+             b.replay(3.0f, 0.7f, bitvibe::kReplayForever, 0.3f);
+             b.replayPlayback(kNormalSpeed, kForward, 2.0f, 1.5f);
+         }, kDreamy },
+        { "Mirror Pool", [](Builder& b) {
+             // back and forth through the RES BLOOM filter and a four-bar phaser, into a reversed hall
+             b.set(ids::tempo, 80.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(0), P(5), P(7), P(0) });
+             b.set(ids::filterType, (float) kBloom);
+             b.set(ids::filter, 0.6f);
+             b.set(ids::filterRes, 0.55f);
+             b.sweep(kPhaser, kRate4Bars, 0.7f, 0.3f);
+             b.reverb(kHall, 0.4f, 0.75f, true);
+             b.replay(3.0f, 0.8f, bitvibe::kReplayForever, 0.2f);
+             b.replayPlayback(kNormalSpeed, kBackAndForth, 1.0f, 1.0f);
+         }, kDreamy },
+        { "Dust and Echo", [](Builder& b) {
+             // the loop wearing away under dotted echoes that never stop, each repeat older than the last
+             b.set(ids::tempo, 84.0f);
+             b.sequence(8, 5, 1);
+             b.steps({ P(0), P(0), P(12), P(0), P(0), P(7), P(0), P(0) });
+             b.lane(Lane::Level, { 1.0f, 0.5f });
+             b.delay(k8thDotted, 0.4f, 0.7f, bitvibe::kDelayForever);
+             b.set(ids::delayWobble, 0.5f);
+             b.reverb(kRoom, 0.25f, 0.5f);
+             b.replay(3.0f, 0.6f, bitvibe::kReplayForever, 0.4f);
+             b.replayPlayback(kNormalSpeed, kForward, 1.0f, 0.8f, 0.5f);
+         }, kDreamy },
+        { "Dream Sequence", [](Builder& b) {
+             // all of it: the last eight seconds backwards at half speed, stretched, swelling in over three seconds, in
+             // a shimmer with quarter-note echoes, half of it clean
+             b.set(ids::tempo, 66.0f);
+             b.sequence(4, 5, 0);
+             b.steps({ P(12), P(7), P(5), P(12) });
+             b.delay(kQuarter, 0.3f, 0.6f, 6);
+             b.reverb(kShimmer, 0.5f, 0.85f);
+             b.replay(8.0f, 1.2f, bitvibe::kReplayForever, 0.4f);
+             b.replayPlayback(kHalfSpeed, kBackwards, 1.5f, 3.0f, 0.15f);
+         }, kDreamy },
     };
     return list;
 }
@@ -931,10 +1225,18 @@ inline std::unique_ptr<juce::XmlElement> build(const Preset& preset)
                 ranged->setValueNotifyingHost(ranged->getDefaultValue());
     preset.build(b);
     // every pack preset plays at the loudness of the dry pluck (or as near as its peaks allow); playing the pluck
-    // changes no parameter, so the file is written as the table says, with its level
+    // changes no parameter, so the file is written as the table says, with its level. A LOOPER preset is levelled
+    // with REPLAY off: the plucks never stop for long enough to start a loop, and the loop goes through the same chain.
+    const bool replayOn = p.apvts.getRawParameterValue(ids::replayOn)->load() > 0.5f;
+    if (replayOn)
+        b.set(ids::replayOn, 0.0f);
     b.set(ids::soundLevel, matchedLevelDb(p));
+    if (replayOn)
+        b.set(ids::replayOn, 1.0f);
     p.changeProgramName(p.getCurrentProgram(), preset.name);
     auto xml = p.exportPreset();
+    if (preset.section != nullptr)
+        xml->setAttribute("section", preset.section);
     for (const char* tag : { "SOUNDS", "LOOP_SOUNDS" })
         if (auto* e = xml->getChildByName(tag))
             xml->removeChildElement(e, true);
