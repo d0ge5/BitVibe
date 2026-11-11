@@ -287,6 +287,23 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     }
     add(std::make_unique<AudioParameterFloat>(id(ids::ringMix), "Ring Mod Mix", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
 
+    // ---- SPLICE: the clicks of clips butted together with no fades, on the sequenced sound (part of a preset) ----
+    inGroup("splice", "Splice");
+    add(std::make_unique<AudioParameterBool>(id(ids::spliceOn), "Splice On", false));
+    add(std::make_unique<AudioParameterChoice>(id(ids::spliceWhen), "Splice When", StringArray { "Steps", "1/16 notes", "Anywhere" }, 0));
+    add(std::make_unique<AudioParameterFloat>(id(ids::spliceChance), "Splice Chance", NormalisableRange<float>(0.0f, 1.0f), 0.5f,
+                                              withText([](float v, int) { return String(roundToInt(v * 100.0f)) + "%"; })));
+    {
+        NormalisableRange<float> jump(0.0f, kSpliceMaxJumpMs, 0.1f);
+        jump.setSkewForCentre(40.0f);
+        add(std::make_unique<AudioParameterFloat>(id(ids::spliceJump), "Splice Jump", jump, 40.0f,
+                                                  withText([](float v, int) { return v < 0.05f ? String("None") : String(v, v < 10.0f ? 1 : 0) + " ms"; })));
+        NormalisableRange<float> gap(0.0f, kSpliceMaxGapMs, 0.1f);
+        gap.setSkewForCentre(8.0f);
+        add(std::make_unique<AudioParameterFloat>(id(ids::spliceGap), "Splice Gap", gap, 0.0f,
+                                                  withText([](float v, int) { return v < 0.05f ? String("None") : String(v, v < 10.0f ? 1 : 0) + " ms"; })));
+    }
+
     // ---- phaser / flanger on the sequenced sound (rig settings): its sweep is a note length of the tempo ----
     inGroup("mod", "Phaser / Flanger");
     add(std::make_unique<AudioParameterBool>(id(ids::modOn), "Phaser / Flanger On", false));
@@ -511,7 +528,7 @@ std::vector<String> presetParameterIds()
 // effects, and a slot as its effects.
 bool isSharedEffect(const String& id)
 {
-    for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq", "replay" })
+    for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq", "replay", "splice" })
         if (id.startsWith(prefix))
             return true;
     return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
@@ -633,6 +650,11 @@ BitVibeProcessor::BitVibeProcessor()
     pOutGain = raw(ids::outputGain);
     pHeadroom = raw(ids::headroom);
     pSensitivity = raw(ids::sensitivity);
+    pSpliceOn = raw(ids::spliceOn);
+    pSpliceWhen = raw(ids::spliceWhen);
+    pSpliceChance = raw(ids::spliceChance);
+    pSpliceJump = raw(ids::spliceJump);
+    pSpliceGap = raw(ids::spliceGap);
     pReplayOn = raw(ids::replayOn);
     pReplayBack = raw(ids::replayBack);
     pReplayWait = raw(ids::replayWait);
@@ -875,6 +897,11 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.outputGainDb = pOutGain->load();
     p.lineHeadroom = roundToInt(pHeadroom->load()) == 1;
     p.triggerSensitivity = pSensitivity->load();
+    p.splice.on = pSpliceOn->load() > 0.5f;
+    p.splice.when = (bitvibe::SpliceWhen) jlimit(0, bitvibe::kNumSpliceWhen - 1, roundToInt(pSpliceWhen->load()));
+    p.splice.chance = pSpliceChance->load();
+    p.splice.jumpMs = pSpliceJump->load();
+    p.splice.gapMs = pSpliceGap->load();
     p.replay.on = pReplayOn->load() > 0.5f;
     p.replay.lookBackSeconds = pReplayBack->load();
     p.replay.waitSeconds = pReplayWait->load();
@@ -1569,6 +1596,7 @@ constexpr FeatureText kFeatureText[BitVibeProcessor::kNumPresetFeatures] {
     { "STUTTER", "Stutter" },                { "STUTTER", "Stutter types" },
     { "SOUND", "Bit crush and sample rate" }, { "SOUND", "Filter types and resonance" },
     { "SOUND", "Talking filter (formant)" },  { "SOUND", "Filter ping" },
+    { "SOUND", "Clip splices" },
     { "EFFECTS", "Distortion and fuzz" },    { "EFFECTS", "Ring mod" },
     { "EFFECTS", "Phaser" },                 { "EFFECTS", "Flanger" },
     { "EFFECTS", "Tremolo" },
@@ -1664,6 +1692,8 @@ uint32_t BitVibeProcessor::presetFeatures(int index) const
     mark(featFormant, filterHeard && roundToInt(plain(ids::filterType)) == (int) FilterType::Formant);
 
     mark(featPing, running && plain(ids::pingOn) > 0.5f && plain(ids::pingLevel) > 0.005f);
+    mark(featSplice, effect(ids::spliceOn) > 0.5f && effect(ids::spliceChance) > 0.005f
+                         && (effect(ids::spliceJump) > 0.05f || effect(ids::spliceGap) > 0.05f));
     mark(featDistortion, effect(ids::distOn) > 0.5f);
     mark(featRingMod, effect(ids::ringOn) > 0.5f && effect(ids::ringMix) > 0.005f);
     const bool sweepHeard = effect(ids::modOn) > 0.5f && effect(ids::modMix) > 0.005f;

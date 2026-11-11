@@ -118,6 +118,15 @@ struct Builder
         set(ids::replayDry, dry);
         set(ids::replayThreshold, thresholdDb);
     }
+    // SPLICE: when 0 = steps, 1 = 1/16 notes, 2 = anywhere; chance 0..1; the JUMP and the GAP in ms.
+    void splice(int when, float chance, float jumpMs, float gapMs)
+    {
+        on(ids::spliceOn);
+        set(ids::spliceWhen, (float) when);
+        set(ids::spliceChance, chance);
+        set(ids::spliceJump, jumpMs);
+        set(ids::spliceGap, gapMs);
+    }
     // How REPLAY's loop plays back: speed 0 = normal, 1 = half (an octave down), 2 = quarter; direction 0 = forward,
     // 1 = reverse, 2 = back and forth; stretch 1..4 (times slower, same pitch); the swell in seconds; wear 0..1.
     void replayPlayback(int speed, int direction, float stretch = 1.0f, float swell = 0.0f, float wear = 0.0f)
@@ -886,6 +895,68 @@ inline const std::vector<Preset>& presets()
              b.set(ids::ringMix, 0.45f);
              b.sweep(kFlanger, kRateQuarter, 0.6f, 0.6f);
              b.dist(1, 0.45f, 0.5f, 0.5f);
+         } },
+        // ---- SPLICE, used gently: the odd unfaded edit, a tick or a dropout, never a wall of clicks ----
+        { "Tape Edit", [](Builder& b) {
+             // an arpeggio where one step in five starts a few milliseconds off, as if spliced by hand
+             b.set(ids::tempo, 108.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(7), P(12), P(7), P(3), P(7), P(10), P(7) });
+             b.lane(Lane::Level, { 1.0f, 0.7f });
+             b.reverb(kPlate, 0.2f, 0.5f);
+             b.splice(0, 0.2f, 12.0f, 0.0f);
+         } },
+        { "Rough Cut", [](Builder& b) {
+             // a crushed, gated chord with now and then a sixteenth cut short by a sliver of silence
+             b.set(ids::tempo, 96.0f);
+             b.sequence(8, 5, 2);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(0), P(0), P(0), P(0), P(0), P(0) });
+             b.lane(Lane::Level, { 1, 1, 0, 1, 1, 0, 1, 0 });
+             b.set(ids::bits, 0.8f);
+             b.splice(1, 0.12f, 20.0f, 3.0f);
+         } },
+        { "Click Track", [](Builder& b) {
+             // octaves with faint ticks scattered anywhere, like a session full of tiny unfaded edits
+             b.set(ids::tempo, 120.0f);
+             b.sequence(4, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(12), P(0), P(12) });
+             b.delay(k8th, 0.2f, 0.4f, 3);
+             b.splice(2, 0.08f, 4.0f, 0.0f);
+         } },
+        { "Missing Frames", [](Builder& b) {
+             // a slow fifths pad in a hall, dropping out for a few milliseconds on a step now and then
+             b.set(ids::tempo, 80.0f);
+             b.sequence(4, 5, 0);
+             b.freeRunning();
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.reverb(kHall, 0.4f, 0.75f);
+             b.splice(0, 0.3f, 0.0f, 8.0f);
+         } },
+        { "Forgot the Fades", [](Builder& b) {
+             // a filter-step line whose edits click into dotted echoes, so each click comes back softer
+             b.set(ids::tempo, 100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.set(ids::filter, 0.85f);
+             b.set(ids::filterRes, 0.45f);
+             b.steps({ pct(0.2f), pct(0.6f), pct(0.35f), pct(0.9f), pct(0.25f), pct(0.7f), pct(0.4f), pct(1.0f) });
+             b.delay(k8thDotted, 0.3f, 0.5f, 4);
+             b.splice(0, 0.25f, 30.0f, 1.0f);
+         } },
+        { "Cassette Splice", [](Builder& b) {
+             // a wobbling tape loop of a riff, with the odd join where the tape was cut and taped back together
+             b.set(ids::tempo, 88.0f);
+             b.sequence(8, 5, 1);
+             b.freeRunning();
+             b.steps({ P(0), P(0), P(3), P(0), P(5), P(3), P(0), P(-2) });
+             b.delay(kQuarter, 0.25f, 0.45f, 3);
+             b.set(ids::delayWobble, 0.45f);
+             b.set(ids::sampleRate, 0.75f);
+             b.splice(0, 0.15f, 25.0f, 2.0f);
          } },
         // ---- LOOPER: REPLAY on, so each of these answers what you play once you stop. A pick cuts the loop rather than
         // restarting the sequence, so none of them needs PATTERN LOCK; the sequence starts with the loop. ----

@@ -21,6 +21,7 @@
 #include "Reverb.h"
 #include "Samples.h"
 #include "Scope.h"
+#include "Splice.h"
 #include "Tremolo.h"
 
 #include <array>
@@ -197,6 +198,10 @@ struct Params
     // the drum hits can still fire the stutter, but they no longer restart the sequence.
     bool patternLock = false;
 
+    // SPLICE (see Splice.h): the clicks of clips butted together with no fades, on the sequenced sound right after the
+    // pitch shifter, so the crusher, filter and every effect after it hear them. Only while a sequence or stutter plays.
+    SpliceSettings splice;
+
     // REPLAY (see Replay.h): while the player plays only their clean signal comes out; when they stop, what they just
     // played loops through the sequencer and the effects until they play again. While it is on, MIX and SEQ ONLY have
     // no say (the clean signal always passes, and REPLAY's DRY sets how much of the loop is heard clean), picks and
@@ -264,6 +269,7 @@ public:
         }
         samplePlayer.prepare(fs);
         replay.prepare(fs);
+        splicer.prepare(fs);
         for (auto& ch : channels)
         {
             ch.dist.prepare(fs);
@@ -350,6 +356,8 @@ public:
         patternFresh = true;
         samplePlayer.reset();
         replay.reset();
+        splicer.reset();
+        spliceAsked = false;
     }
 
     // Processes in place. io points at numChannels channel buffers (1 or 2). events (sorted by offset)
@@ -677,6 +685,21 @@ public:
             const float seqGate = blk.seqOnly && !blk.replay.on ? seqOnlyGate : 1.0f;
             const float wetAmount = blk.seqOnly ? 1.0f : mixAmount;
 
+            // SPLICE: an edit where one is due (a step, a sixteenth, or any moment), if the CHANCE says so
+            const bool spliceRun = blk.splice.on || !splicer.idle();
+            if (spliceRun)
+            {
+                const bool spliceLive = blk.splice.on && (seqRunning || channels[0].stutter.isActive());
+                bool due = spliceAsked;
+                if (blk.splice.when == SpliceWhen::Anywhere)
+                    due = random01() < 8.0f / (float) beatSamples; // eight chances a beat
+                if (spliceLive && due && random01() < blk.splice.chance)
+                    spliceCut();
+                if (!spliceLive)
+                    splicer.release();
+            }
+            spliceAsked = false;
+
             // ---- per-channel audio path --------------------------------------------------
             float beforeEqSum = 0.0f, afterEqSum = 0.0f;
             for (int c = 0; c < nCh; ++c)
@@ -686,6 +709,8 @@ public:
                 // it is shifted by the sequence and crushed with everything else.
                 float y = ch.stutter.process(x[(size_t) c]) + sampleSignal;
                 y = ch.pitch.process(y, ratio, pitchAmount);
+                if (spliceRun)
+                    y = splicer.process(c, y);
                 const float beforeFx = y;
 
                 if (srTick)
@@ -784,6 +809,8 @@ public:
                 io[c][n] = lerpExact(dry[(size_t) c], y, bypassMix);
             }
 
+            if (spliceRun)
+                splicer.endSample();
             eqReference.endSample(beforeEqSum / (float) nCh, afterEqSum / (float) nCh);
             {
                 float inSum = 0.0f, outSum = 0.0f;
@@ -930,6 +957,7 @@ private:
         int stutterLength = 0;
         StutterKind stutterKind = StutterKind::Repeat;
         ReplaySettings replay;
+        SpliceSettings splice;
     };
 
     void beginBlock(const Params& p)
@@ -1019,6 +1047,11 @@ private:
         blk.reverbLowCut = std::clamp(p.reverbLowCutHz, 20.0f, 2000.0f);
         blk.reverbHighCut = std::clamp(p.reverbHighCutHz, 200.0f, 20000.0f);
         blk.stutter = mapping::stutterMode(p.stutter);
+        blk.splice = p.splice;
+        blk.splice.when = (SpliceWhen) std::clamp((int) p.splice.when, 0, kNumSpliceWhen - 1);
+        blk.splice.chance = std::isfinite(p.splice.chance) ? std::clamp(p.splice.chance, 0.0f, 1.0f) : 0.0f;
+        blk.splice.jumpMs = std::isfinite(p.splice.jumpMs) ? std::clamp(p.splice.jumpMs, 0.0f, kSpliceMaxJumpMs) : 0.0f;
+        blk.splice.gapMs = std::isfinite(p.splice.gapMs) ? std::clamp(p.splice.gapMs, 0.0f, kSpliceMaxGapMs) : 0.0f;
         blk.replay = p.replay;
         blk.replay.dry = std::isfinite(p.replay.dry) ? std::clamp(p.replay.dry, 0.0f, 1.0f) : 0.0f;
         blk.replay.speed = std::isfinite(p.replay.speed) ? std::clamp(p.replay.speed, 0.125f, 2.0f) : 1.0f;
@@ -1284,9 +1317,27 @@ private:
                 fire = true;
             }
         }
+        if (fire && blk.splice.when == SpliceWhen::Sixteenths)
+            spliceAsked = true;
         if (fire && blk.patternOn && ((blk.patternSteps >> patternIdx) & 1u) != 0u)
             applyTrigger(blk.patternAction);
     }
+
+    // SPLICE's edit: the next clip starts somewhere else up to the JUMP back (at least a millisecond away from where the
+    // last one reads, so there is a jump to hear), after up to the GAP of silence.
+    void spliceCut()
+    {
+        const int jump = (int) (blk.splice.jumpMs * 0.001f * (float) fs);
+        int delay = (int) std::lround(random01() * (float) jump);
+        const int apart = std::max(1, (int) (0.001 * fs));
+        if (jump > 2 * apart && std::abs(delay - splicer.currentDelay()) < apart)
+            delay = (splicer.currentDelay() + jump / 2) % (jump + 1);
+        const int gapMax = (int) (blk.splice.gapMs * 0.001f * (float) fs);
+        const int gap = gapMax > 0 ? (int) std::lround((0.25f + 0.75f * random01()) * (float) gapMax) : 0;
+        splicer.cut(delay, gap);
+    }
+
+    float random01() { return (float) (nextRandom() >> 8) * (1.0f / 16777216.0f); }
 
     void followHost(double ppq)
     {
@@ -1320,6 +1371,8 @@ private:
     // silent. A step of the loop section uses the loop section's sounds, volume and chance.
     void stepStarted()
     {
+        if (blk.splice.when == SpliceWhen::Steps)
+            spliceAsked = true;
         // a step with its STUTTER lane on fires the stutter (unless it has just fired, as when a pick restarts the sequence)
         if (numActive > 0 && stutterFiredAt != sampleClock
             && lanes[(size_t) Lane::Stutter][(size_t) active[(size_t) seqIdx]] > 0.5f
@@ -1524,6 +1577,8 @@ private:
     int attacksHeard = 0;
     std::atomic<bool> stutterOut { false };
     ReplayLooper replay;
+    Splicer splicer;
+    bool spliceAsked = false; // a step or a sixteenth has just begun: a chance of an edit
     std::atomic<int> replayStateOut { 0 };
     std::atomic<float> replayLoopOut { 0.0f }, replayPositionOut { 0.0f };
 };

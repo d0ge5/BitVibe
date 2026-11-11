@@ -4174,6 +4174,101 @@ void testReplayPlayback()
           later660 / first660, later440 / first440);
 }
 
+// SPLICE: clips butted together with no fades. The edits are single-sample jumps in the waveform (and dropouts with a
+// GAP), only while a sequence plays, as often as the CHANCE says, and the sound returns to itself without a click.
+void testSplice()
+{
+    std::puts("splice");
+    const Signal tone = sine(440.0, 3.0, 0.5f);
+    // the biggest step a 440 Hz sine at 0.5 takes between samples
+    const double sineStep = 0.5 * 2.0 * 3.14159265358979 * 440.0 / kFs;
+    auto clicks = [&](const Signal& out, double t0, double t1)
+    {
+        int n = 0;
+        for (size_t i = (size_t) (t0 * kFs) + 1; i < (size_t) (t1 * kFs); ++i)
+            n += std::abs(out[i] - out[i - 1]) > 2.0 * sineStep ? 1 : 0;
+        return n;
+    };
+    Params p; // a continuous sequence of dry steps, 100 ms each
+    p.seqPlay = 5;
+    p.tempoBpm = 600.0f;
+    p.seqMult = 0;
+    p.steps.fill(mapping::pitchStepKnob(0));
+    const Signal dry = render(p, tone);
+    CHECK(clicks(dry, 0.2, 2.9) == 0, "without SPLICE the dry sequence has no clicks (%d)", clicks(dry, 0.2, 2.9));
+
+    p.splice.on = true;
+    p.splice.chance = 1.0f;
+    p.splice.jumpMs = 50.0f;
+    p.splice.gapMs = 0.0f;
+    Signal out = render(p, tone);
+    // an edit at every step: 27 steps from 0.2 to 2.9 s (a jump can land near the same phase now and then)
+    const int everyStep = clicks(out, 0.2, 2.9);
+    CHECK(everyStep >= 15 && everyStep <= 30, "CHANCE 100%%, on steps: a click at (nearly) every step (%d in 27 steps)", everyStep);
+    double peak = 0.0;
+    for (size_t i = (size_t) (0.2 * kFs); i < out.size(); ++i)
+        peak = std::max(peak, (double) std::abs(out[i]));
+    CHECK(peak <= 0.5001, "the edits never make the sound louder: they only jump within it (peak %g)", peak);
+
+    p.splice.chance = 0.25f;
+    const int someSteps = clicks(render(p, tone), 0.2, 2.9);
+    CHECK(someSteps >= 2 && someSteps < everyStep, "CHANCE 25%%: only some of the steps (%d)", someSteps);
+
+    p.splice.chance = 1.0f;
+    p.splice.when = SpliceWhen::Sixteenths; // at 600 BPM a sixteenth is 25 ms: four times the steps
+    const int sixteenths = clicks(render(p, tone), 0.2, 2.9);
+    CHECK(sixteenths > 2 * everyStep, "on 1/16 notes: more edits than on the steps (%d vs %d)", sixteenths, everyStep);
+
+    // GAP with no JUMP: dropouts of digital silence between the clips, between a quarter of the GAP and all of it
+    p.splice.when = SpliceWhen::Steps;
+    p.splice.jumpMs = 0.0f;
+    p.splice.gapMs = 10.0f;
+    out = render(p, tone);
+    int gaps = 0, longest = 0, run = 0;
+    for (size_t i = (size_t) (0.2 * kFs); i < (size_t) (2.9 * kFs); ++i)
+    {
+        if (out[i] == 0.0f)
+            ++run;
+        else
+        {
+            if (run >= 100)
+                ++gaps;
+            longest = std::max(longest, run);
+            run = 0;
+        }
+    }
+    CHECK(gaps >= 20 && longest <= (int) (0.010 * kFs) + 1, "GAP 10 ms: a dropout at each step, never longer than the GAP (%d, longest %d samples)",
+          gaps, longest);
+
+    // only while the sequence plays: a sequence played once, then the sound must be itself again, with no click
+    p.splice.gapMs = 0.0f;
+    p.splice.jumpMs = 50.0f;
+    p.seqPlay = 1;
+    out = render(p, tone);
+    double after = 0.0;
+    for (size_t i = (size_t) (1.2 * kFs); i < out.size(); ++i)
+        after = std::max(after, (double) std::abs(out[i] - tone[i]));
+    CHECK(after < 1.0e-3, "once the sequence has stopped the sound is back in time with the input (diff %g)", after);
+    CHECK(clicks(out, 0.7, 2.9) == 0, "and it glided back without a click (%d)", clicks(out, 0.7, 2.9));
+
+    // never on the clean signal: no sequence, no edits
+    Params idle = neutral();
+    idle.splice = p.splice;
+    idle.splice.when = SpliceWhen::Anywhere;
+    out = render(idle, tone);
+    double diff = 0.0;
+    for (size_t i = 0; i < out.size(); ++i)
+        diff = std::max(diff, (double) std::abs(out[i] - tone[i]));
+    CHECK(diff < 1.0e-6, "with no sequence or stutter playing, SPLICE leaves the sound alone (diff %g)", diff);
+
+    // ANYWHERE: random moments, about eight chances a beat (100 ms here) times the CHANCE
+    p.seqPlay = 5;
+    p.splice.when = SpliceWhen::Anywhere;
+    p.splice.chance = 0.5f;
+    const int anywhere = clicks(render(p, tone), 0.2, 2.9);
+    CHECK(anywhere > 40 && anywhere < 160, "ANYWHERE at 50%%: about four edits a beat (%d in 27 beats)", anywhere);
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0); // so a crash still shows how far the checks got
@@ -4216,6 +4311,7 @@ int main(int argc, char** argv)
     testPhaserFlanger();
     testReplay();
     testReplayPlayback();
+    testSplice();
     testSeqLengthAndLanes();
     testStutterKinds();
     testDelayWobble();

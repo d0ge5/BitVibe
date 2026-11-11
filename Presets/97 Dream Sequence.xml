@@ -1,32 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<BITVIBE_PRESET version="1" name="Riff Grinder" section="Looper">
-  <PRESET name="Riff Grinder" sample="1.0" filter="1.0" bits="1.0" stutter="0.0"
-          seqPlay="1.0" seqMult="0.1428571492433548" filterType="0.0" filterRes="0.3684210479259491"
-          step1="0.0555555559694767" step2="0.5" step3="0.0555555559694767"
-          step4="0.7592592835426331" step5="0.0555555559694767" step6="0.5"
-          step7="0.3148148059844971" step8="0.5" step9="0.5" step10="0.5"
-          step11="0.5" step12="0.5" step13="0.5" step14="0.5" step15="0.5"
-          step16="0.5" stepType1="0.0" stepType2="0.0" stepType3="0.0"
-          stepType4="0.0" stepType5="0.0" stepType6="0.0" stepType7="0.0"
-          stepType8="0.0" stepType9="0.0" stepType10="0.0" stepType11="0.0"
-          stepType12="0.0" stepType13="0.0" stepType14="0.0" stepType15="0.0"
-          stepType16="0.0" stepMem0_1="0.0" stepMem0_2="0.0" stepMem0_3="0.0"
-          stepMem0_4="0.0" stepMem0_5="0.0" stepMem0_6="0.0" stepMem0_7="0.0"
-          stepMem0_8="0.0" stepMem0_9="0.0" stepMem0_10="0.0" stepMem0_11="0.0"
-          stepMem0_12="0.0" stepMem0_13="0.0" stepMem0_14="0.0" stepMem0_15="0.0"
-          stepMem0_16="0.0" stepMem1_1="0.0" stepMem1_2="0.0" stepMem1_3="0.0"
-          stepMem1_4="0.0" stepMem1_5="0.0" stepMem1_6="0.0" stepMem1_7="0.0"
-          stepMem1_8="0.0" stepMem1_9="0.0" stepMem1_10="0.0" stepMem1_11="0.0"
-          stepMem1_12="0.0" stepMem1_13="0.0" stepMem1_14="0.0" stepMem1_15="0.0"
-          stepMem1_16="0.0" stepMem2_1="0.0" stepMem2_2="0.0" stepMem2_3="0.0"
-          stepMem2_4="0.0" stepMem2_5="0.0" stepMem2_6="0.0" stepMem2_7="0.0"
-          stepMem2_8="0.0" stepMem2_9="0.0" stepMem2_10="0.0" stepMem2_11="0.0"
-          stepMem2_12="0.0" stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0"
-          stepMem2_16="0.0" seqType="0.0" tempo="0.4556995928287506" stutterLen="0.5"
-          morph="0.0" loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
-          loopRepeats="0.0" seqLength="0.4666666686534882" stutterType="0.0"
-          swing="0.0" pingOn="0.0" pingLevel="0.699999988079071" soundLevel="0.5833333134651184"
+<BITVIBE_PRESET version="1" name="Dream Sequence" section="Dreamy Loops">
+  <PRESET name="Dream Sequence" sample="1.0" filter="1.0" bits="1.0" stutter="0.0"
+          seqPlay="1.0" seqMult="0.0" filterType="0.0" filterRes="0.3684210479259491"
+          step1="0.9444444179534912" step2="0.7592592835426331" step3="0.6851851940155029"
+          step4="0.9444444179534912" step5="0.6481481194496155" step6="0.5"
+          step7="0.5" step8="0.5" step9="0.5" step10="0.5" step11="0.5"
+          step12="0.5" step13="0.5" step14="0.5" step15="0.5" step16="0.5"
+          stepType1="0.0" stepType2="0.0" stepType3="0.0" stepType4="0.0"
+          stepType5="0.0" stepType6="0.0" stepType7="0.0" stepType8="0.0"
+          stepType9="0.0" stepType10="0.0" stepType11="0.0" stepType12="0.0"
+          stepType13="0.0" stepType14="0.0" stepType15="0.0" stepType16="0.0"
+          stepMem0_1="0.0" stepMem0_2="0.0" stepMem0_3="0.0" stepMem0_4="0.0"
+          stepMem0_5="0.0" stepMem0_6="0.0" stepMem0_7="0.0" stepMem0_8="0.0"
+          stepMem0_9="0.0" stepMem0_10="0.0" stepMem0_11="0.0" stepMem0_12="0.0"
+          stepMem0_13="0.0" stepMem0_14="0.0" stepMem0_15="0.0" stepMem0_16="0.0"
+          stepMem1_1="0.0" stepMem1_2="0.0" stepMem1_3="0.0" stepMem1_4="0.0"
+          stepMem1_5="0.0" stepMem1_6="0.0" stepMem1_7="0.0" stepMem1_8="0.0"
+          stepMem1_9="0.0" stepMem1_10="0.0" stepMem1_11="0.0" stepMem1_12="0.0"
+          stepMem1_13="0.0" stepMem1_14="0.0" stepMem1_15="0.0" stepMem1_16="0.0"
+          stepMem2_1="0.0" stepMem2_2="0.0" stepMem2_3="0.0" stepMem2_4="0.0"
+          stepMem2_5="0.0" stepMem2_6="0.0" stepMem2_7="0.0" stepMem2_8="0.0"
+          stepMem2_9="0.0" stepMem2_10="0.0" stepMem2_11="0.0" stepMem2_12="0.0"
+          stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0" stepMem2_16="0.0"
+          seqType="0.0" tempo="0.2924236357212067" stutterLen="0.5" morph="0.0"
+          loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
+          loopRepeats="0.0" seqLength="0.2000000029802322" stutterType="0.0"
+          swing="0.0" pingOn="0.0" pingLevel="0.699999988079071" soundLevel="0.5666666626930237"
           laneCrush1="0.0" laneCrush2="0.0" laneCrush3="0.0" laneCrush4="0.0"
           laneCrush5="0.0" laneCrush6="0.0" laneCrush7="0.0" laneCrush8="0.0"
           laneCrush9="0.0" laneCrush10="0.0" laneCrush11="0.0" laneCrush12="0.0"
@@ -70,11 +70,11 @@
     <PARAM id="fxTriggers" value="0.0"/>
     <PARAM id="seqOnly" value="0.0"/>
     <PARAM id="reverbTone" value="0.5"/>
-    <PARAM id="reverbMix" value="0.0"/>
+    <PARAM id="reverbMix" value="0.5"/>
     <PARAM id="reverbLevel" value="0.0"/>
-    <PARAM id="reverbType" value="0.0"/>
-    <PARAM id="reverbOn" value="0.0"/>
-    <PARAM id="reverbDecay" value="0.5"/>
+    <PARAM id="reverbType" value="4.0"/>
+    <PARAM id="reverbOn" value="1.0"/>
+    <PARAM id="reverbDecay" value="0.8500000238418579"/>
     <PARAM id="reverbRevRoom" value="0.0"/>
     <PARAM id="reverbRevHall" value="0.0"/>
     <PARAM id="reverbRevSpring" value="0.0"/>
@@ -83,11 +83,11 @@
     <PARAM id="reverbRevGated" value="0.0"/>
     <PARAM id="reverbLowCut" value="20.0"/>
     <PARAM id="reverbHighCut" value="20000.0"/>
-    <PARAM id="distOn" value="1.0"/>
-    <PARAM id="distType" value="1.0"/>
+    <PARAM id="distOn" value="0.0"/>
+    <PARAM id="distType" value="0.0"/>
     <PARAM id="distDrive" value="0.5"/>
-    <PARAM id="distTone" value="0.449999988079071"/>
-    <PARAM id="distLevel" value="0.5"/>
+    <PARAM id="distTone" value="0.5"/>
+    <PARAM id="distLevel" value="0.800000011920929"/>
     <PARAM id="distReverb" value="0.0"/>
     <PARAM id="tremOn" value="0.0"/>
     <PARAM id="tremRate" value="6.0"/>
@@ -96,9 +96,14 @@
     <PARAM id="tremEnd" value="0.0"/>
     <PARAM id="tremBend" value="0.0"/>
     <PARAM id="tremRamp" value="2.0"/>
-    <PARAM id="ringOn" value="1.0"/>
-    <PARAM id="ringHz" value="80.0"/>
-    <PARAM id="ringMix" value="0.3499999940395355"/>
+    <PARAM id="ringOn" value="0.0"/>
+    <PARAM id="ringHz" value="440.0"/>
+    <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="spliceOn" value="0.0"/>
+    <PARAM id="spliceWhen" value="0.0"/>
+    <PARAM id="spliceChance" value="0.5"/>
+    <PARAM id="spliceJump" value="40.0"/>
+    <PARAM id="spliceGap" value="0.0"/>
     <PARAM id="modOn" value="0.0"/>
     <PARAM id="modType" value="0.0"/>
     <PARAM id="modRate" value="2.0"/>
@@ -158,26 +163,26 @@
     <PARAM id="eq8Freq" value="16000.0"/>
     <PARAM id="eq8Gain" value="0.0"/>
     <PARAM id="eq8Q" value="0.7100000381469727"/>
-    <PARAM id="delayOn" value="0.0"/>
-    <PARAM id="delayTime" value="5.0"/>
-    <PARAM id="delayMix" value="0.4000000059604645"/>
-    <PARAM id="delayDecay" value="0.5"/>
-    <PARAM id="delayRepeats" value="4.0"/>
+    <PARAM id="delayOn" value="1.0"/>
+    <PARAM id="delayTime" value="8.0"/>
+    <PARAM id="delayMix" value="0.300000011920929"/>
+    <PARAM id="delayDecay" value="0.6000000238418579"/>
+    <PARAM id="delayRepeats" value="6.0"/>
     <PARAM id="delayLowCut" value="20.0"/>
     <PARAM id="delayHighCut" value="20000.0"/>
     <PARAM id="delayWobble" value="0.0"/>
     <PARAM id="patternLock" value="0.0"/>
     <PARAM id="replayOn" value="1.0"/>
-    <PARAM id="replayBack" value="1.5"/>
-    <PARAM id="replayWait" value="0.4000000059604645"/>
-    <PARAM id="replayLength" value="8.0"/>
-    <PARAM id="replayDry" value="0.0"/>
+    <PARAM id="replayBack" value="8.0"/>
+    <PARAM id="replayWait" value="1.199999928474426"/>
+    <PARAM id="replayLength" value="64.0"/>
+    <PARAM id="replayDry" value="0.4000000059604645"/>
     <PARAM id="replayThreshold" value="-45.0"/>
-    <PARAM id="replaySpeed" value="0.0"/>
-    <PARAM id="replayDirection" value="0.0"/>
-    <PARAM id="replayStretch" value="1.0"/>
-    <PARAM id="replaySwell" value="0.0"/>
-    <PARAM id="replayWear" value="0.0"/>
+    <PARAM id="replaySpeed" value="1.0"/>
+    <PARAM id="replayDirection" value="1.0"/>
+    <PARAM id="replayStretch" value="1.5"/>
+    <PARAM id="replaySwell" value="3.0"/>
+    <PARAM id="replayWear" value="0.1500000059604645"/>
   </EFFECTS>
   <PATTERN action="0" steps="0" randomBeats="31" signature="0"/>
 </BITVIBE_PRESET>

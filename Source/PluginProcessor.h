@@ -124,6 +124,11 @@ inline constexpr const char* soundLevel = "soundLevel";
 inline constexpr const char* ringOn = "ringOn";
 inline constexpr const char* ringHz = "ringHz";
 inline constexpr const char* ringMix = "ringMix";
+inline constexpr const char* spliceOn = "spliceOn";
+inline constexpr const char* spliceWhen = "spliceWhen";
+inline constexpr const char* spliceChance = "spliceChance";
+inline constexpr const char* spliceJump = "spliceJump";
+inline constexpr const char* spliceGap = "spliceGap";
 inline constexpr const char* replayOn = "replayOn";
 inline constexpr const char* replayBack = "replayBack";
 inline constexpr const char* replayWait = "replayWait";
@@ -231,7 +236,7 @@ public:
         featSwing,
         featBeatPattern,
         featStutter, featStutterTypes,
-        featCrush, featFilterTypes, featFormant, featPing,
+        featCrush, featFilterTypes, featFormant, featPing, featSplice,
         featDistortion, featRingMod, featPhaser, featFlanger, featTremolo, featDelay, featTapeWobble, featReverb, featEq,
         featMorph,
         featReplay,
@@ -422,6 +427,11 @@ private:
     std::atomic<float>* pOutGain = nullptr;
     std::atomic<float>* pHeadroom = nullptr;
     std::atomic<float>* pSensitivity = nullptr;
+    std::atomic<float>* pSpliceOn = nullptr;
+    std::atomic<float>* pSpliceWhen = nullptr;
+    std::atomic<float>* pSpliceChance = nullptr;
+    std::atomic<float>* pSpliceJump = nullptr;
+    std::atomic<float>* pSpliceGap = nullptr;
     std::atomic<float>* pReplayOn = nullptr;
     std::atomic<float>* pReplayBack = nullptr;
     std::atomic<float>* pReplayWait = nullptr;

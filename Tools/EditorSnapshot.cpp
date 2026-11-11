@@ -173,7 +173,7 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 111 && p->getCurrentProgram() == 0,
+    check(p->getNumPrograms() == slotCount && slotCount == 117 && p->getCurrentProgram() == 0,
           "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack, the looper, the dreamy loops), starts on slot 1");
     check(BitVibeProcessor::firstLooperSlot() == slotCount - 25 && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == slotCount - 10
               && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
@@ -1859,7 +1859,7 @@ void testPresetPack(const File& outDir)
                        || getValue(*p, ids::tremOn) > 0.5f || getValue(*p, ids::delayWobble) > 0.005f
                        || roundToInt(getValue(*p, ids::filterType)) != 0 || std::abs(getValue(*p, ids::filterRes) - bitvibe::mapping::kDefaultFilterRes) > 0.05f
                        || getValue(*p, ids::swing) > 0.005f || getValue(*p, ids::ringOn) > 0.5f || getValue(*p, ids::pingOn) > 0.5f
-                       || getValue(*p, ids::modOn) > 0.5f || getValue(*p, ids::replayOn) > 0.5f;
+                       || getValue(*p, ids::modOn) > 0.5f || getValue(*p, ids::replayOn) > 0.5f || getValue(*p, ids::spliceOn) > 0.5f;
         for (int l = 0; l < bitvibe::kNumLanes && !usesNew; ++l)
             for (int s = 0; s < bitvibe::kNumSteps; ++s)
                 usesNew = usesNew || std::abs(getValue(*p, ids::lane(l, s).toRawUTF8()) - bitvibe::kLaneNeutral[(size_t) l]) > 0.005f;
@@ -2137,6 +2137,8 @@ void testRightModes(const File& outDir)
         save(*ed, outDir.getChildFile("editor_effects.png")); // the reverb tab: the graph and six knobs in two rows
         ed->setEffectTab(BitVibeEditor::kTabMod);
         save(*ed, outDir.getChildFile("editor_mod.png")); // the MOD tab: the ring mod beside the phaser / flanger
+        ed->setEffectTab(BitVibeEditor::kTabDist);
+        save(*ed, outDir.getChildFile("editor_dist.png")); // the DIST tab: the distortion above, SPLICE below
         ed->setEffectTab(BitVibeEditor::kTabSamples);
     }
     save(*ed, outDir.getChildFile("editor_advanced.png"));
@@ -2881,7 +2883,7 @@ void testTooltips(BitVibeEditor& ed, const File* imageFile, const String& expect
         if (text.isEmpty())
             std::printf("    no tooltip on child %d (%s)\n", i, typeid(*c).name());
     }
-    check(controls == 77 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 77 and 0)");
+    check(controls == 82 && missing == 0, String(controls) + " controls, " + String(missing) + " without a tooltip (expected 82 and 0)");
     check(tooLong == 0, "every tooltip is short enough to read at a glance (none over 260 characters)");
     check(stepOneTips.size() == 1 && stepOneTips[0].containsIgnoreCase(expectedStepWord),
           "the step editor describes the " + expectedStepWord + " sequencer: '" + (stepOneTips.isEmpty() ? String() : stepOneTips[0]) + "'");
@@ -3027,7 +3029,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 372, "372 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 377, "377 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence

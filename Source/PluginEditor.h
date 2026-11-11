@@ -727,6 +727,14 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> distDriveAtt, distToneAtt, distLevelAtt;
     juce::ToggleButton distOnButton { "ON" }, distReverbButton { "REVERB TOO" };
     juce::ComboBox distTypeBox; // overdrive or fuzz
+    // SPLICE, the lower section of the DIST panel: clips butted together with no fades
+    juce::ToggleButton spliceOnButton { "ON" };
+    std::unique_ptr<APVTS::ButtonAttachment> spliceOnAtt;
+    juce::ComboBox spliceWhenBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> spliceWhenAtt;
+    KnobSlider spliceChanceSlider, spliceJumpSlider, spliceGapSlider;
+    std::unique_ptr<APVTS::SliderAttachment> spliceChanceAtt, spliceJumpAtt, spliceGapAtt;
+    static constexpr int kSpliceTop = 122; // in the DIST panel: where the SPLICE section starts
     std::unique_ptr<APVTS::ComboBoxAttachment> distTypeAtt;
     std::unique_ptr<APVTS::ButtonAttachment> distOnAtt, distReverbAtt;
 

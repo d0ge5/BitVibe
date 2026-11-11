@@ -1305,6 +1305,17 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     distTypeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::distType, distTypeBox);
     distOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distOn, distOnButton);
     distReverbAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::distReverb, distReverbButton);
+    smallKnob(spliceChanceSlider, spliceChanceAtt, ids::spliceChance);
+    smallKnob(spliceJumpSlider, spliceJumpAtt, ids::spliceJump);
+    smallKnob(spliceGapSlider, spliceGapAtt, ids::spliceGap);
+    spliceOnButton.setLookAndFeel(&laf);
+    content.addAndMakeVisible(spliceOnButton);
+    spliceOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::spliceOn, spliceOnButton);
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::spliceWhen)))
+        spliceWhenBox.addItemList(choice->choices, 1);
+    spliceWhenBox.setLookAndFeel(&laf);
+    content.addAndMakeVisible(spliceWhenBox);
+    spliceWhenAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::spliceWhen, spliceWhenBox);
     smallKnob(ringHzSlider, ringHzAtt, ids::ringHz);
     smallKnob(ringMixSlider, ringMixAtt, ids::ringMix);
     ringOnButton.setLookAndFeel(&laf);
@@ -1517,7 +1528,7 @@ BitVibeEditor::BitVibeEditor(BitVibeProcessor& p)
     nameControls();
 
     pedalComponents = { &inSlider, &mixSlider, &outSlider, &trigSlider, &levelSlider, &syncButton, &holdButton,
-                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox, &modRateSlider, &modDepthSlider,
+                        &reverbDecaySlider, &reverbOnButton, &reverbReverseButton, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &reverbTypeBox, &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider, &delayTimeBox, &delayOnButton, &distDriveSlider, &distToneSlider, &distLevelSlider, &distOnButton, &distReverbButton, &distTypeBox, &spliceOnButton, &spliceWhenBox, &spliceChanceSlider, &spliceJumpSlider, &spliceGapSlider, &ringOnButton, &ringHzSlider, &ringMixSlider, &modOnButton, &modTypeBox, &modRateSlider, &modDepthSlider,
                         &modFeedbackSlider, &modMixSlider, samplePanel.get(), eqPanel.get(), tremoloPanel.get(), distGraph.get(), delayGraph.get(), reverbGraph.get(), patternPanel.get(), replayPanel.get(),
                         &headroomBox, &stutterLenBox, &stutterTypeBox, &filterTypeBox, &filterResSlider, &swingSlider, &pingButton, &pingLevelSlider, &hearBox, &bypassSwitch, &tapSwitch, &triggerMeter, &outputMeter, beatDog.get(), &stepStrip, &altButton, &typePitchButton, &typeFilterButton, &typeRateButton, &presetLabel, &tempoLabel, stepEditor.get(), &effectTabs,
                         &prevButton, &nextButton, &saveButton, &setUpButton, &setDownButton, &expressionSlider, &morphButton, &presetMenuButton };
@@ -1606,8 +1617,10 @@ BitVibeEditor::~BitVibeEditor()
     for (auto* s : { &inSlider, &mixSlider, &outSlider, &trigSlider, &levelSlider, &reverbDecaySlider, &reverbToneSlider, &reverbMixSlider, &reverbLevelSlider, &reverbLowSlider, &reverbHighSlider, &distDriveSlider, &distToneSlider, &distLevelSlider,
                       &delayMixSlider, &delayDecaySlider, &delayRepeatsSlider, &delayWobbleSlider, &delayLowSlider, &delayHighSlider,
                       &ringHzSlider, &ringMixSlider, &swingSlider, &pingLevelSlider, &modRateSlider, &modDepthSlider,
-                      &modFeedbackSlider, &modMixSlider })
+                      &modFeedbackSlider, &modMixSlider, &spliceChanceSlider, &spliceJumpSlider, &spliceGapSlider })
         s->setLookAndFeel(nullptr);
+    spliceOnButton.setLookAndFeel(nullptr);
+    spliceWhenBox.setLookAndFeel(nullptr);
     delayTimeBox.setLookAndFeel(nullptr);
     delayOnButton.setLookAndFeel(nullptr);
     distOnButton.setLookAndFeel(nullptr);
@@ -2100,7 +2113,8 @@ void BitVibeEditor::applyEffectTab()
     const bool page = !drumsShown;
     auto show = [&](Component& c, int tab, bool advancedOnly = false) { c.setVisible(page && effectTab == tab && (advancedRight || !advancedOnly)); };
     show(*samplePanel, kTabSamples);
-    for (Component* c : std::initializer_list<Component*> { &distOnButton, &distTypeBox, &distDriveSlider, &distLevelSlider, distGraph.get() })
+    for (Component* c : std::initializer_list<Component*> { &distOnButton, &distTypeBox, &distDriveSlider, &distLevelSlider, distGraph.get(),
+                                                            &spliceOnButton, &spliceWhenBox, &spliceChanceSlider, &spliceJumpSlider, &spliceGapSlider })
         show(*c, kTabDist);
     for (Component* c : std::initializer_list<Component*> { &distToneSlider, &distReverbButton })
         show(*c, kTabDist, true);
@@ -2273,6 +2287,16 @@ void BitVibeEditor::setTooltips()
     distLevelSlider.setTooltip("LEVEL (overdrive) / VOLUME (fuzz): the volume of the distorted sound. About 80% is roughly the level it came in at.");
     distTypeBox.setTooltip("DISTORTION TYPE: Overdrive is a smooth mid-boosting overdrive; Fuzz is a thick, sustaining fuzz. Both only act on the sequenced "
                            "and stuttered sound (and the random sounds), never on your clean signal.");
+    makePowerButton(spliceOnButton);
+    spliceOnButton.setTooltip("SPLICE ON: the clicks of clips butted together in a DAW with no fades. The sequenced sound is cut dead and "
+                              "starts again from another moment, now and then, only while a sequence or stutter plays.");
+    spliceWhenBox.setTooltip("SPLICE WHEN: where the edits can fall: at the start of each sequencer step, on every 1/16 note of the bar, or "
+                             "anywhere (at random moments, up to eight a beat).");
+    spliceChanceSlider.setTooltip("SPLICE CHANCE: how likely each of those moments is to become an edit. Low = an odd click now and then.");
+    spliceJumpSlider.setTooltip("SPLICE JUMP: how far back the next clip may start, up to 250 ms. A few ms is a tick; longer jumps also "
+                                "repeat or skip a moment of the sound. NONE = only the GAP.");
+    spliceGapSlider.setTooltip("SPLICE GAP: the most silence between two clips, up to 40 ms: a dropout between the edits. NONE = the clips "
+                               "touch.");
     makePowerButton(distOnButton);
     distOnButton.setTooltip("DISTORTION ON: distorts the sequenced and stuttered sound (and the random sounds). "
                             "Your clean signal is never distorted.");
@@ -2629,7 +2653,15 @@ void BitVibeEditor::resized()
                 ++index;
             }
     };
-    spread({ { &distDriveSlider, false }, { &distToneSlider, true }, { &distLevelSlider, false } }, 48, dist.getY());
+    // the distortion's knobs in the top row of its panel (SPLICE has the bottom)
+    spread({ { &distDriveSlider, false }, { &distToneSlider, true }, { &distLevelSlider, false } }, 44, dist.getY() - (kKnobMid - kKnobRow1));
+    spliceOnButton.setBounds(face({ kSideX + 8, dist.getY() + kSpliceTop + 6, 50, 19 }));
+    spliceWhenBox.setBounds(face({ kSideX + 344, dist.getY() + kSpliceTop + 5, 100, 20 }));
+    {
+        KnobSlider* spliceKnobs[] { &spliceChanceSlider, &spliceJumpSlider, &spliceGapSlider };
+        for (int i = 0; i < 3; ++i)
+            spliceKnobs[i]->setBounds(face(Rectangle<int>(38, 38).withCentre({ kSideX + 236 + 72 * i, dist.getY() + kSpliceTop + 41 })));
+    }
     {
         const int knobY = ring.getY() + kKnobMid;
         ringHzSlider.setBounds(face(Rectangle<int>(48, 48).withCentre({ kSideX + 50, knobY })));
@@ -2650,6 +2682,7 @@ void BitVibeEditor::resized()
     tremoloPanel->setBounds(face(tremoloArea()));
     for (EffectGraph* graph : std::initializer_list<EffectGraph*> { distGraph.get(), delayGraph.get(), reverbGraph.get() })
         graph->setBounds(face({ kSideX + kGraphX, dist.getY() + 28, kGraphW, kEffectsH - 40 }));
+    distGraph->setBounds(face({ kSideX + kGraphX, dist.getY() + 28, kGraphW, kSpliceTop - 34 }));
     patternPanel->setBounds(face({ kSideX, patternTop(), PatternPanel::kWidth, patternPanel->currentHeight() }));
     replayPanel->setBounds(face({ kSideX, replayTop(), ReplayPanel::kWidth, replayPanel->currentHeight() }));
 
@@ -2894,7 +2927,27 @@ void BitVibeEditor::paintContent(Graphics& g)
     {
         if (!advancedRight && distEntries[i].advancedOnly)
             continue;
-        pedalstyle::drawControlLabel(g, labelPos(distEntries, i, dist.getY()).x, labelPos(distEntries, i, dist.getY()).y, distEntries[i].name, distEntries[i].value, distAlpha);
+        const auto at = labelPos(distEntries, i, dist.getY() - (kKnobMid - kKnobRow1));
+        pedalstyle::drawControlLabel(g, at.x, at.y - 2, distEntries[i].name, distEntries[i].value, distAlpha);
+    }
+    // SPLICE: its own section along the bottom of the panel
+    {
+        const int top = dist.getY() + kSpliceTop;
+        const float spliceAlpha = rawValue(ids::spliceOn) > 0.5f ? 1.0f : kOffAlpha;
+        g.setColour(pedalstyle::panelEdge.withAlpha(0.5f));
+        g.drawHorizontalLine(top, (float) kSideX + 12.0f, (float) kSideX + 444.0f);
+        g.setColour(kInkDim.withMultipliedAlpha(jmax(spliceAlpha, kOffTextAlpha)));
+        g.setFont(bold(10.5f));
+        g.drawText("SPLICE", Rectangle<int>(kSideX + 64, top + 6, 80, 19), Justification::centredLeft);
+        g.setFont(bold(9.5f));
+        g.drawText("WHEN", Rectangle<int>(kSideX + 296, top + 6, 44, 18), Justification::centredRight);
+        g.setFont(plain(10.0f));
+        g.drawFittedText("Clips cut and butted together with no fades: a click at every edit.",
+                         Rectangle<int>(kSideX + 14, top + 30, 180, 40), Justification::topLeft, 3);
+        auto ms = [](float v) { return v < 0.05f ? String("NONE") : String(v, v < 10.0f ? 1 : 0) + " ms"; };
+        pedalstyle::drawControlLabel(g, kSideX + 236, top + 60, "CHANCE", String(roundToInt(rawValue(ids::spliceChance) * 100.0f)) + "%", spliceAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + 308, top + 60, "JUMP", ms(rawValue(ids::spliceJump)), spliceAlpha);
+        pedalstyle::drawControlLabel(g, kSideX + 380, top + 60, "GAP", ms(rawValue(ids::spliceGap)), spliceAlpha);
     }
     }
 
@@ -3013,11 +3066,15 @@ void BitVibeEditor::updateLiveState()
         // the power buttons glow while their effect acts; a switched-off panel's controls are dimmed
         const bool live = proc.getEngine().isEffectSideActive();
         effectTabs.set(effectTab, advancedRight ? EffectTabs::kCount : EffectTabs::kCount - 1,
-                       { rawValue(ids::sampleOn) > 0.5f, rawValue(ids::distOn) > 0.5f,
+                       { rawValue(ids::sampleOn) > 0.5f, rawValue(ids::distOn) > 0.5f || rawValue(ids::spliceOn) > 0.5f,
                          rawValue(ids::ringOn) > 0.5f || rawValue(ids::modOn) > 0.5f, rawValue(ids::tremOn) > 0.5f,
                          rawValue(ids::delayOn) > 0.5f, rawValue(ids::reverbOn) > 0.5f, rawValue(ids::eqOn) > 0.5f },
                        live);
         setPowerActive(distOnButton, live);
+        setPowerActive(spliceOnButton, live);
+        const bool spliceOn = rawValue(ids::spliceOn) > 0.5f;
+        for (Component* c : std::initializer_list<Component*> { &spliceChanceSlider, &spliceJumpSlider, &spliceGapSlider, &spliceWhenBox })
+            c->setAlpha(offAlphaFor(*c, spliceOn));
         setPowerActive(ringOnButton, live);
         setPowerActive(modOnButton, live);
         const bool modOn = rawValue(ids::modOn) > 0.5f;

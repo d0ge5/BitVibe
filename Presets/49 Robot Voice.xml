@@ -99,6 +99,11 @@
     <PARAM id="ringOn" value="1.0"/>
     <PARAM id="ringHz" value="32.0"/>
     <PARAM id="ringMix" value="1.0"/>
+    <PARAM id="spliceOn" value="0.0"/>
+    <PARAM id="spliceWhen" value="0.0"/>
+    <PARAM id="spliceChance" value="0.5"/>
+    <PARAM id="spliceJump" value="40.0"/>
+    <PARAM id="spliceGap" value="0.0"/>
     <PARAM id="modOn" value="0.0"/>
     <PARAM id="modType" value="0.0"/>
     <PARAM id="modRate" value="2.0"/>
