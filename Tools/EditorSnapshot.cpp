@@ -173,12 +173,13 @@ void testPresetsAndMorph()
     // ---- slots ----------------------------------------------------------------------------
     auto p = makeProcessor();
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
-    check(p->getNumPrograms() == slotCount && slotCount == 117 && p->getCurrentProgram() == 0,
-          "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack, the looper, the dreamy loops), starts on slot 1");
-    check(BitVibeProcessor::firstLooperSlot() == slotCount - 25 && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == slotCount - 10
-              && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
-          "the LOOPER section is the 15 slots from " + String(BitVibeProcessor::firstLooperSlot() + 1) + ", DREAMY LOOPS the 10 from "
-              + String(BitVibeProcessor::firstSlotOfSection("Dreamy Loops") + 1));
+    check(p->getNumPrograms() == slotCount && slotCount == 142 && p->getCurrentProgram() == 0,
+          "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack, the looper, the dreamy loops, light touch), starts on slot 1");
+    check(BitVibeProcessor::firstLooperSlot() == 92 && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == 107
+              && BitVibeProcessor::firstSlotOfSection("Light Touch") == 117 && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
+          "LOOPER is slots " + String(BitVibeProcessor::firstLooperSlot() + 1) + " on, DREAMY LOOPS "
+              + String(BitVibeProcessor::firstSlotOfSection("Dreamy Loops") + 1) + " on, LIGHT TOUCH "
+              + String(BitVibeProcessor::firstSlotOfSection("Light Touch") + 1) + " to " + String(slotCount));
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
               && p->getProgramName(slotCount).isEmpty(),
@@ -1867,7 +1868,9 @@ void testPresetPack(const File& outDir)
         // a LOOPER preset passes the plucks clean (they never stop for long enough to loop): its sound is checked with
         // REPLAY off, the way it was levelled, and the section is checked instead
         const bool looper = getValue(*p, ids::replayOn) > 0.5f;
-        looperPlaced += looper == (bitvibe::kFirstPackSlot + i >= BitVibeProcessor::firstLooperSlot()) ? 1 : 0;
+        const String section = BitVibeProcessor::packSection(i);
+        const bool loopSection = section == "Looper" || section == "Dreamy Loops";
+        looperPlaced += (looper == loopSection || section == "Light Touch") ? 1 : 0; // LIGHT TOUCH shows REPLAY once
         if (looper)
             setValue(*p, ids::replayOn, 0.0f);
         const auto wet = presetpack::playThrough(*p, dry);
@@ -1894,7 +1897,21 @@ void testPresetPack(const File& outDir)
     check(good == count, "every preset loads, uses a new feature and sounds without clipping (" + String(good) + " of " + String(count) + ")");
     check(matched == count, "and every one plays at the dry pluck's loudness, or as near as its peaks allow (" + String(matched) + " of "
                                 + String(count) + "; levels x" + String(quietest, 2) + " to x" + String(loudest, 2) + ")");
-    check(looperPlaced == count, "REPLAY is on in every LOOPER preset and off in every other (" + String(looperPlaced) + " of " + String(count) + ")");
+    check(looperPlaced == count, "REPLAY is on in every LOOPER and DREAMY LOOPS preset and off in the pack (" + String(looperPlaced) + " of " + String(count) + ")");
+
+    // LIGHT TOUCH: between them its presets use every feature the preset menu groups by (but the sample blend, which needs
+    // the player's own sounds)
+    {
+        auto p = makeProcessor();
+        uint32_t used = 0;
+        for (int slot = BitVibeProcessor::firstSlotOfSection("Light Touch"); slot < p->getNumPrograms(); ++slot)
+            used |= p->presetFeatures(slot);
+        StringArray missing;
+        for (int f = 0; f < BitVibeProcessor::kNumPresetFeatures; ++f)
+            if (((used >> f) & 1u) == 0)
+                missing.add(BitVibeProcessor::presetFeatureName(f));
+        check(missing.isEmpty(), "LIGHT TOUCH shows every feature (missing: " + (missing.isEmpty() ? String("none") : missing.joinIntoString(", ")) + ")");
+    }
 
     // a LOOPER preset answers a phrase: the plucks pass clean, and after a stop the loop plays through the sequence
     {

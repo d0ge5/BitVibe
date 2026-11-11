@@ -48,7 +48,7 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   **SWING** delays every second step, from straight up to a triplet shuffle, and **PING** rings the filter with a
   click at every step, a drum synth that needs no input; both are saved with the preset.
 - **Pick detection** starts the stutter and sequencer when you play; an input meter shows what it hears.
-- **Expression morph** between two stored sets of knobs, and **one bank of 117 preset slots** with editable names,
+- **Expression morph** between two stored sets of knobs, and **one bank of 142 preset slots** with editable names,
   grouped in the preset menu by the features each preset uses.
 - **Mix**, tempo **sync** to your DAW, input and output gain, and **HEAR**: the guitar and the effect, the crush
   **only while the stutter or sequencer plays**, or **nothing but the sequenced sound**.
@@ -418,9 +418,9 @@ Only record what you have the right to use.
 
 ### Presets and morph
 
-- The bar at the top holds **one bank of 117 preset slots** (they also appear as programs in your DAW). `<` and `>`
+- The bar at the top holds **one bank of 142 preset slots** (they also appear as programs in your DAW). `<` and `>`
   step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, 21 to 92 are the preset
-  pack, 93 to 107 its **LOOPER** section and 108 to 117 its **DREAMY LOOPS**. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
+  pack, 93 to 107 its **LOOPER** section, 108 to 117 its **DREAMY LOOPS** and 118 to 142 **LIGHT TOUCH**. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
   sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then.
@@ -432,7 +432,7 @@ Only record what you have the right to use.
   under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
   lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
   rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 117 in order
+  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 142 in order
   and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
@@ -442,7 +442,9 @@ Only record what you have the right to use.
 - **Preset pack:** sixty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
   the delay's tape wobble, the filter types, swing, the ping, the ring mod, the phaser / flanger and SPLICE, in slots 21 to 92, and fifteen
   **LOOPER** sounds built around REPLAY in slots 93 to 107 and ten **DREAMY LOOPS** (REPLAY's speed, direction,
-  stretch, swell and wear, for atmospheres) in slots 108 to 117 (your picked sounds stay as they are). Save over
+  stretch, swell and wear, for atmospheres) in slots 108 to 117 (your picked sounds stay as they are). **LIGHT
+  TOUCH** (slots 118 to 142) is the place to start: twenty-five presets, each showing one feature used gently over a
+  simple four-step sequence, from the pitch steps and the beat pattern to the morph, SPLICE and REPLAY. Save over
   one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 

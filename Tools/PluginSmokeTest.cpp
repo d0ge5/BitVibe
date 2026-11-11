@@ -318,13 +318,13 @@ int main(int argc, char** argv)
             return d;
         };
 
-        check(plugin->getNumPrograms() == 117, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack, looper, dreamy loops)");
+        check(plugin->getNumPrograms() == 142, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack, looper, dreamy loops)");
         StringArray names;
         for (int i = 0; i < plugin->getNumPrograms(); ++i)
             names.add(plugin->getProgramName(i));
         StringArray unique(names);
         unique.removeDuplicates(false);
-        check(names.size() == 117 && unique.size() == 117 && !names.contains(""), "preset names are set and unique");
+        check(names.size() == 142 && unique.size() == 142 && !names.contains(""), "preset names are set and unique");
         check(names[0] == "Pitch Sequence", "slot 1 is '" + names[0] + "'");
         std::printf("    presets: %s\n", names.joinIntoString(" | ").toRawUTF8());
         check(plugin->getCurrentProgram() == 0, "starts on slot 1");
