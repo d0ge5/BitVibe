@@ -1018,6 +1018,25 @@ void testThemes(const File& outDir)
         const int litHot = near(lit, pedalstyle::theme.accent), hotHot = near(hot, pedalstyle::theme.accent);
         check(litGlow > dimGlow + 200, "WIREFRAME: the outlines glow brighter on the beat (" + String(dimGlow) + " -> " + String(litGlow) + " edge pixels)");
         check(hotHot > litHot + 200, "and flush to the accent while the sequencer acts (" + String(litHot) + " -> " + String(hotHot) + " accent pixels)");
+        {
+            // the pedal's own halo sits on its outline (it was once drawn 100 px too high, a stray line across the
+            // footswitches): the beat lights the pedal's bottom edge, and nothing in the empty space above it
+            auto change = [&](int fromY, int toY)
+            {
+                float most = 0.0f;
+                for (int yy = fromY; yy <= toY; ++yy)
+                    for (int xx = 150; xx <= 170; ++xx) // between the BYPASS switch and the tempo read-out
+                        most = jmax(most, lit.getPixelAt(xx, yy).getBrightness() - dim.getPixelAt(xx, yy).getBrightness());
+                return most;
+            };
+            const float stray = change(552, 584), edge = change(656, 680);
+            check(stray < 0.03f && edge > 0.1f, "the pedal's halo follows its outline: its bottom edge glows (" + String(edge, 2)
+                                                    + ") and no line crosses the footswitches (" + String(stray, 2) + ")");
+            const File file = outDir.getChildFile("editor_wireframe.png");
+            file.deleteFile();
+            if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
+                PNGImageFormat().writeImageToStream(lit, *out);
+        }
         auto paintMs = [&]
         {
             const double t0 = Time::getMillisecondCounterHiRes();

@@ -2732,7 +2732,7 @@ void BitVibeEditor::paintContent(Graphics& g)
     if (pedalstyle::theme.wireframe)
     {
         // the enclosure and the preset bar live in the cached background, so their halos are drawn here, live
-        pedalstyle::wireGlow(g, kFace.toFloat(), 16.0f, 1.2f);
+        pedalstyle::wireGlow(g, kFace.toFloat().translated(0.0f, (float) kFaceDy), 16.0f, 1.2f); // (the pedal sits kFaceDy down)
         pedalstyle::wireGlow(g, kHeader.withHeight(advancedRight ? kHeader.getHeight() : 56).toFloat(), 10.0f);
     }
 
