@@ -79,9 +79,6 @@ public:
     struct Levels
     {
         float mix = 0.0f, chance = 1.0f, baseDb = -60.0f, maxDb = -9.0f;
-        // the loop section's own knobs, used when loopOwn is set (otherwise it follows the ones above)
-        bool loopOwn = false;
-        float loopMix = 0.0f, loopChance = 1.0f, loopBaseDb = -60.0f, loopMaxDb = -9.0f;
     };
     void rememberLevels(const Levels&);
     bool getRememberedLevels(Levels&) const;

@@ -37,7 +37,6 @@ struct Theme
     juce::Colour pointer { 0xfff2f0e6 };    // a knob's pointer (on the knob, so it can differ from the ink)
     juce::Colour cell { 0xff1d1d21 }, cellStrong { 0xff28282d }, cellPlaying { 0xff4a4a52 }, cellEdge { 0xff0a0a0c }; // grids
     juce::Colour gridLine { 0xff222226 }, gridMajor { 0xff3a3a40 };
-    juce::Colour screen { 0xff19ff3a }, screenEdge { 0xff1f3a26 }; // DOG5's screen
     std::array<juce::Colour, 3> steps { juce::Colour(0xff5aa9ff), juce::Colour(0xff4fd17c), juce::Colour(0xffc58bff) }; // pitch, filter, rate
     bool wireframe = false; // the panels as glowing outlines whose edges breathe with the beat (see panelFrame)
 };
@@ -272,6 +271,9 @@ private:
 // Small rectangular push button (ALT, sequencer type). A button that switches something on and off (toggle = true)
 // has a light on its left, so it can be told from a button that does something once; arrow = true draws a small
 // down arrow (a button that opens a menu).
+// The FAVOURITE star, filling a square in the middle of the area (the button by the preset name, the search's rows).
+juce::Path favouriteStar(juce::Rectangle<float> area);
+
 class PedalButton : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -279,6 +281,7 @@ public:
 
     std::function<void()> onClick;
     bool lit = false, toggle = false, arrow = false;
+    bool star = false; // drawn as a star with no button around it: filled when lit (the FAVOURITE star)
     void setText(juce::String newText)
     {
         text = std::move(newText);
@@ -519,7 +522,6 @@ class DistortionGraph;
 class DelayGraph;
 class ReverbGraph;
 class SamplerPage;
-class BeatDog;
 class StepEditor;
 
 class BitVibeEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -548,19 +550,17 @@ public:
 
     // SIMPLE mode (the controls that matter most, on both sides) or ADVANCED mode (every control). Settings that SIMPLE
     // hides keep working; they are only out of the way, and the panels say when one of them is on. The window is
-    // shorter in SIMPLE (DOG5 moves into the room left at the bottom of the right-hand column). Remembered.
+    // shorter in SIMPLE. Remembered.
     void setRightMode(bool advanced);
     bool isAdvancedRight() const { return advancedRight; }
 
-    // The VIEW menu (top right): the theme, the window size and whether DOG5 is shown. All remembered; the theme
-    // is shown in every open window.
+    // The VIEW menu (top right): the theme and the window size. Both remembered; the theme is shown in every open
+    // window.
     juce::PopupMenu viewMenu();
     void viewMenuChosen(int result);
-    static constexpr int kViewTheme = 100, kViewSize = 200, kViewDog = 600; // + the theme's index, + the size in percent
+    static constexpr int kViewTheme = 100, kViewSize = 200, kViewSizeEnd = 600; // + the theme's index, + the size in percent
     void setThemeFromPage(int index);
     void setWindowScale(float newScale); // 1.0 = the size the page is designed at
-    void setBeatDogShown(bool shown);    // hidden, ADVANCED gets shorter (the panel under the pedal moves up)
-    bool isBeatDogShown() const { return beatDogShown; }
 
     // The effect panel showing on the right-hand side (one at a time, picked with the tabs above it). Remembered.
     static constexpr int kTabSamples = 0, kTabDist = 1, kTabMod = 2, kTabTremolo = 3, kTabDelay = 4, kTabReverb = 5, kTabEq = 6;
@@ -573,8 +573,13 @@ public:
     // FIND A PRESET (Ctrl+F, or the top of the preset menu): type a name or what a preset uses, browse by ear
     void openPresetSearch();
     PresetSearch* getPresetSearch() { return presetSearch.get(); }
+    // The star by the preset name: makes the preset showing a favourite, or not. Favourites have their own list at the
+    // top of the preset menu and are found by typing "favourite" in FIND A PRESET.
+    void toggleFavourite();
+    bool isFavouriteStarLit() const { return favouriteButton.lit; }
+    void refreshPresetName(); // the name, slot number and star of the preset showing (the timer calls it too)
     static constexpr int kMenuSave = 1, kMenuRename = 2, kMenuExport = 3, kMenuImport = 4, kMenuUndo = 5, kMenuRedo = 6, kMenuSearch = 7,
-                         kMenuSlot = 100; // + the slot's index (the same in every list it is in)
+                         kMenuFavourite = 8, kMenuSlot = 100; // + the slot's index (the same in every list it is in)
 
 private:
     static constexpr int kKnobs = 6;
@@ -603,7 +608,7 @@ private:
     void applyRightMode();
     // The right-hand column, top to bottom: the beat pattern (when the sequence fires; folded while it is off), the effect
     // tabs, the one effect panel showing (sample blend, distortion / fuzz, tremolo, delay, reverb or, in ADVANCED, the EQ;
-    // the area is the size of the tallest), then DOG5. The pattern panel changes height, so everything below it moves.
+    // the area is the size of the tallest). The pattern panel changes height, so everything below it moves.
     int patternTop() const;
     int replayTop() const;  // the REPLAY panel, under the beat pattern
     int samplesTop() const; // the tab strip
@@ -616,11 +621,10 @@ private:
     juce::Rectangle<int> reverbArea() const;
     int eqTop() const;
     int columnBottom() const;
-    // The panel under the pedal (input, output and, in ADVANCED, the stutter and loop settings), DOG5 (under the
-    // pedal in ADVANCED, at the bottom of the right-hand column in SIMPLE), and the height of the page for the mode.
+    // The panel under the effects (input, output and, in ADVANCED, the stutter and loop settings), and the height of
+    // the page for the mode.
     int globalTop() const;
     int globalHeight() const;
-    juce::Rectangle<int> beatDogArea() const;
     int pedalPageHeight() const;
     void timerCallback() override;
     void updateLiveState();
@@ -628,7 +632,6 @@ private:
     void setTooltips();        // plain-language hover text for every control
     void nameControls();       // a name for a screen reader on every knob and box (the first words of its tooltip)
     void stepProgram(int direction);
-    void refreshPresetName();
     void configureKnob(juce::Slider&, int ticks);
     juce::Rectangle<int> knobBounds(int index) const;
     juce::Point<float> knobCentre(int index) const;
@@ -642,9 +645,9 @@ private:
     OutputMeter outputMeter;
     float outputDb = -100.0f;
     StepStrip stepStrip;
-    std::unique_ptr<BeatDog> beatDog; // the headbanging husky under the pedal
     PedalButton helpButton { "? HELP" };
     PedalButton presetMenuButton { "" }; // the arrow in the preset name box: save, rename, export, import
+    PedalButton favouriteButton { "" };  // the star at the left of the preset name box
     std::unique_ptr<juce::FileChooser> presetChooser;
     void showPresetMenu();
     void undoOrRedo(bool undo);
@@ -653,7 +656,6 @@ private:
     PedalButton simpleButton { "SIMPLE" }, advancedButton { "ADVANCED" };
     bool advancedRight = false;
     PedalButton viewButton { "VIEW" };
-    bool beatDogShown = true;
     int shownThemeSerial = -1;
     // the wireframe glow: the last step seen (a change flashes), its fading flash, and how "hot" the colour is
     int glowStep = -1;
@@ -687,11 +689,11 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> levelAtt;
     juce::ToggleButton syncButton { "SYNC" }, holdButton { "HOLD" };
     std::unique_ptr<APVTS::ButtonAttachment> syncAtt, holdAtt;
-    // HEAR: what comes out, as one choice over the two switches underneath (Seq Only and FX Only On Triggers):
+    // HEAR: what comes out:
     // 0 = the guitar and the effect, 1 = clean in between (the crush only while a sequence or stutter plays), 2 = the effect only.
     juce::ComboBox hearBox;
+    std::unique_ptr<APVTS::ComboBoxAttachment> hearAtt;
     int hearChoice() const;
-    void setHear(int choice);
     juce::ComboBox headroomBox, stutterLenBox, stutterTypeBox;
     // the FILTER row (ADVANCED): the filter's type and its resonance
     juce::ComboBox filterTypeBox;
@@ -715,10 +717,11 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> delayOnAtt;
 
     // reverb on the sequenced sound, and the beat pattern panel below it
-    KnobSlider reverbDecaySlider, reverbToneSlider, reverbMixSlider, reverbLevelSlider, reverbLowSlider, reverbHighSlider;
-    std::unique_ptr<APVTS::SliderAttachment> reverbDecayAtt, reverbToneAtt, reverbMixAtt, reverbLevelAtt, reverbLowAtt, reverbHighAtt;
+    KnobSlider reverbDecaySlider, reverbToneSlider, reverbMixSlider, reverbLowSlider, reverbHighSlider;
+    std::unique_ptr<APVTS::SliderAttachment> reverbDecayAtt, reverbToneAtt, reverbMixAtt, reverbLowAtt, reverbHighAtt;
     juce::ComboBox reverbTypeBox;
-    juce::ToggleButton reverbReverseButton { "REVERSE" }; // each type of reverb remembers its own tick
+    juce::ToggleButton reverbReverseButton { "REVERSE" };
+    std::unique_ptr<APVTS::ButtonAttachment> reverbReverseAtt;
     juce::ToggleButton reverbOnButton { "ON" };
     std::unique_ptr<APVTS::ButtonAttachment> reverbOnAtt;
 

@@ -232,11 +232,6 @@ void SampleBank::loadSettings()
         remembered.chance = level("chance", 1.0f, 0.0f, 1.0f);
         remembered.baseDb = level("baseDb", -60.0f, -60.0f, 6.0f);
         remembered.maxDb = level("maxDb", -9.0f, -60.0f, 6.0f);
-        remembered.loopOwn = xml->getBoolAttribute("loopOwnLevels", false);
-        remembered.loopMix = level("loopMix", remembered.mix, 0.0f, 1.0f);
-        remembered.loopChance = level("loopChance", remembered.chance, 0.0f, 1.0f);
-        remembered.loopBaseDb = level("loopBaseDb", remembered.baseDb, -60.0f, 6.0f);
-        remembered.loopMaxDb = level("loopMaxDb", remembered.maxDb, -60.0f, 6.0f);
         haveLevels = true;
     }
     for (auto* b : xml->getChildWithTagNameIterator("BANK"))
@@ -262,11 +257,6 @@ void SampleBank::saveSettings() const
             xml.setAttribute("chance", (double) remembered.chance);
             xml.setAttribute("baseDb", (double) remembered.baseDb);
             xml.setAttribute("maxDb", (double) remembered.maxDb);
-            xml.setAttribute("loopOwnLevels", remembered.loopOwn);
-            xml.setAttribute("loopMix", (double) remembered.loopMix);
-            xml.setAttribute("loopChance", (double) remembered.loopChance);
-            xml.setAttribute("loopBaseDb", (double) remembered.loopBaseDb);
-            xml.setAttribute("loopMaxDb", (double) remembered.loopMaxDb);
         }
         addFiles(*xml.createNewChildElement("LAST"), selected[kMain]);
         addFiles(*xml.createNewChildElement("LAST_LOOP"), selected[kLoop]);

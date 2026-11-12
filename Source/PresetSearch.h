@@ -3,7 +3,7 @@
 #include "PluginEditor.h"
 
 // FIND A PRESET: type part of a name, or what a preset uses ("flanger", "ping", "swing", "formant", "lanes"), or its
-// slot number; every word typed must match. The results list the presets in slot order with what each one uses.
+// slot number, or "favourite" (or "favorite", "fav", "starred") for the starred ones; every word typed must match. The results list the presets in slot order with what each one uses.
 // Up and Down move through them and play each one as it is reached, so you hear them as you browse; a click plays
 // one too. Return (or a double-click) keeps the one highlighted and closes; Escape closes and goes back to the preset
 // that was showing when the search opened.
@@ -54,5 +54,6 @@ private:
     juce::ListBox list;
     std::vector<int> matches;
     std::vector<juce::String> haystacks, usesText; // per slot: what it is found by, and what it uses (for its row)
+    std::vector<bool> starred;                      // per slot: a favourite (a star in its row)
     bool quiet = false;                             // highlighting the first result after a change of query: no playing
 };

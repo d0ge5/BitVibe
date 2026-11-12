@@ -65,33 +65,13 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
     loopButton.onClick = [this] { showSection(SampleBank::kLoop); };
     mainButton.setTooltip("OTHER STEPS: set up the sounds of the steps outside the loop section.");
     loopButton.setTooltip("LOOP STEPS: set up the sounds of the loop section's steps (the steps SEQUENCE LOOP repeats, under the pedal). "
-                          "They can have a sound bank of their own, and with OWN LEVELS their own volumes and chance.");
+                          "They can have a sound bank of their own; VOLUME, CHANCE, BASE and MAX are the same for all steps.");
     addChildComponent(mainButton);
     addChildComponent(loopButton);
     samplerButton.onClick = [this] { if (onOpenSampler) onOpenSampler(); };
     samplerButton.setTooltip("SAMPLER: record the sound of another program on this computer, pick a part, shape it with distortion, "
                              "bit crush and EQ, and save it as a new sound (optionally into a bank).");
     addAndMakeVisible(samplerButton);
-    ownLevelsButton.setLookAndFeel(&laf);
-    ownLevelsAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::sampleLoopOwn, ownLevelsButton);
-    ownLevelsButton.onClick = [this]
-    {
-        // switched on: the loop section's knobs start where the main ones are
-        if (ownLevelsButton.getToggleState())
-        {
-            const std::array<std::pair<const char*, const char*>, 4> pairs { { { ids::sampleMix, ids::sampleLoopMix }, { ids::sampleChance, ids::sampleLoopChance },
-                                                                               { ids::sampleBase, ids::sampleLoopBase }, { ids::sampleMax, ids::sampleLoopMax } } };
-            for (const auto& [from, to] : pairs)
-                if (auto* param = proc.apvts.getParameter(to))
-                    param->setValueNotifyingHost(proc.apvts.getParameter(from)->getValue());
-        }
-        attachKnobs();
-        rememberKnobs();
-        repaint();
-    };
-    ownLevelsButton.setTooltip("OWN LEVELS FOR THE LOOP: off, the loop steps use the same VOLUME, CHANCE, BASE and MAX as the "
-                               "other steps. On, they get their own (starting from the same values); the knobs then set the loop's.");
-    addChildComponent(ownLevelsButton);
     addAndMakeVisible(bankBox);
 
     saveButton.onClick = [this] { askBankName(); };
@@ -123,7 +103,6 @@ SamplePanel::SamplePanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
 
 SamplePanel::~SamplePanel()
 {
-    ownLevelsButton.setLookAndFeel(nullptr);
     mixSlider.setLookAndFeel(nullptr);
     chanceSlider.setLookAndFeel(nullptr);
     lengthSlider.setLookAndFeel(nullptr);
@@ -143,24 +122,17 @@ void SamplePanel::rememberKnobs()
     levels.chance = rawValue(ids::sampleChance);
     levels.baseDb = rawValue(ids::sampleBase);
     levels.maxDb = rawValue(ids::sampleMax);
-    levels.loopOwn = rawValue(ids::sampleLoopOwn) > 0.5f;
-    levels.loopMix = rawValue(ids::sampleLoopMix);
-    levels.loopChance = rawValue(ids::sampleLoopChance);
-    levels.loopBaseDb = rawValue(ids::sampleLoopBase);
-    levels.loopMaxDb = rawValue(ids::sampleLoopMax);
     bank.rememberLevels(levels);
 }
 
-bool SamplePanel::loopOwnLevels() const { return rawValue(ids::sampleLoopOwn) > 0.5f; }
-const char* SamplePanel::mixId() const { return knobsOnLoop ? ids::sampleLoopMix : ids::sampleMix; }
-const char* SamplePanel::chanceId() const { return knobsOnLoop ? ids::sampleLoopChance : ids::sampleChance; }
-const char* SamplePanel::baseId() const { return knobsOnLoop ? ids::sampleLoopBase : ids::sampleBase; }
-const char* SamplePanel::maxId() const { return knobsOnLoop ? ids::sampleLoopMax : ids::sampleMax; }
+const char* SamplePanel::mixId() const { return ids::sampleMix; }
+const char* SamplePanel::chanceId() const { return ids::sampleChance; }
+const char* SamplePanel::baseId() const { return ids::sampleBase; }
+const char* SamplePanel::maxId() const { return ids::sampleMax; }
 
-// The knobs set the main values, or the loop section's own ones while the LOOP section with OWN LEVELS is showing.
+// The knobs set the levels of every step's sounds, whichever section is showing.
 void SamplePanel::attachKnobs()
 {
-    knobsOnLoop = editingLoop() && loopOwnLevels();
     mixAtt.reset();
     chanceAtt.reset();
     baseAtt.reset();
@@ -214,11 +186,9 @@ void SamplePanel::resized()
     samplerButton.setBounds(196, 2, 82, 20);
     mainButton.setBounds(284, 2, 80, 20);
     loopButton.setBounds(368, 2, 80, 20);
-    // the third row: the sounds folder (ADVANCED, main section), or the loop section's OWN LEVELS switch
+    // the third row: the sounds folder (ADVANCED, main section)
     folderButton.setVisible((advanced || numAvailable == 0) && !editingLoop());
     folderButton.setText(numAvailable == 0 ? "ADD SOUNDS: OPEN THE FOLDER" : "OPEN SOUNDS FOLDER");
-    ownLevelsButton.setVisible(editingLoop());
-    ownLevelsButton.setBounds(12, 80, 238, 24);
     bankBox.setBounds(12, 24, advanced ? 108 : 238, 24);
     saveButton.setBounds(124, 24, 60, 24);
     deleteButton.setBounds(188, 24, 62, 24);
@@ -268,9 +238,6 @@ void SamplePanel::refresh()
         loopButton.setVisible(loopOn);
         showSection(loopOn ? section : SampleBank::kMain);
     }
-    if (knobsOnLoop != (editingLoop() && loopOwnLevels())) // the host or a project switched OWN LEVELS
-        attachKnobs();
-
     const bool sameAsMain = editingLoop() && !bank.loopHasOwnSounds();
     String text;
     if (numAvailable == 0)

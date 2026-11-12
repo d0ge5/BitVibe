@@ -14,11 +14,11 @@ constexpr std::array<float, 7> kClipLengths { 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f
 } // namespace
 
 EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel, const String& prefix, bool withReferenceTools)
-    : proc(p), laf(lookAndFeel), idPrefix(prefix), onId(prefix + "On"), outputId(prefix + "Output"), referenceTools(withReferenceTools)
+    : proc(p), state(p.stateFor(prefix + "On")), laf(lookAndFeel), idPrefix(prefix), onId(prefix + "On"), outputId(prefix + "Output"), referenceTools(withReferenceTools)
 {
     onButton.setLookAndFeel(&laf);
     makePowerButton(onButton);
-    onAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, onId, onButton);
+    onAtt = std::make_unique<APVTS::ButtonAttachment>(state, onId, onButton);
     onButton.setTooltip("EQ ON: switches the EQ on or off. It is the last thing the sequenced sound goes through; your clean signal never does. "
                         "The light glows while the sequence or stutter plays.");
     addAndMakeVisible(onButton);
@@ -55,8 +55,8 @@ EqPanel::EqPanel(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel, const Strin
     gainSlider.setTooltip("GAIN: how much the selected band lifts (right) or lowers (left) its frequencies, up to 15 dB. Or drag its point up and down.");
     qSlider.setTooltip("Q: how narrow the selected band is (right = narrower). Or turn the mouse wheel over its point in the graph.");
     outputSlider.setTooltip("OUTPUT: the level after the EQ, -15 to +15 dB, to make up for what the bands took away or added.");
-    outputAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, outputId, outputSlider);
-    if (auto* param = proc.apvts.getParameter(outputId))
+    outputAtt = std::make_unique<APVTS::SliderAttachment>(state, outputId, outputSlider);
+    if (auto* param = state.getParameter(outputId))
         outputSlider.setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
 
     captureButton.setTooltip("CAPTURE: keep the last few seconds (up to 8) of the sound reaching the EQ as a reference clip. "
@@ -150,14 +150,14 @@ void EqPanel::selectBand(int band)
     qAtt.reset();
     typeAtt.reset();
     bandOnAtt.reset();
-    freqAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Freq"), freqSlider);
-    gainAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Gain"), gainSlider);
-    qAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, bandId(selected, "Q"), qSlider);
-    typeAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, bandId(selected, "Type"), typeBox);
-    bandOnAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, bandId(selected, "On"), bandOnButton);
+    freqAtt = std::make_unique<APVTS::SliderAttachment>(state, bandId(selected, "Freq"), freqSlider);
+    gainAtt = std::make_unique<APVTS::SliderAttachment>(state, bandId(selected, "Gain"), gainSlider);
+    qAtt = std::make_unique<APVTS::SliderAttachment>(state, bandId(selected, "Q"), qSlider);
+    typeAtt = std::make_unique<APVTS::ComboBoxAttachment>(state, bandId(selected, "Type"), typeBox);
+    bandOnAtt = std::make_unique<APVTS::ButtonAttachment>(state, bandId(selected, "On"), bandOnButton);
     const std::array<std::pair<Slider*, const char*>, 3> knobs { { { &freqSlider, "Freq" }, { &gainSlider, "Gain" }, { &qSlider, "Q" } } };
     for (const auto& [slider, what] : knobs)
-        if (auto* param = proc.apvts.getParameter(bandId(selected, what)))
+        if (auto* param = state.getParameter(bandId(selected, what)))
             slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
     for (int b = 0; b < kNumEqBands; ++b)
     {
@@ -187,7 +187,7 @@ String EqPanel::bandId(int band, const char* what) const { return idPrefix + Str
 
 float EqPanel::rawValue(const String& id) const
 {
-    return proc.apvts.getRawParameterValue(id)->load();
+    return state.getRawParameterValue(id)->load();
 }
 
 std::array<EqBand, kNumEqBands> EqPanel::currentBands() const
@@ -255,7 +255,7 @@ int EqPanel::bandAt(Point<float> p) const
 
 void EqPanel::setParam(const String& id, float value)
 {
-    if (auto* param = proc.apvts.getParameter(id))
+    if (auto* param = state.getParameter(id))
         param->setValueNotifyingHost(param->convertTo0to1(value));
 }
 
@@ -268,7 +268,7 @@ void EqPanel::mouseDown(const MouseEvent& e)
         selectBand(b);
     dragging = b;
     for (const char* what : { "Freq", "Gain" })
-        if (auto* param = proc.apvts.getParameter(bandId(b, what)))
+        if (auto* param = state.getParameter(bandId(b, what)))
             param->beginChangeGesture();
 }
 
@@ -287,7 +287,7 @@ void EqPanel::mouseUp(const MouseEvent&)
 {
     if (dragging >= 0)
         for (const char* what : { "Freq", "Gain" })
-            if (auto* param = proc.apvts.getParameter(bandId(dragging, what)))
+            if (auto* param = state.getParameter(bandId(dragging, what)))
                 param->endChangeGesture();
     dragging = -1;
 }
@@ -296,7 +296,7 @@ void EqPanel::mouseDoubleClick(const MouseEvent& e)
 {
     const int b = bandAt(e.position);
     if (b >= 0)
-        if (auto* param = proc.apvts.getParameter(bandId(b, "On")))
+        if (auto* param = state.getParameter(bandId(b, "On")))
             param->setValueNotifyingHost(rawValue(bandId(b, "On")) > 0.5f ? 0.0f : 1.0f);
 }
 

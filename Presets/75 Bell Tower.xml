@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<BITVIBE_PRESET version="1" name="Bell Tower">
+  <PRESET name="Bell Tower" sample="1.0" filter="1.0" bits="1.0" stutter="0.0"
+          seqPlay="1.0" seqMult="0.0" filterType="0.0" filterRes="0.3684210479259491"
+          step1="0.5" step2="0.6851851940155029" step3="0.7592592835426331"
+          step4="0.9444444179534912" step5="0.6481481194496155" step6="0.5"
+          step7="0.5" step8="0.5" step9="0.5" step10="0.5" step11="0.5"
+          step12="0.5" step13="0.5" step14="0.5" step15="0.5" step16="0.5"
+          stepType1="0.0" stepType2="0.0" stepType3="0.0" stepType4="0.0"
+          stepType5="0.0" stepType6="0.0" stepType7="0.0" stepType8="0.0"
+          stepType9="0.0" stepType10="0.0" stepType11="0.0" stepType12="0.0"
+          stepType13="0.0" stepType14="0.0" stepType15="0.0" stepType16="0.0"
+          stepMem0_1="0.0" stepMem0_2="0.0" stepMem0_3="0.0" stepMem0_4="0.0"
+          stepMem0_5="0.0" stepMem0_6="0.0" stepMem0_7="0.0" stepMem0_8="0.0"
+          stepMem0_9="0.0" stepMem0_10="0.0" stepMem0_11="0.0" stepMem0_12="0.0"
+          stepMem0_13="0.0" stepMem0_14="0.0" stepMem0_15="0.0" stepMem0_16="0.0"
+          stepMem1_1="0.0" stepMem1_2="0.0" stepMem1_3="0.0" stepMem1_4="0.0"
+          stepMem1_5="0.0" stepMem1_6="0.0" stepMem1_7="0.0" stepMem1_8="0.0"
+          stepMem1_9="0.0" stepMem1_10="0.0" stepMem1_11="0.0" stepMem1_12="0.0"
+          stepMem1_13="0.0" stepMem1_14="0.0" stepMem1_15="0.0" stepMem1_16="0.0"
+          stepMem2_1="0.0" stepMem2_2="0.0" stepMem2_3="0.0" stepMem2_4="0.0"
+          stepMem2_5="0.0" stepMem2_6="0.0" stepMem2_7="0.0" stepMem2_8="0.0"
+          stepMem2_9="0.0" stepMem2_10="0.0" stepMem2_11="0.0" stepMem2_12="0.0"
+          stepMem2_13="0.0" stepMem2_14="0.0" stepMem2_15="0.0" stepMem2_16="0.0"
+          seqType="0.0" tempo="0.3129551112651825" stutterLen="0.5" morph="0.0"
+          loopOn="0.0" loopFrom="0.2000000029802322" loopTo="0.3333333432674408"
+          loopRepeats="0.0" seqLength="0.2000000029802322" stutterType="0.0"
+          swing="0.0" pingOn="0.0" pingLevel="0.699999988079071" soundLevel="0.699999988079071"
+          laneCrush1="0.0" laneCrush2="0.0" laneCrush3="0.0" laneCrush4="0.0"
+          laneCrush5="0.0" laneCrush6="0.0" laneCrush7="0.0" laneCrush8="0.0"
+          laneCrush9="0.0" laneCrush10="0.0" laneCrush11="0.0" laneCrush12="0.0"
+          laneCrush13="0.0" laneCrush14="0.0" laneCrush15="0.0" laneCrush16="0.0"
+          laneLevel1="1.0" laneLevel2="0.800000011920929" laneLevel3="0.8500000238418579"
+          laneLevel4="0.8999999761581421" laneLevel5="1.0" laneLevel6="0.800000011920929"
+          laneLevel7="0.8500000238418579" laneLevel8="0.8999999761581421"
+          laneLevel9="1.0" laneLevel10="0.800000011920929" laneLevel11="0.8500000238418579"
+          laneLevel12="0.8999999761581421" laneLevel13="1.0" laneLevel14="0.800000011920929"
+          laneLevel15="0.8500000238418579" laneLevel16="0.8999999761581421"
+          laneTrem1="1.0" laneTrem2="1.0" laneTrem3="1.0" laneTrem4="1.0"
+          laneTrem5="1.0" laneTrem6="1.0" laneTrem7="1.0" laneTrem8="1.0"
+          laneTrem9="1.0" laneTrem10="1.0" laneTrem11="1.0" laneTrem12="1.0"
+          laneTrem13="1.0" laneTrem14="1.0" laneTrem15="1.0" laneTrem16="1.0"
+          laneDelay1="1.0" laneDelay2="1.0" laneDelay3="1.0" laneDelay4="1.0"
+          laneDelay5="1.0" laneDelay6="1.0" laneDelay7="1.0" laneDelay8="1.0"
+          laneDelay9="1.0" laneDelay10="1.0" laneDelay11="1.0" laneDelay12="1.0"
+          laneDelay13="1.0" laneDelay14="1.0" laneDelay15="1.0" laneDelay16="1.0"
+          laneReverb1="1.0" laneReverb2="1.0" laneReverb3="1.0" laneReverb4="1.0"
+          laneReverb5="1.0" laneReverb6="1.0" laneReverb7="1.0" laneReverb8="1.0"
+          laneReverb9="1.0" laneReverb10="1.0" laneReverb11="1.0" laneReverb12="1.0"
+          laneReverb13="1.0" laneReverb14="1.0" laneReverb15="1.0" laneReverb16="1.0"
+          laneStutter1="0.0" laneStutter2="0.0" laneStutter3="0.0" laneStutter4="0.0"
+          laneStutter5="0.0" laneStutter6="0.0" laneStutter7="0.0" laneStutter8="0.0"
+          laneStutter9="0.0" laneStutter10="0.0" laneStutter11="0.0" laneStutter12="0.0"
+          laneStutter13="0.0" laneStutter14="0.0" laneStutter15="0.0" laneStutter16="0.0">
+    <UP sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="3"
+        seqMult="1" seqType="0" step1="0.2407407462596893" step2="0.3888888955116272"
+        step3="0.0555555559694767" step4="0.7592592835426331" step5="0.6481481194496155"
+        step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"
+        step11="0.5" step12="0.5" step13="0.5" step14="0.5" step15="0.5"
+        step16="0.5"/>
+    <DOWN sample="1.0" filter="1.0" bits="1.0" stutter="0" seqPlay="3"
+          seqMult="1" seqType="0" step1="0.2407407462596893" step2="0.3888888955116272"
+          step3="0.0555555559694767" step4="0.7592592835426331" step5="0.6481481194496155"
+          step6="0.5" step7="0.5" step8="0.5" step9="0.5" step10="0.5"
+          step11="0.5" step12="0.5" step13="0.5" step14="0.5" step15="0.5"
+          step16="0.5"/>
+  </PRESET>
+  <EFFECTS>
+    <PARAM id="sample" value="1.0"/>
+    <PARAM id="mix" value="1.0"/>
+    <PARAM id="hear" value="0.0"/>
+    <PARAM id="reverbTone" value="0.5"/>
+    <PARAM id="reverbMix" value="0.449999988079071"/>
+    <PARAM id="reverbType" value="4.0"/>
+    <PARAM id="reverbOn" value="1.0"/>
+    <PARAM id="reverbDecay" value="0.800000011920929"/>
+    <PARAM id="reverbReverse" value="0.0"/>
+    <PARAM id="reverbLowCut" value="20.0"/>
+    <PARAM id="reverbHighCut" value="20000.0"/>
+    <PARAM id="distOn" value="0.0"/>
+    <PARAM id="distType" value="0.0"/>
+    <PARAM id="distDrive" value="0.5"/>
+    <PARAM id="distTone" value="0.5"/>
+    <PARAM id="distLevel" value="0.800000011920929"/>
+    <PARAM id="distReverb" value="0.0"/>
+    <PARAM id="tremOn" value="0.0"/>
+    <PARAM id="tremRate" value="6.0"/>
+    <PARAM id="tremDepth" value="0.800000011920929"/>
+    <PARAM id="tremEdge" value="0.300000011920929"/>
+    <PARAM id="tremEnd" value="0.0"/>
+    <PARAM id="tremBend" value="0.0"/>
+    <PARAM id="tremRamp" value="2.0"/>
+    <PARAM id="ringOn" value="1.0"/>
+    <PARAM id="ringHz" value="1318.0"/>
+    <PARAM id="ringMix" value="0.8500000238418579"/>
+    <PARAM id="spliceOn" value="0.0"/>
+    <PARAM id="spliceWhen" value="0.0"/>
+    <PARAM id="spliceChance" value="0.5"/>
+    <PARAM id="spliceJump" value="40.0"/>
+    <PARAM id="spliceGap" value="0.0"/>
+    <PARAM id="modOn" value="0.0"/>
+    <PARAM id="modType" value="0.0"/>
+    <PARAM id="modRate" value="2.0"/>
+    <PARAM id="modDepth" value="0.699999988079071"/>
+    <PARAM id="modFeedback" value="0.5"/>
+    <PARAM id="modMix" value="1.0"/>
+    <PARAM id="sampleOn" value="0.0"/>
+    <PARAM id="sampleMix" value="0.0"/>
+    <PARAM id="sampleChance" value="1.0"/>
+    <PARAM id="sampleBase" value="-60.0"/>
+    <PARAM id="sampleMax" value="-9.0"/>
+    <PARAM id="sampleMaxBeats" value="0.0"/>
+    <PARAM id="eqOn" value="0.0"/>
+    <PARAM id="eqOutput" value="0.0"/>
+    <PARAM id="eq1On" value="0.0"/>
+    <PARAM id="eq1Type" value="0.0"/>
+    <PARAM id="eq1Freq" value="39.99998474121094"/>
+    <PARAM id="eq1Gain" value="0.0"/>
+    <PARAM id="eq1Q" value="0.7100000381469727"/>
+    <PARAM id="eq2On" value="1.0"/>
+    <PARAM id="eq2Type" value="1.0"/>
+    <PARAM id="eq2Freq" value="100.0000305175781"/>
+    <PARAM id="eq2Gain" value="0.0"/>
+    <PARAM id="eq2Q" value="0.7100000381469727"/>
+    <PARAM id="eq3On" value="1.0"/>
+    <PARAM id="eq3Type" value="2.0"/>
+    <PARAM id="eq3Freq" value="400.0"/>
+    <PARAM id="eq3Gain" value="0.0"/>
+    <PARAM id="eq3Q" value="0.7100000381469727"/>
+    <PARAM id="eq4On" value="1.0"/>
+    <PARAM id="eq4Type" value="2.0"/>
+    <PARAM id="eq4Freq" value="999.9999389648438"/>
+    <PARAM id="eq4Gain" value="0.0"/>
+    <PARAM id="eq4Q" value="0.7100000381469727"/>
+    <PARAM id="eq5On" value="1.0"/>
+    <PARAM id="eq5Type" value="2.0"/>
+    <PARAM id="eq5Freq" value="2500.0"/>
+    <PARAM id="eq5Gain" value="0.0"/>
+    <PARAM id="eq5Q" value="0.7100000381469727"/>
+    <PARAM id="eq6On" value="0.0"/>
+    <PARAM id="eq6Type" value="2.0"/>
+    <PARAM id="eq6Freq" value="5000.00048828125"/>
+    <PARAM id="eq6Gain" value="0.0"/>
+    <PARAM id="eq6Q" value="0.7100000381469727"/>
+    <PARAM id="eq7On" value="0.0"/>
+    <PARAM id="eq7Type" value="4.0"/>
+    <PARAM id="eq7Freq" value="7999.99951171875"/>
+    <PARAM id="eq7Gain" value="0.0"/>
+    <PARAM id="eq7Q" value="0.7100000381469727"/>
+    <PARAM id="eq8On" value="0.0"/>
+    <PARAM id="eq8Type" value="5.0"/>
+    <PARAM id="eq8Freq" value="16000.0"/>
+    <PARAM id="eq8Gain" value="0.0"/>
+    <PARAM id="eq8Q" value="0.7100000381469727"/>
+    <PARAM id="delayOn" value="0.0"/>
+    <PARAM id="delayTime" value="5.0"/>
+    <PARAM id="delayMix" value="0.4000000059604645"/>
+    <PARAM id="delayDecay" value="0.5"/>
+    <PARAM id="delayRepeats" value="4.0"/>
+    <PARAM id="delayLowCut" value="20.0"/>
+    <PARAM id="delayHighCut" value="20000.0"/>
+    <PARAM id="delayWobble" value="0.0"/>
+    <PARAM id="patternLock" value="1.0"/>
+    <PARAM id="replayOn" value="0.0"/>
+    <PARAM id="replayBack" value="2.0"/>
+    <PARAM id="replayWait" value="0.5"/>
+    <PARAM id="replayLength" value="64.0"/>
+    <PARAM id="replayDry" value="0.0"/>
+    <PARAM id="replayThreshold" value="-45.0"/>
+    <PARAM id="replaySpeed" value="0.0"/>
+    <PARAM id="replayDirection" value="0.0"/>
+    <PARAM id="replayStretch" value="1.0"/>
+    <PARAM id="replaySwell" value="0.0"/>
+    <PARAM id="replayWear" value="0.0"/>
+  </EFFECTS>
+  <PATTERN action="0" steps="0" randomBeats="31" signature="0"/>
+</BITVIBE_PRESET>

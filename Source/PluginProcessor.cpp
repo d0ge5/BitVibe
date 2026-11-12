@@ -1,8 +1,10 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "BinaryData.h"
+#include "UiSettings.h"
 #include <limits>
 #include <map>
+#include <optional>
 
 using namespace juce;
 
@@ -18,6 +20,43 @@ AudioParameterFloatAttributes withText(std::function<String(float, int)> fn)
 String hzText(float hz)
 {
     return hz >= 1000.0f ? String(hz / 1000.0f, hz >= 10000.0f ? 1 : 2) + " kHz" : String(roundToInt(hz)) + " Hz";
+}
+
+// The parameters of an EQ, under ids that start with prefix: its switch, its output gain and eight bands. The pedal's EQ
+// ("eq") and the sampler's own copy ("smpEq") are the same set.
+template <typename Add>
+void addEqParameters(Add&& add, const String& prefix, const String& label)
+{
+    add(std::make_unique<AudioParameterBool>(ParameterID { prefix + "On", 1 }, label + " On", false));
+    auto dbText = AudioParameterFloatAttributes()
+                      .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
+                      .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); });
+    add(std::make_unique<AudioParameterFloat>(ParameterID { prefix + "Output", 1 }, label + " Output",
+                                              NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
+    NormalisableRange<float> freqRange(bitvibe::kEqMinHz, bitvibe::kEqMaxHz);
+    freqRange.setSkewForCentre(1000.0f);
+    NormalisableRange<float> qRange(bitvibe::kEqMinQ, bitvibe::kEqMaxQ);
+    qRange.setSkewForCentre(1.0f);
+    auto freqText = AudioParameterFloatAttributes()
+                        .withStringFromValueFunction([](float v, int) { return v >= 1000.0f ? String(v / 1000.0f, 2) + " kHz" : String(v, 1) + " Hz"; })
+                        .withValueFromStringFunction([](const String& t) { return t.containsIgnoreCase("k") ? t.getFloatValue() * 1000.0f : t.getFloatValue(); });
+    StringArray types;
+    for (int t = 0; t < bitvibe::kNumEqTypes; ++t)
+        types.add(bitvibe::eqTypeName((bitvibe::EqType) t));
+    const auto eqDefaults = bitvibe::defaultEqBands();
+    for (int b = 0; b < bitvibe::kNumEqBands; ++b)
+    {
+        const auto& d = eqDefaults[(size_t) b];
+        const String n = label + " " + String(b + 1) + " ";
+        auto band = [&](const char* what) { return ParameterID { prefix + String(b + 1) + what, 1 }; };
+        add(std::make_unique<AudioParameterBool>(band("On"), n + "On", d.on));
+        add(std::make_unique<AudioParameterChoice>(band("Type"), n + "Type", types, (int) d.type));
+        add(std::make_unique<AudioParameterFloat>(band("Freq"), n + "Frequency", freqRange, d.freq, freqText));
+        add(std::make_unique<AudioParameterFloat>(band("Gain"), n + "Gain",
+                                                  NormalisableRange<float>(-bitvibe::kEqMaxGainDb, bitvibe::kEqMaxGainDb, 0.1f), d.gainDb, dbText));
+        add(std::make_unique<AudioParameterFloat>(band("Q"), n + "Q", qRange, d.q,
+                                                  AudioParameterFloatAttributes().withStringFromValueFunction([](float v, int) { return String(v, 2); })));
+    }
 }
 } // namespace
 
@@ -83,16 +122,6 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
 
     add(std::make_unique<AudioParameterChoice>(id(ids::seqType), "Sequencer Type",
                                                       StringArray { "Pitch", "Filter", "Sample Rate" }, 0));
-    // the step knobs each sequencer type was left with (stored in the preset slots; hidden from the host's automation)
-    {
-        static const char* typeNames[3] { "Pitch", "Filter", "Sample Rate" };
-        for (int t = 0; t < 3; ++t)
-            for (int i = 0; i < kNumSteps; ++i)
-                add(std::make_unique<AudioParameterFloat>(id(ids::stepMem(t, i).toRawUTF8()),
-                                                                 String(typeNames[t]) + " Step " + String(i + 1) + " Memory",
-                                                                 NormalisableRange<float>(-1.0f, 1.0f), -1.0f,
-                                                                 AudioParameterFloatAttributes().withAutomatable(false)));
-    }
     // each step can control something else than the sequencer type (stored in the preset slots)
     for (int i = 0; i < kNumSteps; ++i)
         add(std::make_unique<AudioParameterChoice>(id(ids::stepType(i).toRawUTF8()), "Step " + String(i + 1) + " Type",
@@ -197,9 +226,9 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v, int) { return String(roundToInt(v * 100.0f)) + "% effect"; })
             .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); })));
-    add(std::make_unique<AudioParameterBool>(id(ids::fxTriggers), "FX Only On Triggers", false));
-    // only the sequenced sound leaves the plug-in (a rig setting, like the mix)
-    add(std::make_unique<AudioParameterBool>(id(ids::seqOnly), "Seq Only", false));
+    // HEAR, what comes out (a rig setting, like the mix). Clean In Between: the crush and filter act only while a
+    // stutter or sequence plays. Effect Only: only the sequenced sound leaves the plug-in.
+    add(std::make_unique<AudioParameterChoice>(id(ids::hear), "Hear", StringArray { "Guitar + Effect", "Clean In Between", "Effect Only" }, 0));
 
     // ---- reverb on the sequenced sound (rig settings too). Mix 0 = off. -------------------
     inGroup("reverb", "Reverb");
@@ -208,21 +237,11 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
                        .withValueFromStringFunction([](const String& t) { return jlimit(0.0f, 1.0f, t.getFloatValue() / 100.0f); });
     add(std::make_unique<AudioParameterFloat>(id(ids::reverbTone), "Reverb Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
     add(std::make_unique<AudioParameterFloat>(id(ids::reverbMix), "Reverb Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
-    add(std::make_unique<AudioParameterFloat>(
-        id(ids::reverbLevel), "Reverb Level", NormalisableRange<float>(-30.0f, 6.0f, 0.1f), 0.0f,
-        AudioParameterFloatAttributes()
-            .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
-            .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })));
     add(std::make_unique<AudioParameterChoice>(id(ids::reverbType), "Reverb Type", StringArray { "Room", "Hall", "Spring", "Plate", "Shimmer", "Gated" }, 0));
     add(std::make_unique<AudioParameterBool>(id(ids::reverbOn), "Reverb On", false)); // off, like the other effects
     add(std::make_unique<AudioParameterFloat>(id(ids::reverbDecay), "Reverb Decay", NormalisableRange<float>(0.0f, 1.0f), 0.5f, percent));
-    // Each type of reverb has its own REVERSE tick (the tail swells up after the sound instead of dying away).
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseRoom), "Reverse Room Reverb", false));
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseHall), "Reverse Hall Reverb", false));
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseSpring), "Reverse Spring Reverb", false));
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReversePlate), "Reverse Plate Reverb", false));
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseShimmer), "Reverse Shimmer Reverb", false));
-    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverseGated), "Reverse Gated Reverb", false));
+    // REVERSE: the tail swells up after the sound instead of dying away.
+    add(std::make_unique<AudioParameterBool>(id(ids::reverbReverse), "Reverb Reverse", false));
     // ---- distortion on the sequenced sound (rig settings): drive, tone and level like the classic green pedal ----
     inGroup("distortion", "Distortion");
     add(std::make_unique<AudioParameterBool>(id(ids::distOn), "Distortion On", false));
@@ -319,67 +338,9 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     inGroup("samples", "Sample Blend");
     add(std::make_unique<AudioParameterBool>(id(ids::sampleOn), "Sample Blend On", false)); // off, like the other effects
 
-    // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain; and the sampler's own copy ----
-    for (const bool sampler : { false, true })
-    {
-        const String prefix = sampler ? ids::smpEqPrefix : "eq", label = sampler ? "Sampler EQ" : "EQ";
-        const bool automatable = !sampler;
-        if (sampler)
-            inGroup("sampler", "Sampler");
-        else
-            inGroup("eq", "EQ");
-        add(std::make_unique<AudioParameterBool>(ParameterID { prefix + "On", 1 }, label + " On", false,
-                                                        AudioParameterBoolAttributes().withAutomatable(automatable)));
-        auto dbText = AudioParameterFloatAttributes()
-                          .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })
-                          .withValueFromStringFunction([](const String& t) { return t.getFloatValue(); })
-                          .withAutomatable(automatable);
-        add(std::make_unique<AudioParameterFloat>(ParameterID { prefix + "Output", 1 }, label + " Output",
-                                                         NormalisableRange<float>(-15.0f, 15.0f, 0.1f), 0.0f, dbText));
-        NormalisableRange<float> freqRange(bitvibe::kEqMinHz, bitvibe::kEqMaxHz);
-        freqRange.setSkewForCentre(1000.0f);
-        NormalisableRange<float> qRange(bitvibe::kEqMinQ, bitvibe::kEqMaxQ);
-        qRange.setSkewForCentre(1.0f);
-        auto hzText = AudioParameterFloatAttributes()
-                          .withStringFromValueFunction([](float v, int) { return v >= 1000.0f ? String(v / 1000.0f, 2) + " kHz" : String(v, 1) + " Hz"; })
-                          .withValueFromStringFunction([](const String& t) { return t.containsIgnoreCase("k") ? t.getFloatValue() * 1000.0f : t.getFloatValue(); })
-                          .withAutomatable(automatable);
-        StringArray types;
-        for (int t = 0; t < bitvibe::kNumEqTypes; ++t)
-            types.add(bitvibe::eqTypeName((bitvibe::EqType) t));
-        const auto eqDefaults = bitvibe::defaultEqBands();
-        for (int b = 0; b < bitvibe::kNumEqBands; ++b)
-        {
-            const auto& d = eqDefaults[(size_t) b];
-            const String n = label + " " + String(b + 1) + " ";
-            auto band = [&](const char* what) { return ParameterID { prefix + String(b + 1) + what, 1 }; };
-            add(std::make_unique<AudioParameterBool>(band("On"), n + "On", d.on, AudioParameterBoolAttributes().withAutomatable(automatable)));
-            add(std::make_unique<AudioParameterChoice>(band("Type"), n + "Type", types, (int) d.type,
-                                                              AudioParameterChoiceAttributes().withAutomatable(automatable)));
-            add(std::make_unique<AudioParameterFloat>(band("Freq"), n + "Frequency", freqRange, d.freq, hzText));
-            add(std::make_unique<AudioParameterFloat>(band("Gain"), n + "Gain",
-                                                             NormalisableRange<float>(-bitvibe::kEqMaxGainDb, bitvibe::kEqMaxGainDb, 0.1f), d.gainDb, dbText));
-            add(std::make_unique<AudioParameterFloat>(band("Q"), n + "Q", qRange, d.q,
-                                                             AudioParameterFloatAttributes()
-                                                                 .withStringFromValueFunction([](float v, int) { return String(v, 2); })
-                                                                 .withAutomatable(automatable)));
-        }
-    }
-    // ---- the sampler's effects (not automatable) ----
-    inGroup("sampler", "Sampler");
-    {
-        auto hidden = AudioParameterFloatAttributes().withAutomatable(false);
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpVolume), "Sampler Volume", NormalisableRange<float>(-24.0f, 0.0f, 0.1f), 0.0f,
-                                                         AudioParameterFloatAttributes().withAutomatable(false)
-                                                             .withStringFromValueFunction([](float v, int) { return String(v, 1) + " dB"; })));
-        add(std::make_unique<AudioParameterChoice>(id(ids::smpDistType), "Sampler Distortion", StringArray { "Off", "Overdrive", "Fuzz" }, 0,
-                                                          AudioParameterChoiceAttributes().withAutomatable(false)));
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpDrive), "Sampler Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpTone), "Sampler Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f, hidden));
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpLevel), "Sampler Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f, hidden));
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpSample), "Sampler Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
-        add(std::make_unique<AudioParameterFloat>(id(ids::smpBits), "Sampler Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f, hidden));
-    }
+    // ---- the EQ on the sequenced sound (rig settings): eight bands and an output gain ----
+    inGroup("eq", "EQ");
+    addEqParameters(add, "eq", "EQ");
     inGroup("samples", "Sample Blend");
     add(std::make_unique<AudioParameterFloat>(id(ids::sampleMix), "Sample Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     add(std::make_unique<AudioParameterFloat>(id(ids::sampleChance), "Sample Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
@@ -394,14 +355,6 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     // how long a random sound may play, in beats of the tempo (a rig setting like the mix)
     add(std::make_unique<AudioParameterChoice>(id(ids::sampleMaxBeats), "Sample Max Beats",
                                                       StringArray { "Whole Sound", "1/4 Beat", "1/2 Beat", "1 Beat", "2 Beats", "4 Beats", "8 Beats" }, 0));
-    // the loop section's own volumes (used when Loop Own Levels is on)
-    add(std::make_unique<AudioParameterBool>(id(ids::sampleLoopOwn), "Sample Loop Own Levels", false));
-    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMix), "Sample Loop Mix", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
-    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopChance), "Sample Loop Chance", NormalisableRange<float>(0.0f, 1.0f), 1.0f, percent));
-    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopBase), "Sample Loop Base Volume",
-                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), bitvibe::Engine::kSampleOffDb, volumeText));
-    add(std::make_unique<AudioParameterFloat>(id(ids::sampleLoopMax), "Sample Loop Max Volume",
-                                                     NormalisableRange<float>(bitvibe::Engine::kSampleOffDb, 6.0f, 0.5f), -9.0f, volumeText));
     {
         // Low cut (high-pass) and high cut (low-pass) on the reverb; the ends of the range mean "off".
         auto hzText = [](float off, bool low)
@@ -443,23 +396,8 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
         add(std::make_unique<AudioParameterFloat>(id(ids::delayWobble), "Delay Wobble", NormalisableRange<float>(0.0f, 1.0f), 0.0f, percent));
     }
 
-    // ---- drum beat (DRUMS tab) -----------------------------------------------------------
-    inGroup("drums", "Drum Beat");
-    // Also rig settings, not stored in preset slots.
-    add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
-    add(std::make_unique<AudioParameterFloat>(
-        id(ids::beatLevel), "Beat Level", NormalisableRange<float>(DrumBeat::kBeatOffDb, 6.0f, 0.1f), -6.0f,
-        AudioParameterFloatAttributes()
-            .withStringFromValueFunction([](float v, int) { return v <= DrumBeat::kBeatOffDb ? String("Off") : String(v, 1) + " dB"; })
-            .withValueFromStringFunction([](const String& t)
-                                         { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
-    add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
     inGroup("pattern", "Beat Pattern");
     add(std::make_unique<AudioParameterBool>(id(ids::patternLock), "Pattern Lock", false));
-    inGroup("drums", "Drum Beat");
-    add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
-    // Where the beat's sound goes (see BeatRoute.h). Also a rig setting.
-    add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
 
     // ---- REPLAY: when the player stops, what they just played loops through the sequencer (see Replay.h). How the
     // plug-in listens to the player, like TRIGGER: global, never part of a preset. ----
@@ -500,6 +438,62 @@ AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createLayout()
     return layout;
 }
 
+// What is saved but hidden from the host (see BitVibeProcessor::hidden).
+AudioProcessorValueTreeState::ParameterLayout BitVibeProcessor::createHiddenLayout()
+{
+    using namespace bitvibe;
+    Layout layout;
+    auto id = [](const char* s) { return ParameterID { s, 1 }; };
+    auto add = [&](auto parameter) { layout.add(std::move(parameter)); };
+
+    // the step knobs each sequencer type was left with (stored in the preset slots)
+    {
+        static const char* typeNames[3] { "Pitch", "Filter", "Sample Rate" };
+        for (int t = 0; t < 3; ++t)
+            for (int i = 0; i < kNumSteps; ++i)
+                add(std::make_unique<AudioParameterFloat>(id(ids::stepMem(t, i).toRawUTF8()),
+                                                          String(typeNames[t]) + " Step " + String(i + 1) + " Memory",
+                                                          NormalisableRange<float>(-1.0f, 1.0f), -1.0f));
+    }
+
+    // ---- the sampler's effects and its own EQ ----
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpVolume), "Sampler Volume", NormalisableRange<float>(-24.0f, 0.0f, 0.1f), 0.0f,
+                                              withText([](float v, int) { return String(v, 1) + " dB"; })));
+    add(std::make_unique<AudioParameterChoice>(id(ids::smpDistType), "Sampler Distortion", StringArray { "Off", "Overdrive", "Fuzz" }, 0));
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpDrive), "Sampler Drive", NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpTone), "Sampler Tone", NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpLevel), "Sampler Level", NormalisableRange<float>(0.0f, 1.0f), 0.8f));
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpSample), "Sampler Sample Rate", NormalisableRange<float>(0.0f, 1.0f), 1.0f));
+    add(std::make_unique<AudioParameterFloat>(id(ids::smpBits), "Sampler Bits", NormalisableRange<float>(0.0f, 1.0f), 1.0f));
+    addEqParameters(add, ids::smpEqPrefix, "Sampler EQ");
+
+    // ---- the drum beat (DRUMS tab): rig settings, not stored in preset slots ----
+    add(std::make_unique<AudioParameterBool>(id(ids::beatPlay), "Beat Play", false));
+    add(std::make_unique<AudioParameterFloat>(
+        id(ids::beatLevel), "Beat Level", NormalisableRange<float>(DrumBeat::kBeatOffDb, 6.0f, 0.1f), -6.0f,
+        AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return v <= DrumBeat::kBeatOffDb ? String("Off") : String(v, 1) + " dB"; })
+            .withValueFromStringFunction([](const String& t)
+                                         { return t.trim().equalsIgnoreCase("off") ? DrumBeat::kBeatOffDb : t.getFloatValue(); })));
+    add(std::make_unique<AudioParameterBool>(id(ids::pickTriggers), "Pick Triggers", true));
+    add(std::make_unique<AudioParameterChoice>(id(ids::stepClock), "Step Clock", StringArray { "Tempo", "Drum hits" }, 0));
+    // Where the beat's sound goes (see BeatRoute.h).
+    add(std::make_unique<AudioParameterChoice>(id(ids::beatOutput), "Beat Output", StringArray { "Auto", "Monitor", "Main" }, 0));
+    return layout;
+}
+
+RangedAudioParameter* BitVibeProcessor::parameter(const String& id) const
+{
+    if (auto* own = apvts.getParameter(id))
+        return own;
+    return hidden.getParameter(id);
+}
+
+AudioProcessorValueTreeState& BitVibeProcessor::stateFor(const String& id)
+{
+    return hidden.getParameter(id) != nullptr ? hidden : apvts;
+}
+
 namespace
 {
 // Parameters a preset slot stores, in this order. Bypass, stutter hold, host sync, the expression
@@ -531,15 +525,60 @@ bool isSharedEffect(const String& id)
     for (const char* prefix : { "reverb", "dist", "trem", "ring", "mod", "delay", "sample", "eq", "replay", "splice" })
         if (id.startsWith(prefix))
             return true;
-    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly || id == ids::patternLock;
+    return id == ids::mix || id == ids::hear || id == ids::patternLock;
 }
 
 // Of those, the ones a preset file carries but a slot leaves as they are: how the plug-in sits in the player's rig
 // (dry/wet and HEAR), and the sample blend's levels, which each player's machine remembers for its own sounds.
 bool isRigSetting(const String& id)
 {
-    return id == ids::mix || id == ids::fxTriggers || id == ids::seqOnly
-           || (id.startsWith("sample") && id != ids::sampleOn && id != ids::sampleRate);
+    return id == ids::mix || id == ids::hear || (id.startsWith("sample") && id != ids::sampleOn && id != ids::sampleRate);
+}
+
+// What older versions kept as several parameters and this one as one: REVERSE (then a tick for each type of reverb),
+// the reverb's volume (then MIX with a LEVEL in dB on top) and HEAR (then two switches). From the old values by id
+// (plain values, as a preset file and a project's parameters hold them), the new ones; none for what was not there.
+struct UpgradedEffects
+{
+    std::optional<float> reverbReverse, reverbMix, hear;
+};
+
+UpgradedEffects upgradeOldEffects(const std::function<std::optional<double>(const String&)>& old)
+{
+    UpgradedEffects u;
+    static const char* reverseIds[6] { "reverbRevRoom", "reverbRevHall", "reverbRevSpring", "reverbRevPlate", "reverbRevShimmer", "reverbRevGated" };
+    bool hadTicks = false;
+    for (const char* id : reverseIds)
+        hadTicks = hadTicks || old(id).has_value();
+    if (hadTicks) // the tick of the type the reverb was on
+        u.reverbReverse = old(reverseIds[jlimit(0, 5, roundToInt(old(ids::reverbType).value_or(0.0)))]).value_or(0.0) > 0.5 ? 1.0f : 0.0f;
+    if (const auto level = old("reverbLevel"); level.has_value() && std::abs(*level) > 0.05)
+        if (const auto mix = old(ids::reverbMix))
+            u.reverbMix = (float) jlimit(0.0, 1.0, *mix * std::pow(10.0, *level / 20.0));
+    const auto seqOnly = old("seqOnly"), fxTriggers = old("fxTriggers");
+    if (seqOnly.has_value() || fxTriggers.has_value())
+        u.hear = seqOnly.value_or(0.0) > 0.5 ? 2.0f : (fxTriggers.value_or(0.0) > 0.5 ? 1.0f : 0.0f);
+    return u;
+}
+
+// The effects a preset file lists, by id (plain values).
+std::map<String, double> fileEffectValues(const XmlElement& xml)
+{
+    std::map<String, double> values;
+    if (const auto* effects = xml.getChildByName("EFFECTS"))
+        for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
+            if (const double v = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN()); std::isfinite(v))
+                values[e->getStringAttribute("id")] = v;
+    return values;
+}
+
+std::function<std::optional<double>(const String&)> lookUpIn(const std::map<String, double>& values)
+{
+    return [&values](const String& id) -> std::optional<double>
+    {
+        const auto it = values.find(id);
+        return it != values.end() ? std::optional<double>(it->second) : std::nullopt;
+    };
 }
 
 struct PackPreset
@@ -628,9 +667,11 @@ BitVibeProcessor::BitVibeProcessor()
                          .withOutput("Output", AudioChannelSet::stereo(), true)
                          // Optional: the drum beat for the player to hear, kept out of the main output.
                          .withOutput("Beat Monitor", AudioChannelSet::stereo(), false)),
-      apvts(*this, nullptr, "BitVibe", createLayout())
+      apvts(*this, nullptr, "BitVibe", createLayout()),
+      hidden(hiddenHost, nullptr, "BitVibeHidden", createHiddenLayout())
 {
-    auto raw = [this](const char* id) { return apvts.getRawParameterValue(id); };
+    undo.alsoTrack(hiddenHost);
+    auto raw = [this](const char* id) { return stateFor(id).getRawParameterValue(id); };
     pSample = raw(ids::sampleRate);
     pFilter = raw(ids::filter);
     pBits = raw(ids::bits);
@@ -670,8 +711,7 @@ BitVibeProcessor::BitVibeProcessor()
     pExpression = raw(ids::expression);
     pMorph = raw(ids::morph);
     pMix = raw(ids::mix);
-    pFxTriggers = raw(ids::fxTriggers);
-    pSeqOnly = raw(ids::seqOnly);
+    pHear = raw(ids::hear);
     pDelayOn = raw(ids::delayOn);
     pDelayTime = raw(ids::delayTime);
     pDelayMix = raw(ids::delayMix);
@@ -682,7 +722,6 @@ BitVibeProcessor::BitVibeProcessor()
     pDelayWobble = raw(ids::delayWobble);
     pReverbTone = raw(ids::reverbTone);
     pReverbMix = raw(ids::reverbMix);
-    pReverbLevel = raw(ids::reverbLevel);
     pReverbType = raw(ids::reverbType);
     pReverbOn = raw(ids::reverbOn);
     pSampleOn = raw(ids::sampleOn);
@@ -698,8 +737,7 @@ BitVibeProcessor::BitVibeProcessor()
         e.q = apvts.getRawParameterValue(ids::eqBand(b, "Q"));
     }
     pReverbDecay = raw(ids::reverbDecay);
-    pReverbReverse = { raw(ids::reverbReverseRoom), raw(ids::reverbReverseHall), raw(ids::reverbReverseSpring),
-                       raw(ids::reverbReversePlate), raw(ids::reverbReverseShimmer), raw(ids::reverbReverseGated) };
+    pReverbReverse = raw(ids::reverbReverse);
     pDistOn = raw(ids::distOn);
     pDistType = raw(ids::distType);
     pDistDrive = raw(ids::distDrive);
@@ -727,12 +765,7 @@ BitVibeProcessor::BitVibeProcessor()
     pSampleChance = raw(ids::sampleChance);
     pSampleBase = raw(ids::sampleBase);
     pSampleMax = raw(ids::sampleMax);
-    pSampleLoopOwn = raw(ids::sampleLoopOwn);
     pSampleMaxBeats = raw(ids::sampleMaxBeats);
-    pSampleLoopMix = raw(ids::sampleLoopMix);
-    pSampleLoopChance = raw(ids::sampleLoopChance);
-    pSampleLoopBase = raw(ids::sampleLoopBase);
-    pSampleLoopMax = raw(ids::sampleLoopMax);
     pReverbLowCut = raw(ids::reverbLowCut);
     pReverbHighCut = raw(ids::reverbHighCut);
     pBeatPlay = raw(ids::beatPlay);
@@ -763,11 +796,8 @@ BitVibeProcessor::BitVibeProcessor()
         SampleBank::Levels remembered;
         if (sampleBank.getRememberedLevels(remembered))
         {
-            const std::array<std::pair<const char*, float>, 9> levels { { { ids::sampleMix, remembered.mix }, { ids::sampleChance, remembered.chance },
-                                                                          { ids::sampleBase, remembered.baseDb }, { ids::sampleMax, remembered.maxDb },
-                                                                          { ids::sampleLoopOwn, remembered.loopOwn ? 1.0f : 0.0f },
-                                                                          { ids::sampleLoopMix, remembered.loopMix }, { ids::sampleLoopChance, remembered.loopChance },
-                                                                          { ids::sampleLoopBase, remembered.loopBaseDb }, { ids::sampleLoopMax, remembered.loopMaxDb } } };
+            const std::array<std::pair<const char*, float>, 4> levels { { { ids::sampleMix, remembered.mix }, { ids::sampleChance, remembered.chance },
+                                                                          { ids::sampleBase, remembered.baseDb }, { ids::sampleMax, remembered.maxDb } } };
             for (const auto& level : levels)
                 if (auto* param = apvts.getParameter(level.first))
                     param->setValueNotifyingHost(param->convertTo0to1(level.second));
@@ -775,7 +805,7 @@ BitVibeProcessor::BitVibeProcessor()
     }
 
     for (const auto& id : presetParameterIds())
-        presetParams.push_back({ id, apvts.getParameter(id) });
+        presetParams.push_back({ id, parameter(id) }); // (the step memories are hidden parameters)
     jassert(std::none_of(presetParams.begin(), presetParams.end(), [](const PresetParam& p) { return p.param == nullptr; }));
     for (auto* p : getParameters())
         if (auto* ranged = dynamic_cast<RangedAudioParameter*>(p);
@@ -916,8 +946,11 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.stutterDivision = roundToInt(pStutterLen->load());
     p.stutterKind = (bitvibe::StutterKind) jlimit(0, bitvibe::kNumStutterKinds - 1, roundToInt(pStutterType->load()));
     p.mix = pMix->load();
-    p.fxOnlyOnTriggers = pFxTriggers->load() > 0.5f;
-    p.seqOnly = pSeqOnly->load() > 0.5f;
+    {
+        const int hear = roundToInt(pHear->load());
+        p.fxOnlyOnTriggers = hear == 1;
+        p.seqOnly = hear == 2;
+    }
     p.delayOn = pDelayOn->load() > 0.5f;
     p.delayDivision = roundToInt(pDelayTime->load());
     p.delayMix = pDelayMix->load();
@@ -933,7 +966,6 @@ bitvibe::Params BitVibeProcessor::readParams()
     p.pingLevel = pPingLevel->load();
     p.reverbTone = pReverbTone->load();
     p.reverbMix = pReverbMix->load();
-    p.reverbLevelDb = pReverbLevel->load();
     p.reverbType = roundToInt(pReverbType->load());
     p.reverbOn = pReverbOn->load() > 0.5f;
     p.sampleOn = pSampleOn->load() > 0.5f;
@@ -950,7 +982,7 @@ bitvibe::Params BitVibeProcessor::readParams()
         band.q = e.q->load();
     }
     p.reverbDecay = pReverbDecay->load();
-    p.reverbReverse = pReverbReverse[(size_t) jlimit(0, 5, p.reverbType)]->load() > 0.5f;
+    p.reverbReverse = pReverbReverse->load() > 0.5f;
     p.distOn = pDistOn->load() > 0.5f;
     p.distType = roundToInt(pDistType->load());
     p.distDrive = pDistDrive->load();
@@ -984,20 +1016,11 @@ bitvibe::Params BitVibeProcessor::readParams()
         static constexpr float kBeats[] { 0.0f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f }; // as listed in Sample Max Length
         p.sampleMaxBeats = kBeats[jlimit(0, 6, roundToInt(pSampleMaxBeats->load()))];
     }
-    if (pSampleLoopOwn->load() > 0.5f)
-    {
-        p.loopSampleMix = pSampleLoopMix->load();
-        p.loopSampleChance = pSampleLoopChance->load();
-        p.loopSampleBaseDb = pSampleLoopBase->load();
-        p.loopSampleMaxDb = pSampleLoopMax->load();
-    }
-    else
-    {
-        p.loopSampleMix = p.sampleMix;
-        p.loopSampleChance = p.sampleChance;
-        p.loopSampleBaseDb = p.sampleBaseDb;
-        p.loopSampleMaxDb = p.sampleMaxDb;
-    }
+    // the loop section can have its own sounds, at the same levels
+    p.loopSampleMix = p.sampleMix;
+    p.loopSampleChance = p.sampleChance;
+    p.loopSampleBaseDb = p.sampleBaseDb;
+    p.loopSampleMaxDb = p.sampleMaxDb;
     p.reverbLowCutHz = pReverbLowCut->load();
     p.reverbHighCutHz = pReverbHighCut->load();
     p.pickTriggers = pPickTriggers->load() > 0.5f;
@@ -1067,9 +1090,9 @@ void BitVibeProcessor::switchSequencerType(int newType)
         {
             if (roundToInt(pStepTypes[(size_t) i]->load()) != 0)
                 continue; // this step has a type of its own: its knob stays where it is
-            if (auto* mem = apvts.getParameter(ids::stepMem(oldType, i)))
+            if (auto* mem = hidden.getParameter(ids::stepMem(oldType, i)))
                 mem->setValueNotifyingHost(mem->convertTo0to1(pSteps[(size_t) i]->load()));
-            const float remembered = apvts.getRawParameterValue(ids::stepMem(newType, i))->load();
+            const float remembered = hidden.getRawParameterValue(ids::stepMem(newType, i))->load();
             if (remembered >= 0.0f)
                 if (auto* step = apvts.getParameter(ids::step(i)))
                 {
@@ -1322,6 +1345,45 @@ bool BitVibeProcessor::isCurrentPresetModified() const
     return !sameSound(slots[(size_t) currentProgram.load()], now);
 }
 
+String BitVibeProcessor::favouriteKey(int slot) const
+{
+    if (slot < 0 || slot >= numSlots())
+        return {};
+    if (slot >= bitvibe::kNumFactoryPresets && slot < bitvibe::kFirstPackSlot)
+        return "slot " + String(slot + 1);
+    // the factory bank is built once, in the constructor, and never changes
+    return slot < (int) factoryBank.size() ? "preset " + factoryBank[(size_t) slot].name : String();
+}
+
+bool BitVibeProcessor::isFavourite(int slot) const
+{
+    const auto key = favouriteKey(slot);
+    return key.isNotEmpty() && uisettings::favourites().contains(key);
+}
+
+void BitVibeProcessor::setFavourite(int slot, bool on)
+{
+    const auto key = favouriteKey(slot);
+    if (key.isEmpty())
+        return;
+    auto keys = uisettings::favourites();
+    if (on)
+        keys.addIfNotAlreadyThere(key);
+    else
+        keys.removeString(key);
+    uisettings::setFavourites(keys);
+}
+
+std::vector<int> BitVibeProcessor::favouriteSlots() const
+{
+    const auto keys = uisettings::favourites();
+    std::vector<int> found;
+    for (int i = 0; i < numSlots() && keys.size() > 0; ++i)
+        if (keys.contains(favouriteKey(i)))
+            found.push_back(i);
+    return found;
+}
+
 // ------------------------------------------------------------------------------------------
 // Preset files
 //
@@ -1338,7 +1400,7 @@ bool BitVibeProcessor::isCurrentPresetModified() const
 
 bitvibe::SampleFx BitVibeProcessor::getSamplerFx() const
 {
-    auto value = [this](const String& id) { return apvts.getRawParameterValue(id)->load(); };
+    auto value = [this](const String& id) { return hidden.getRawParameterValue(id)->load(); };
     bitvibe::SampleFx fx;
     fx.volumeDb = value(ids::smpVolume);
     fx.distType = jlimit(0, 2, roundToInt(value(ids::smpDistType)));
@@ -1787,6 +1849,13 @@ bool BitVibeProcessor::importPreset(const XmlElement& xml, String& message)
                                                                               (double) ranged->getNormalisableRange().end, v));
             ranged->setValueNotifyingHost(normalised);
         }
+    {
+        // a file from before HEAR was one setting
+        const auto values = fileEffectValues(xml);
+        if (const auto hear = upgradeOldEffects(lookUpIn(values)).hear)
+            if (auto* param = apvts.getParameter(ids::hear))
+                param->setValueNotifyingHost(param->convertTo0to1(*hear));
+    }
 
     // the sounds: those this player has
     int missing = 0;
@@ -1890,6 +1959,28 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromTree(const ValueTree& t, 
         const double v = fx.hasProperty(key) ? (double) fx[key] : (double) effectParams[i].param->getDefaultValue();
         s.effects[i] = std::isfinite(v) ? (float) jlimit(0.0, 1.0, v) : effectParams[i].param->getDefaultValue();
     }
+    {
+        // a slot saved before REVERSE and the reverb's volume were one parameter each (a slot holds normalised values)
+        const auto up = upgradeOldEffects([&fx](const String& id) -> std::optional<double>
+        {
+            const Identifier key(id);
+            if (!fx.hasProperty(key))
+                return std::nullopt;
+            const double v = (double) fx[key];
+            if (id == ids::reverbType)
+                return v * 5.0; // six types
+            if (id == "reverbLevel")
+                return -30.0 + 36.0 * v; // -30 to +6 dB
+            return v;
+        });
+        for (size_t i = 0; i < effectParams.size() && i < s.effects.size(); ++i)
+        {
+            if (up.reverbReverse.has_value() && effectParams[i].id == ids::reverbReverse)
+                s.effects[i] = *up.reverbReverse;
+            if (up.reverbMix.has_value() && effectParams[i].id == ids::reverbMix)
+                s.effects[i] = *up.reverbMix;
+        }
+    }
     const auto pat = t.getChildWithName("PATTERN");
     s.pattern = patternFrom(pat["action"], pat["steps"], pat.getProperty("randomBeats", 0x1F), pat["signature"]);
     return s;
@@ -1903,10 +1994,15 @@ BitVibeProcessor::PresetSlot BitVibeProcessor::slotFromFile(const XmlElement& xm
 
     // the effects: everything starts from its default, then takes what the file says (so a file from an older
     // version of BitVibe sounds the way it did there)
-    std::map<String, double> values;
-    if (const auto* effects = xml.getChildByName("EFFECTS"))
-        for (const auto* e : effects->getChildWithTagNameIterator("PARAM"))
-            values[e->getStringAttribute("id")] = e->getDoubleAttribute("value", std::numeric_limits<double>::quiet_NaN());
+    auto values = fileEffectValues(xml);
+    {
+        // a file from before REVERSE and the reverb's volume were one parameter each
+        const auto up = upgradeOldEffects(lookUpIn(values));
+        if (up.reverbReverse.has_value())
+            values[ids::reverbReverse] = *up.reverbReverse;
+        if (up.reverbMix.has_value())
+            values[ids::reverbMix] = *up.reverbMix;
+    }
     s.effects.clear();
     for (const auto& ep : effectParams)
     {
@@ -1950,6 +2046,8 @@ void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty("program", currentProgram.load(), nullptr);
+    // and the name the preset showing ships with, so a newer version that moves it can find it (see packSlotNamed)
+    state.setProperty("programShipped", factoryBank[(size_t) currentProgram.load()].name, nullptr);
 
     ValueTree morphNode("MORPH");
     morphNode.appendChild(knobsToTree(getToeUp(), "UP"), nullptr);
@@ -1969,10 +2067,12 @@ void BitVibeProcessor::getStateInformation(MemoryBlock& destData)
                 continue;
             auto t = slotToTree(slot);
             t.setProperty("slot", (int) i, nullptr);
+            t.setProperty("shipped", shipped.name, nullptr);
             bank.appendChild(t, nullptr);
         }
     }
     state.appendChild(bank, nullptr);
+    state.appendChild(hidden.copyState(), nullptr); // the settings the host does not list
     state.appendChild(drumBeat.toState(), nullptr);
     state.appendChild(sampleBank.toState(), nullptr);
 
@@ -1991,13 +2091,47 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     const auto bank = state.getChildWithName("PRESETS");
     const auto drums = state.getChildWithName("DRUMS");
     const auto samples = state.getChildWithName("SAMPLES");
-    const int program = jlimit(0, numSlots() - 1, (int) state.getProperty("program", 0));
+    int program = jlimit(0, numSlots() - 1, (int) state.getProperty("program", 0));
+    const String programShipped = state.getProperty("programShipped").toString();
     state.removeChild(morphNode, nullptr); // keep the parameter tree free of the extra nodes
     state.removeChild(bank, nullptr);
     state.removeChild(drums, nullptr);
     state.removeChild(samples, nullptr);
     state.removeProperty("program", nullptr);
+    state.removeProperty("programShipped", nullptr);
+
+    // The settings the host does not list have a tree of their own. A project from before they were hidden has them
+    // among the plug-in's parameters, with what has since become one parameter (REVERSE, the reverb's volume, HEAR)
+    // and what is gone (the loop section's own sample levels): each is taken out of the parameter tree and carried over.
+    auto hiddenTree = state.getChildWithName(hidden.state.getType());
+    state.removeChild(hiddenTree, nullptr);
+    if (!hiddenTree.isValid())
+        hiddenTree = ValueTree(hidden.state.getType());
+    std::map<String, double> saved; // every parameter the project holds, by id (plain values)
+    for (int i = state.getNumChildren(); --i >= 0;)
+    {
+        const auto child = state.getChild(i);
+        if (!child.hasProperty("id") || !child.hasProperty("value"))
+            continue;
+        const String paramId = child["id"].toString();
+        saved[paramId] = (double) child["value"];
+        if (apvts.getParameter(paramId) != nullptr)
+            continue;
+        state.removeChild(i, nullptr);
+        if (hidden.getParameter(paramId) != nullptr && !hiddenTree.getChildWithProperty("id", paramId).isValid())
+            hiddenTree.appendChild(child, nullptr);
+    }
     apvts.replaceState(state);
+    hidden.replaceState(hiddenTree);
+    {
+        const auto up = upgradeOldEffects(lookUpIn(saved));
+        const std::array<std::pair<const char*, std::optional<float>>, 3> upgraded {
+            { { ids::reverbReverse, up.reverbReverse }, { ids::reverbMix, up.reverbMix }, { ids::hear, up.hear } } };
+        for (const auto& [paramId, value] : upgraded)
+            if (value.has_value())
+                if (auto* param = apvts.getParameter(paramId))
+                    param->setValueNotifyingHost(param->convertTo0to1(*value));
+    }
 
     {
         const SpinLock::ScopedLockType lock(morphLock);
@@ -2011,10 +2145,14 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
     slots = factoryBank;
     if (bank.isValid() && (int) bank.getProperty("version", 1) >= 2)
     {
-        // the slots that were changed, by number
+        // the slots that were changed, by number; a pack slot by the name it shipped with, wherever it is now (a
+        // project from before the names were kept: by its own name, which is the shipped one unless it was renamed)
         for (const auto& node : bank)
-            if (const int i = node.getProperty("slot", -1); i >= 0 && i < (int) slots.size())
+            if (int i = node.getProperty("slot", -1); i >= 0 && i < (int) slots.size())
+            {
+                i = packSlotNamed(node.getProperty("shipped", node.getProperty("name")).toString(), i);
                 slots[(size_t) i] = slotFromTree(node, i);
+            }
     }
     else if (bank.isValid())
     {
@@ -2022,7 +2160,35 @@ void BitVibeProcessor::setStateInformation(const void* data, int sizeInBytes)
         for (int i = 0; i < bank.getNumChildren() && i < (int) slots.size(); ++i)
             slots[(size_t) i] = slotFromTree(bank.getChild(i), i);
     }
+    if (programShipped.isNotEmpty())
+        program = packSlotNamed(programShipped, program);
+    else if (program >= bitvibe::kFirstPackSlot)
+    {
+        // a project from before the names were kept, on a pack preset that may have moved since: the slot whose sound
+        // the restored knobs still are, if that is not the one at its number
+        const auto now = snapshotCurrent();
+        if (!sameSound(slots[(size_t) program], now))
+            for (int i = bitvibe::kFirstPackSlot; i < (int) slots.size(); ++i)
+                if (sameSound(slots[(size_t) i], now))
+                {
+                    program = i;
+                    break;
+                }
+    }
     currentProgram = program;
+}
+
+int BitVibeProcessor::packSlotNamed(const String& shippedName, int slot) const
+{
+    // the factory slots and your own never move: only a pack preset is looked for by name
+    if (slot < bitvibe::kFirstPackSlot || shippedName.isEmpty())
+        return slot;
+    if (slot < (int) factoryBank.size() && factoryBank[(size_t) slot].name == shippedName)
+        return slot;
+    for (int i = bitvibe::kFirstPackSlot; i < (int) factoryBank.size(); ++i)
+        if (factoryBank[(size_t) i].name == shippedName)
+            return i;
+    return slot;
 }
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter()

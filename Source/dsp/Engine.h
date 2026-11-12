@@ -20,7 +20,6 @@
 #include "Replay.h"
 #include "Reverb.h"
 #include "Samples.h"
-#include "Scope.h"
 #include "Splice.h"
 #include "Tremolo.h"
 
@@ -812,16 +811,6 @@ public:
             if (spliceRun)
                 splicer.endSample();
             eqReference.endSample(beforeEqSum / (float) nCh, afterEqSum / (float) nCh);
-            {
-                float inSum = 0.0f, outSum = 0.0f;
-                for (int c = 0; c < nCh; ++c)
-                {
-                    inSum += dry[(size_t) c];
-                    outSum += io[c][n];
-                }
-                scope.add((double) beatsDone + beatPhase, inSum / (float) nCh, outSum / (float) nCh,
-                          seqRunning ? active[(size_t) seqIdx] : ScopeFeed::kNoStep);
-            }
 
             ++sampleClock;
             beatPhase += 1.0 / beatSamples;
@@ -838,13 +827,6 @@ public:
         beatPhaseOut.store((float) beatPhase, std::memory_order_relaxed);
         stepOut.store(seqRunning ? active[(size_t) seqIdx] : -1, std::memory_order_relaxed);
         patternStepOut.store(patternIdx, std::memory_order_relaxed);
-        {
-            // the quarter-note beat on the bar clock (which follows the host's position with SYNC on)
-            const double beatSteps = (double) (patternIdx % 4) + patternPhase / std::max(1.0, beatSamples * 0.25);
-            beatInBarPhaseOut.store((float) std::clamp(beatSteps / 4.0, 0.0, 0.99999), std::memory_order_relaxed);
-            beatInBarOut.store(patternIdx / 4, std::memory_order_relaxed);
-            barStepsOut.store(blk.patternBarSteps, std::memory_order_relaxed);
-        }
         stutterOut.store(channels[0].stutter.isActive(), std::memory_order_relaxed);
         replayStateOut.store((int) replay.getState(), std::memory_order_relaxed);
         replayLoopOut.store(replay.isLooping() ? replay.loopSeconds() : 0.0f, std::memory_order_relaxed);
@@ -856,9 +838,6 @@ public:
         effectsActiveOut.store(reverbSend > 0.05f, std::memory_order_relaxed);
         tremRampOut.store(tremWasActive ? tremolo.rampPosition(blk.trem, beatSamples) : -1.0f, std::memory_order_relaxed);
     }
-
-    // The clean input and the sound coming out, bucket by bucket on the beat clock, for the SCOPE.
-    const ScopeFeed& getScope() const { return scope; }
 
     // How far along its rate curve the tremolo is (0..1, 1 = the end rate), or -1 while nothing plays; for the curve's
     // playhead.
@@ -879,10 +858,6 @@ public:
     float getReplayLoopSeconds() const { return replayLoopOut.load(std::memory_order_relaxed); }
     float getReplayPosition() const { return replayPositionOut.load(std::memory_order_relaxed); }
     int getPatternStep() const { return patternStepOut.load(std::memory_order_relaxed); } // 0 .. bar length - 1
-    // How far through the current quarter-note beat the bar clock is (0 = on the beat), and which beat of the bar it is.
-    float getBeatInBarPhase() const { return beatInBarPhaseOut.load(std::memory_order_relaxed); }
-    int getBeatInBar() const { return beatInBarOut.load(std::memory_order_relaxed); }
-    int getBarSteps() const { return barStepsOut.load(std::memory_order_relaxed); } // sixteenths in the bar
 
     // The EQ's reference sound: capture, the clip playing through the EQ, the spectrum feed (see EqReference.h).
     EqReference& getEqReference() { return eqReference; }
@@ -1520,8 +1495,7 @@ private:
         std::array<float, 3> formantG {};
         float semitones = kNone, ratio = 1.0f;
     } cache;
-    ScopeFeed scope;
-    double beatsDone = 0.0; // whole beats since the start, so the scope's beat clock only moves on
+    double beatsDone = 0.0; // whole beats since the start, so the modulation's beat clock only moves on
     std::atomic<float> tremRampOut { -1.0f };
     float inGainTarget = 1.0f, outGainTarget = 1.0f, headroomScale = 1.0f, invHeadroom = 1.0f;
 
@@ -1536,9 +1510,6 @@ private:
     double patternPhase = 0.0;
     bool patternFresh = true;
     std::atomic<int> patternStepOut { 0 };
-    std::atomic<float> beatInBarPhaseOut { 0.0f };
-    std::atomic<int> beatInBarOut { 0 };
-    std::atomic<int> barStepsOut { 16 };
     std::atomic<int> patternRestartRequests { 0 };
     int seenPatternRestarts = 0;
     const SampleSet* lastSampleSet = nullptr;

@@ -7,7 +7,7 @@ PresetSearch::PresetSearch(BitVibeProcessor& p) : proc(p)
 {
     setTitle("FIND A PRESET");
     setWantsKeyboardFocus(false);
-    query.setTextToShowWhenEmpty("Type a name or what it uses: flanger, ping, swing, formant...", theme.inkDim);
+    query.setTextToShowWhenEmpty("Type a name or what it uses: flanger, ping, swing, favourite...", theme.inkDim);
     query.setFont(bold(13.0f));
     query.setIndents(8, 6);
     query.addListener(this);
@@ -45,6 +45,8 @@ String PresetSearch::searchText(BitVibeProcessor& p, int slot)
     for (int f = 0; f < BitVibeProcessor::kNumPresetFeatures; ++f)
         if (((uses >> f) & 1u) != 0)
             text << " " << BitVibeProcessor::presetFeatureName(f) << " " << BitVibeProcessor::presetFeatureGroup(f);
+    if (p.isFavourite(slot))
+        text << " favourite favorite starred";
     return text.toLowerCase();
 }
 
@@ -62,6 +64,9 @@ void PresetSearch::open()
     const int count = proc.getNumPrograms();
     haystacks.assign((size_t) count, {});
     usesText.assign((size_t) count, {});
+    starred.assign((size_t) count, false);
+    for (int slot : proc.favouriteSlots())
+        starred[(size_t) slot] = true;
     for (int i = 0; i < count; ++i)
     {
         haystacks[(size_t) i] = searchText(proc, i);
@@ -178,12 +183,17 @@ void PresetSearch::paintListBoxItem(int row, Graphics& g, int width, int height,
     g.setColour(theme.inkDim);
     g.setFont(bold(11.0f));
     g.drawText(String(slot + 1).paddedLeft('0', 2), 16, 0, 24, height, Justification::centredLeft);
+    if (starred[(size_t) slot])
+    {
+        g.setColour(theme.accent);
+        g.fillPath(favouriteStar(Rectangle<float>(42.0f, (float) height * 0.5f - 6.0f, 12.0f, 12.0f)));
+    }
     g.setColour(playing ? theme.accent : theme.ink);
     g.setFont(bold(12.5f));
-    g.drawFittedText(proc.getProgramName(slot), 44, 0, 150, height, Justification::centredLeft, 1, 0.8f);
+    g.drawFittedText(proc.getProgramName(slot), 60, 0, 150, height, Justification::centredLeft, 1, 0.8f);
     g.setColour(theme.inkDim);
     g.setFont(plain(11.0f));
-    g.drawFittedText(usesText[(size_t) slot], 200, 0, width - 208, height, Justification::centredRight, 1, 0.75f);
+    g.drawFittedText(usesText[(size_t) slot], 216, 0, width - 224, height, Justification::centredRight, 1, 0.75f);
 }
 
 void PresetSearch::selectedRowsChanged(int lastRowSelected)

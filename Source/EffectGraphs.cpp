@@ -180,20 +180,10 @@ ReverbGraph::ReverbGraph(BitVibeProcessor& p) : EffectGraph(p)
                "it rings. DECAY and the type set its length; REVERSE makes it swell up and stop.");
 }
 
-namespace
-{
-const char* reverseIdFor(int type)
-{
-    static constexpr std::array<const char*, 6> idsByType { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring,
-                                                            ids::reverbReversePlate, ids::reverbReverseShimmer, ids::reverbReverseGated };
-    return idsByType[(size_t) jlimit(0, 5, type)];
-}
-} // namespace
-
 String ReverbGraph::settingsKey() const
 {
     const int type = roundToInt(value(ids::reverbType));
-    return String(type) + "|" + String(value(ids::reverbDecay), 3) + "|" + String(value(reverseIdFor(type)) > 0.5f ? 1 : 0);
+    return String(type) + "|" + String(value(ids::reverbDecay), 3) + "|" + String(value(ids::reverbReverse) > 0.5f ? 1 : 0);
 }
 
 void ReverbGraph::compute()
@@ -203,7 +193,7 @@ void ReverbGraph::compute()
     ReverbSettings s;
     s.type = (ReverbType) jlimit(0, kNumReverbTypes - 1, type);
     s.decay = value(ids::reverbDecay);
-    s.reverse = value(reverseIdFor(type)) > 0.5f;
+    s.reverse = value(ids::reverbReverse) > 0.5f;
     bitvibe::Reverb reverb;
     reverb.prepare(kRate, 0);
     for (int n = 0; n < (int) (0.1 * kRate); ++n) // settles its type first, so the burst is not faded in

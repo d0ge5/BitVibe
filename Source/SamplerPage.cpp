@@ -210,13 +210,13 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         addAndMakeVisible(*b);
 
     // 3 SHAPE: the pedal's effects, and an EQ of its own
-    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::smpDistType)))
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.hidden.getParameter(ids::smpDistType)))
         distBox.addItemList(choice->choices, 1);
     distBox.setLookAndFeel(&laf);
     distBox.setTooltip("DISTORTION: none, the overdrive or the fuzz from the right-hand column, on this sound. The sound goes through "
                        "the distortion, the sample rate, the bits and the EQ (right) in that order; then it is levelled, and VOLUME sets "
                        "how loud it sits next to your other sounds.");
-    distAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::smpDistType, distBox);
+    distAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.hidden, ids::smpDistType, distBox);
     addAndMakeVisible(distBox);
     const std::array<std::tuple<KnobSlider*, std::unique_ptr<APVTS::SliderAttachment>*, const char*, const char*>, 6> knobs { {
         { &volumeSlider, &volumeAtt, ids::smpVolume, "VOLUME: how loud this sound sits next to your other sounds. 0 dB = as loud as any other, -6 dB = half as loud." },
@@ -234,8 +234,8 @@ SamplerPage::SamplerPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel) : p
         slider->setMouseDragSensitivity(180);
         slider->setLookAndFeel(&laf);
         slider->setTooltip(tip);
-        *att = std::make_unique<APVTS::SliderAttachment>(proc.apvts, id, *slider);
-        if (auto* param = proc.apvts.getParameter(id))
+        *att = std::make_unique<APVTS::SliderAttachment>(proc.hidden, id, *slider);
+        if (auto* param = proc.hidden.getParameter(id))
             slider->setDoubleClickReturnValue(true, (double) param->convertFrom0to1(param->getDefaultValue()));
         addAndMakeVisible(*slider);
     }

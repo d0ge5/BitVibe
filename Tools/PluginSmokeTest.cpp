@@ -157,13 +157,10 @@ int main(int argc, char** argv)
     plugin->prepareToPlay(kFs, kBlock);
     check(plugin->getTotalNumInputChannels() == 2 && plugin->getTotalNumOutputChannels() == 2, "stereo in / stereo out");
     // 31 plug-in parameters, plus the "Program" selector the VST3 wrapper adds for the 16 preset slots.
-    check(plugin->getParameters().size() == 378 && findParam(*plugin, "Program") != nullptr && findParam(*plugin, "Replay On") != nullptr
+    check(plugin->getParameters().size() == 264 && findParam(*plugin, "Program") != nullptr && findParam(*plugin, "Replay On") != nullptr
               && findParam(*plugin, "Splice On") != nullptr
-              && findParam(*plugin, "Dry/Wet") != nullptr && findParam(*plugin, "FX Only On Triggers") != nullptr
-              && findParam(*plugin, "Beat Play") != nullptr && findParam(*plugin, "Beat Level") != nullptr
-              && findParam(*plugin, "Pick Triggers") != nullptr && findParam(*plugin, "Step Clock") != nullptr
-              && findParam(*plugin, "Beat Output") != nullptr,
-          "exposes " + String(plugin->getParameters().size()) + " parameters (190 + Program selector, incl. the drum-map ones and Beat Output)");
+              && findParam(*plugin, "Dry/Wet") != nullptr && findParam(*plugin, "Hear") != nullptr,
+          "exposes " + String(plugin->getParameters().size()) + " parameters (263 + the Program selector)");
     for (auto* p : plugin->getParameters())
         std::printf("    - %-22s default=%-12s\n", p->getName(64).toRawUTF8(), p->getText(p->getDefaultValue(), 32).toRawUTF8());
 
@@ -318,7 +315,7 @@ int main(int argc, char** argv)
             return d;
         };
 
-        check(plugin->getNumPrograms() == 142, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, pack, looper, dreamy loops)");
+        check(plugin->getNumPrograms() == 142, "exposes " + String(plugin->getNumPrograms()) + " preset slots (one bank: factory, empty, light touch, pack, looper, dreamy loops)");
         StringArray names;
         for (int i = 0; i < plugin->getNumPrograms(); ++i)
             names.add(plugin->getProgramName(i));
@@ -353,7 +350,7 @@ int main(int argc, char** argv)
         const double diff = maxDifference(again, factory);
         check(diff < 1.0e-3, "slot 1 sounds like the factory sound (max diff " + String(diff, 6) + ")");
 
-        // Mix and "FX Only On Triggers" belong to the rig, not to a slot. A host does not necessarily re-initialise the
+        // Mix and HEAR belong to the rig, not to a slot. A host does not necessarily re-initialise the
         // plug-in when prepareToPlay is called again, so before each comparison 0.6 s of silence is played through it:
         // that lets every parameter smoother settle (the slowest takes ~0.12 s) and cannot trigger anything.
         auto fresh = [&]
@@ -362,24 +359,24 @@ int main(int argc, char** argv)
             silence.clear();
             render(*plugin, silence);
         };
-        check(text("Dry/Wet") == "100% effect" && text("FX Only On Triggers") == "Off",
-              "mix starts at 100% effect with the trigger-only option off (" + text("Dry/Wet") + ")");
+        check(text("Dry/Wet") == "100% effect" && text("Hear") == "Guitar + Effect",
+              "mix starts at 100% effect with HEAR on guitar + effect (" + text("Dry/Wet") + ")");
         setNormalised(*plugin, "Dry/Wet", 0.4f);
-        setNormalised(*plugin, "FX Only On Triggers", 1.0f);
+        setNormalised(*plugin, "Hear", 0.5f); // CLEAN IN BETWEEN
         plugin->setCurrentProgram(2); // Lo-Fi Radio: crush + filter, sequencer and stutter off
-        check(near(value("Dry/Wet"), 0.4f) && text("FX Only On Triggers") == "On",
-              "recalling a preset leaves Mix and the trigger-only option alone");
+        check(near(value("Dry/Wet"), 0.4f) && text("Hear") == "Clean In Between",
+              "recalling a preset leaves Mix and HEAR alone");
 
         setNormalised(*plugin, "Dry/Wet", 1.0f);
         fresh();
         const auto idleOut = render(*plugin, pluck);
         check(maxDifference(idleOut, pluck) < 1.0e-6,
-              "trigger-only option on, nothing triggering: the signal stays clean (diff " + String(maxDifference(idleOut, pluck), 8) + ")");
+              "HEAR on clean in between, nothing triggering: the signal stays clean (diff " + String(maxDifference(idleOut, pluck), 8) + ")");
 
-        setNormalised(*plugin, "FX Only On Triggers", 0.0f);
+        setNormalised(*plugin, "Hear", 0.0f);
         fresh();
         const auto lofi = render(*plugin, pluck);
-        check(maxDifference(lofi, pluck) > 0.02, "trigger-only option off: the Lo-Fi Radio sound is applied");
+        check(maxDifference(lofi, pluck) > 0.02, "HEAR back on guitar + effect: the Lo-Fi Radio sound is applied");
 
         setNormalised(*plugin, "Dry/Wet", 0.0f);
         fresh();
@@ -455,57 +452,29 @@ int main(int argc, char** argv)
         plugin->reset();
     }
 
-    // 9. Drum map parameters through the host (loading and analysing beats is checked by BitVibeEditorSnapshot,
-    //    which drives the processor directly).
+    // 9. What the host does not list: the drum beat of the DRUMS tab, the sampler's settings and the step memories are
+    //    saved with the project but hidden (BitVibeEditorSnapshot checks them, driving the processor directly), and
+    //    REVERSE, the reverb's volume and HEAR are one parameter each.
     {
-        auto maxDiff = [](const AudioBuffer<float>& a, const AudioBuffer<float>& b)
-        {
-            double d = 0;
-            for (int c = 0; c < a.getNumChannels(); ++c)
-                for (int i = 0; i < a.getNumSamples(); ++i)
-                    d = jmax(d, (double) std::abs(a.getSample(c, i) - b.getSample(c, i)));
-            return d;
-        };
-        auto text = [&](const char* name)
-        {
-            auto* prm = findParam(*plugin, name);
-            return prm != nullptr ? prm->getText(prm->getValue(), 32) : String("?");
-        };
+        bool hiddenListed = false;
+        for (const char* name : { "Beat Play", "Beat Level", "Pick Triggers", "Step Clock", "Beat Output", "Sampler Volume", "Sampler EQ On",
+                                  "Pitch Step 1 Memory", "FX Only On Triggers", "Seq Only", "Reverb Level", "Reverse Room Reverb", "Sample Loop Mix" })
+            hiddenListed = hiddenListed || findParam(*plugin, name) != nullptr;
+        check(!hiddenListed, "the host does not list the drum beat, the sampler's settings, the step memories or the merged parameters");
+        auto* hear = findParam(*plugin, "Hear");
+        check(hear != nullptr && findParam(*plugin, "Reverb Reverse") != nullptr && hear->getText(1.0f, 32) == "Effect Only",
+              "HEAR and REVERB REVERSE are one parameter each");
 
-        // A sequencer that only runs when something triggers it, and nothing else on.
+        // a pluck starts the sequence, and comes out through it
         plugin->setCurrentProgram(1); // "Clean"
         setByText(*plugin, "Sequencer", "Once");
         plugin->reset();
         const auto picked = render(*plugin, pluck);
-        check(maxDiff(picked, pluck) > 0.01, "Pick Triggers on: the pluck starts the sequence (diff " + String(maxDiff(picked, pluck), 3) + ")");
-        setByText(*plugin, "Pick Triggers", "Off");
-        plugin->reset();
-        const auto unpicked = render(*plugin, pluck);
-        check(maxDiff(unpicked, pluck) < 1.0e-4, "Pick Triggers off: nothing triggers, the signal is clean (diff "
-                                                      + String(maxDiff(unpicked, pluck), 6) + ")");
-
-        // Beat Play with no beat loaded changes nothing.
-        setByText(*plugin, "Pick Triggers", "On");
-        setByText(*plugin, "Beat Play", "On");
-        setNormalised(*plugin, "Beat Level", 1.0f);
-        plugin->reset();
-        check(maxDiff(render(*plugin, pluck), picked) < 1.0e-6, "Beat Play with no beat loaded changes nothing");
-        setNormalised(*plugin, "Beat Level", 0.0f);
-        check(text("Beat Level") == "Off", "Beat Level fully down reads 'Off' (" + text("Beat Level") + ")");
-        setByText(*plugin, "Step Clock", "Drum hits");
-        check(text("Step Clock") == "Drum hits", "Step Clock can follow the drum hits");
-
-        // The drum map state round-trips through the host (settings stay at their defaults here).
-        MemoryBlock drumState;
-        plugin->getStateInformation(drumState);
-        setByText(*plugin, "Step Clock", "Tempo");
-        setByText(*plugin, "Beat Play", "Off");
-        plugin->setStateInformation(drumState.getData(), (int) drumState.getSize());
-        check(text("Step Clock") == "Drum hits" && text("Beat Play") == "On", "drum map parameters survive the host state round trip");
-
-        setByText(*plugin, "Step Clock", "Tempo");
-        setByText(*plugin, "Beat Play", "Off");
-        setNormalised(*plugin, "Beat Level", findParam(*plugin, "Beat Level")->getDefaultValue());
+        double diff = 0.0;
+        for (int c = 0; c < picked.getNumChannels(); ++c)
+            for (int i = 0; i < picked.getNumSamples(); ++i)
+                diff = jmax(diff, (double) std::abs(picked.getSample(c, i) - pluck.getSample(c, i)));
+        check(diff > 0.01, "a pluck starts the sequence (diff " + String(diff, 3) + ")");
         plugin->setCurrentProgram(0);
         plugin->reset();
     }

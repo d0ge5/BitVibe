@@ -50,7 +50,7 @@ void drawLed(Graphics& g, Point<float> c, float r, Colour col, bool on)
 
 DrumPage::DrumPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel)
     : proc(p), beat(p.getDrumBeat()), laf(lookAndFeel),
-      playParam(*p.apvts.getParameter(ids::beatPlay), [this](float) { refresh(); })
+      playParam(*p.hidden.getParameter(ids::beatPlay), [this](float) { refresh(); })
 {
     setOpaque(true);
 
@@ -72,7 +72,7 @@ DrumPage::DrumPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel)
     };
     playButton.onClick = [this]
     {
-        playParam.setValueAsCompleteGesture(proc.apvts.getRawParameterValue(ids::beatPlay)->load() > 0.5f ? 0.0f : 1.0f);
+        playParam.setValueAsCompleteGesture(proc.hidden.getRawParameterValue(ids::beatPlay)->load() > 0.5f ? 0.0f : 1.0f);
     };
     halfButton.onClick = [this] { beat.setTempoEstimate(model.tempoBpm / 2.0); };
     doubleButton.onClick = [this] { beat.setTempoEstimate(model.tempoBpm * 2.0); };
@@ -103,27 +103,27 @@ DrumPage::DrumPage(BitVibeProcessor& p, PedalLookAndFeel& lookAndFeel)
     {
         beat.setAnalysisMode(neuralButton.getToggleState() ? DrumBeat::AnalysisMode::Auto : DrumBeat::AnalysisMode::BuiltInOnly);
     };
-    pickAtt = std::make_unique<APVTS::ButtonAttachment>(proc.apvts, ids::pickTriggers, pickButton);
+    pickAtt = std::make_unique<APVTS::ButtonAttachment>(proc.hidden, ids::pickTriggers, pickButton);
 
-    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::stepClock)))
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.hidden.getParameter(ids::stepClock)))
         stepClockBox.addItemList(choice->choices, 1);
     stepClockBox.setLookAndFeel(&laf);
     addAndMakeVisible(stepClockBox);
-    stepClockAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::stepClock, stepClockBox);
+    stepClockAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.hidden, ids::stepClock, stepClockBox);
 
     levelKnob.setSliderStyle(Slider::RotaryVerticalDrag);
     levelKnob.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
     levelKnob.setRotaryParameters(MathConstants<float>::pi * 1.2f, MathConstants<float>::pi * 2.8f, true);
     levelKnob.setMouseDragSensitivity(180);
     levelKnob.setLookAndFeel(&laf);
-    levelAtt = std::make_unique<APVTS::SliderAttachment>(proc.apvts, ids::beatLevel, levelKnob);
+    levelAtt = std::make_unique<APVTS::SliderAttachment>(proc.hidden, ids::beatLevel, levelKnob);
     addAndMakeVisible(levelKnob);
 
-    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.apvts.getParameter(ids::beatOutput)))
+    if (auto* choice = dynamic_cast<AudioParameterChoice*>(proc.hidden.getParameter(ids::beatOutput)))
         beatOutBox.addItemList(choice->choices, 1);
     beatOutBox.setLookAndFeel(&laf);
     addAndMakeVisible(beatOutBox);
-    beatOutAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.apvts, ids::beatOutput, beatOutBox);
+    beatOutAtt = std::make_unique<APVTS::ComboBoxAttachment>(proc.hidden, ids::beatOutput, beatOutBox);
 
 
     for (int d = 0; d < kNumDrums; ++d)
@@ -228,7 +228,7 @@ void DrumPage::refresh()
     }
     status = beat.getStatus();
 
-    const bool playing = proc.apvts.getRawParameterValue(ids::beatPlay)->load() > 0.5f;
+    const bool playing = proc.hidden.getRawParameterValue(ids::beatPlay)->load() > 0.5f;
     if (playButton.lit != playing)
     {
         playButton.lit = playing;
@@ -499,7 +499,7 @@ void DrumPage::paint(Graphics& g)
     g.drawText(neural, 160, 108, 296, 22, Justification::centredLeft, true);
 
     // Playback panel captions and readouts.
-    const float level = proc.apvts.getRawParameterValue(ids::beatLevel)->load();
+    const float level = proc.hidden.getRawParameterValue(ids::beatLevel)->load();
     g.setColour(ink);
     g.setFont(bold(10.0f));
     g.drawText("BEAT LEVEL", 104, 206, 68, 12, Justification::centred);
@@ -517,7 +517,7 @@ void DrumPage::paint(Graphics& g)
     // Where the beat's sound goes right now (the BEAT OUT setting and whether a monitor output is connected).
     {
         const auto route = proc.getBeatRoute();
-        const bool automatic = roundToInt(proc.apvts.getRawParameterValue(ids::beatOutput)->load()) == (int) BeatOutput::Auto;
+        const bool automatic = roundToInt(proc.hidden.getRawParameterValue(ids::beatOutput)->load()) == (int) BeatOutput::Auto;
         String text;
         Colour colour = inkDim;
         if (route == BeatRoute::Monitor)
@@ -674,7 +674,7 @@ void DrumPage::paintFeed(Graphics& g)
     for (int i = 0; i < length; ++i)
         drawLed(g, { (float) kLaneX + 8.0f + (float) i * spacing, 505.0f }, length > 6 ? 3.0f : 4.5f, accent, current == i);
     g.setFont(plain(9.5f));
-    const bool pickOn = proc.apvts.getRawParameterValue(ids::pickTriggers)->load() > 0.5f;
+    const bool pickOn = proc.hidden.getRawParameterValue(ids::pickTriggers)->load() > 0.5f;
     g.drawText(pickOn ? "picks on your guitar also trigger" : "only the drum hits trigger", kLaneX + 140, 498, 232, 14,
                Justification::centredRight);
 }

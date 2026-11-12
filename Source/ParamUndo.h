@@ -14,14 +14,23 @@
 class ParamUndo : private juce::AudioProcessorListener, private juce::AsyncUpdater
 {
 public:
-    explicit ParamUndo(juce::AudioProcessor& p, juce::StringArray untracked = {}) : processor(p), skipped(std::move(untracked))
+    explicit ParamUndo(juce::AudioProcessor& p, juce::StringArray untracked = {}) : skipped(std::move(untracked))
     {
-        processor.addListener(this);
+        alsoTrack(p);
     }
     ~ParamUndo() override
     {
-        processor.removeListener(this);
+        for (auto* processor : processors)
+            processor->removeListener(this);
         cancelPendingUpdate();
+    }
+
+    // The parameters of another processor join the same history (the plug-in's hidden settings, see HiddenHost.h).
+    // It must outlive this.
+    void alsoTrack(juce::AudioProcessor& other)
+    {
+        processors.push_back(&other);
+        other.addListener(this);
     }
 
     // Keeps the sound as it is now, before a change the page is about to make without a gesture (a preset recalled).
@@ -52,30 +61,40 @@ public:
 private:
     static constexpr size_t kMaxSteps = 100;
 
+    // every parameter in the history, one processor after the other
+    std::vector<juce::AudioProcessorParameter*> parameters() const
+    {
+        std::vector<juce::AudioProcessorParameter*> all;
+        for (auto* processor : processors)
+            for (auto* param : processor->getParameters())
+                all.push_back(param);
+        return all;
+    }
+
     std::vector<float> values() const
     {
         std::vector<float> v;
-        for (auto* param : processor.getParameters())
+        for (auto* param : parameters())
             v.push_back(param->getValue());
         return v;
     }
 
-    bool tracked(int index) const
+    bool tracked(const juce::AudioProcessorParameter* param) const
     {
-        const auto& params = processor.getParameters();
-        if (index < 0 || index >= params.size())
+        if (param == nullptr)
             return false;
-        if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*>(params[index]))
+        if (auto* withId = dynamic_cast<const juce::AudioProcessorParameterWithID*>(param))
             return !skipped.contains(withId->paramID);
         return true;
     }
 
     bool same(const std::vector<float>& a, const std::vector<float>& b) const
     {
-        if (a.size() != b.size())
+        const auto params = parameters();
+        if (a.size() != b.size() || a.size() != params.size())
             return false;
         for (size_t i = 0; i < a.size(); ++i)
-            if (tracked((int) i) && !bitvibe::sameFloat(a[i], b[i]))
+            if (tracked(params[i]) && !bitvibe::sameFloat(a[i], b[i]))
                 return false;
         return true;
     }
@@ -101,12 +120,12 @@ private:
         const auto target = from[(size_t) index];
         from.resize((size_t) index);
         restoring = true;
-        const auto& params = processor.getParameters();
-        for (int i = 0; i < params.size() && (size_t) i < target.size(); ++i)
-            if (tracked(i) && !bitvibe::sameFloat(params[i]->getValue(), target[(size_t) i]))
+        const auto params = parameters();
+        for (size_t i = 0; i < params.size() && i < target.size(); ++i)
+            if (tracked(params[i]) && !bitvibe::sameFloat(params[i]->getValue(), target[i]))
             {
                 params[i]->beginChangeGesture(); // so the host records it like a change made by hand
-                params[i]->setValueNotifyingHost(target[(size_t) i]);
+                params[i]->setValueNotifyingHost(target[i]);
                 params[i]->endChangeGesture();
             }
         restoring = false;
@@ -114,15 +133,15 @@ private:
 
     void handleAsyncUpdate() override { grouping = false; }
 
-    void audioProcessorParameterChangeGestureBegin(juce::AudioProcessor*, int index) override
+    void audioProcessorParameterChangeGestureBegin(juce::AudioProcessor* processor, int index) override
     {
-        if (tracked(index))
+        if (processor != nullptr && index >= 0 && index < processor->getParameters().size() && tracked(processor->getParameters()[index]))
             remember();
     }
     void audioProcessorParameterChanged(juce::AudioProcessor*, int, float) override {}
     void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {}
 
-    juce::AudioProcessor& processor;
+    std::vector<juce::AudioProcessor*> processors;
     juce::StringArray skipped; // parameters left out: the momentary ones
     std::vector<std::vector<float>> undoSteps, redoSteps;
     bool restoring = false, grouping = false;

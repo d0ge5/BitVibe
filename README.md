@@ -65,8 +65,8 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
   while the sequence plays, drawn and edited as a curve.
 - **Delay:** echoes in time with the tempo (1/32 to a bar, with triplets and dotted notes), 1 to 16 repeats or
   forever, with mix, decay, low cut and high cut, and **WOBBLE** to turn it into a worn tape echo.
-- **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, level, low and high cut, and a
-  reverse option for each type.
+- **Reverb:** Room, Hall, Spring, Plate, Shimmer and Gated, with decay, tone, mix, low and high cut, and a
+  reverse option.
 - **Sample blend:** a random sound from your own audio files joins each step, crushed along with the sequence.
   Pick sounds, save them as banks, and set a base and a maximum volume. The sequence's loop section can have sounds
   and levels of its own.
@@ -82,16 +82,16 @@ on the delay, **44 new presets** in one bank of 64 slots, grouped in the preset 
 - **SIMPLE or ADVANCED** view, so you only see what you need, and the effects as **tabs**, one panel at a time, so the
   whole window fits a laptop screen.
 - **Seven themes** to pick from the **VIEW** menu: NIGHT, DAYLIGHT, MIDNIGHT, SYNTHWAVE, SURPLUS, CONTRAST, and
-  **WIREFRAME**, the page as glowing outlines (like DOG5) whose edges pulse with the beat, so you can see the
-  rhythm as well as hear it.
+  **WIREFRAME**, the page as glowing outlines whose edges pulse with the beat, so you can see the rhythm as well
+  as hear it.
 - **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z, Cmd on a Mac), **Shift-drag** for fine settings, and an **output meter**
   with a clip light.
 
 **Also:** a **sampler** that records another program on your PC (Windows), lets you pick a part and shape it with
 distortion, bit crush and an EQ, and saves it as a new sound; export and import presets as XML files to share, a resizable window, hover tips on every control,
-host automation sorted into groups (Pedal, Sequencer, Input and Output, each effect)
-and a quick-start help page, and **DOG5**, a wireframe husky that headbangs in time. No reported latency, and
-light on CPU.
+host automation sorted into groups (Pedal, Sequencer, Input and Output, each effect) that list only the controls
+you can turn (263 of them; the sampler's settings and other bookkeeping are saved with the project but kept out of
+your DAW's list), and a quick-start help page. No reported latency, and light on CPU.
 
 ## Install
 
@@ -142,16 +142,15 @@ say when a hidden setting is on. A switched-off panel dims its knobs but keeps i
 can be set up before you switch it on. Buttons with a small light on the left switch something on and off; the
 others do something once.
 
-**VIEW** (top right) holds the window size (75% to 150%), **Show DOG5** (hide it and the window gets about
-170 pixels shorter) and the theme:
+**VIEW** (top right) holds the window size (75% to 150%) and the theme:
 
 - **NIGHT**: the black pedal with orange lights.
 - **DAYLIGHT**: a cream pedal with black knobs, for a bright room.
-- **MIDNIGHT**: navy, with cyan lights and a cyan DOG5.
-- **SYNTHWAVE**: deep purple, with hot pink lights and a cyan DOG5 (the one it starts in).
-- **SURPLUS**: olive drab, with amber lights and an amber DOG5 screen.
+- **MIDNIGHT**: navy, with cyan lights.
+- **SYNTHWAVE**: deep purple, with hot pink lights (the one it starts in).
+- **SURPLUS**: olive drab, with amber lights.
 - **CONTRAST**: black and white, with yellow lights and strong outlines, the easiest to read.
-- **WIREFRAME**: the page as glowing cyan outlines on black, like DOG5 itself. Every outline - the panels, the
+- **WIREFRAME**: the page as glowing cyan outlines on black. Every outline - the panels, the
   enclosure, the knobs, buttons, boxes, tabs and footswitches - glows with the beat, bright on each beat and
   fading towards the next, flashing again on every sequencer step. While the sequencer and its effects act the
   glow flushes from cyan to the accent colour, and it calms down while nothing plays, so one glance says what
@@ -221,9 +220,9 @@ on afterwards. The tempo clock sets the speed of all of it.
 At the bottom of the right-hand side, **IN** has **INPUT**, **TRIGGER** (how easily picked notes start the
 stutter and sequencer) with the last three seconds of your playing scrolling past the trigger line: a pick that
 crosses it is caught, lit orange with a mark on top, so setting TRIGGER comes down to seeing which notes make it over
-the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **LEVEL** (the preset's own
-volume on the effect side, saved with it; the pack's presets are already matched in loudness, so moving between them
-does not jump in volume), **OUTPUT** with an output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
+the line; and **HEADROOM** (Instrument or Line: set it first). **OUT** has **DRY/WET**, **LEVEL** (ADVANCED only: the
+preset's own volume on the effect side, saved with it; the pack's presets are already matched in loudness, so moving
+between them does not jump in volume), **OUTPUT** with an output meter (its light turns red when the output goes over 0 dB and stays lit for a few seconds; click it to put it
 out) and **HEAR**. ADVANCED adds a **STUTTER** row: its length (a note length of the tempo), its type and **HOLD**;
 a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row with **SWING** and **PING**:
 
@@ -269,25 +268,6 @@ a **FILTER** row: the filter's type and its **RESONANCE**; and a **SEQ** row wit
 It starts on preset 1, a pitch sequence that plays four times after each picked note. Turn **Sequencer** to *Off*
 for a clean signal, or to *Continuous* to have it run on its own.
 
-**DOG5** (in the right-hand column, under the effects) is a wireframe husky in the theme's screen colour
-that headbangs in time: its head nods forward on the beat and pulls back again, ears flopping, with the beat of the
-bar beside it. It follows the tempo, or the host's tempo and position with SYNC on (it stops when the host stops). It is a pre-rendered
-animation (32 frames of one beat, rendered in Blender by `Tools/beatdog/build_beat_dog.py` into
-`Assets/beat_dog.jpg`), so it costs one small image draw per frame. **Right-click the dog** for its settings:
-**HEADBANG ON** picks the beats of the bar the head nods forward on (the lit dots beside the screen); it pulls back
-smoothly in between (pick fewer beats for a slower, heavier headbang). **SMOOTH** sets how much quicker the nod
-forward is, from a sudden headbang to an even bob, forward and back alike. **SWAY** floats the head from side to
-side, landing on one side at a picked beat and the other at the next. **LIVE 3D** draws the head in real time from
-its 3D mesh instead (exported by the same script into `Source/BeatDogMesh.h`), at **60**, **30** or **15 FPS**:
-smoother, and still light (well under a millisecond a frame). All of it is remembered.
-
-**SCOPE** turns DOG5's screen into an oscilloscope of the last two beats: your clean input on top (**IN**), what
-comes out below (**OUT**), a line on each beat and, along the bottom, a strip in the colour of the step that was
-playing. Side by side you can see what the sequence does to your playing: the stutter repeating a slice, a muted
-step going flat, the crush, the tremolo cutting, the echoes trailing on.
-
-<p align="center"><img src="artifacts/scope.png" width="456" alt="DOG5's screen as a scope: the clean input on top, the processed sound below, the beats as lines and the steps as a coloured strip"></p>
-
 ### The right-hand side
 
 At the top, the **beat pattern** decides when the sequence fires; it has a power button like the effects and folds to
@@ -299,7 +279,7 @@ sequenced and stuttered sound. Each tab has a light that is on when its effect i
 stutter plays (which is when the effect acts); each panel has the same power button next to its title, and a
 switched-off panel is dimmed.
 
-<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the seven numbered tabs, the reverb's graph and six knobs, DOG5 and the in / out panel"></p>
+<p align="center"><img src="artifacts/editor_effects.png" width="640" alt="The right-hand side with the REVERB tab showing: the beat pattern folded, the seven numbered tabs, the reverb's graph and six knobs and the in / out panel"></p>
 They all start off. Switching on the reverb or the sample blend with its mix at 0% brings the mix up, so you hear it.
 The distortion, delay and reverb panels each have a small graph on the left of what the effect does, worked out by
 running the effect itself, so it changes as you turn the knobs: the distortion shows a plain tone going in (grey) and
@@ -337,8 +317,7 @@ keeps them with it.
   **PREVIEW** plays one so you can set the volumes by ear. **SAVE** keeps the picked list as a named bank. BitVibe ships no sounds of its own, and your
   picks and banks are remembered between sessions. While the **LOOP** is on (see the step editor above), **OTHER STEPS** and
   **LOOP STEPS** buttons appear: LOOP STEPS sets up the loop section's steps. Its bank list starts on **Same as the other steps**; pick a bank or
-  choose sounds to give the loop steps a list of their own. **OWN LEVELS FOR THE LOOP** gives them their own
-  VOLUME, CHANCE, BASE and MAX, starting from the main values; off, they use the main ones.
+  choose sounds to give the loop steps a list of their own. VOLUME, CHANCE, BASE and MAX are the same for every step.
 - **Distortion / Fuzz:** pick **Overdrive** (modelled on a classic mid-hump overdrive circuit) or **Fuzz**
   (modelled on a classic big fuzz). **REVERB TOO** sends the reverb through it as well. Under it, **SPLICE** (with
   its own power button) makes the sound you get when you cut a clip in a DAW with no fade and butt another one against
@@ -381,8 +360,8 @@ keeps them with it.
   further it is turned (the high cut closes towards 6 kHz). Fully left it is a clean digital delay; the graph shows
   the echoes drifting off the beat and says TAPE. It hears
   the sound after the distortion and the tremolo; the reverb hears the echoes too, and they ring on after the sequence stops.
-- **Reverb:** six types; **MIX** starts at 0, so turn it up to hear it. **REVERSE** swells the tail instead
-  of fading it.
+- **Reverb:** six types; **MIX** is the reverb's volume and starts at 0, so turn it up to hear it. **REVERSE**
+  swells the tail instead of fading it (one tick, whichever type is showing).
 - **EQ (ADVANCED):** eight bands, last in the chain. Drag a point for frequency and gain, use the mouse wheel for
   Q, and double-click to switch a band on or off. Behind the curve is the spectrum of the sound reaching the EQ
   (grey) and, with the EQ on, of what comes out (orange). **CAPTURE** keeps the last few seconds (up to 8) of the
@@ -419,33 +398,44 @@ Only record what you have the right to use.
 ### Presets and morph
 
 - The bar at the top holds **one bank of 142 preset slots** (they also appear as programs in your DAW). `<` and `>`
-  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, 21 to 92 are the preset
-  pack, 93 to 107 its **LOOPER** section, 108 to 117 its **DREAMY LOOPS** and 118 to 142 **LIGHT TOUCH**. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
+  step through them. Slots 1 to 12 are factory sounds, 13 to 20 are empty for your own, 21 to 45 are **LIGHT TOUCH**
+  (the easy ones, a place to start), 46 to 117 the preset pack, 118 to 132 its **LOOPER** section and 133 to 142 its
+  **DREAMY LOOPS**. A slot holds the whole sound: the knobs, steps, lanes, tempo and morph, the effects on the right-hand side and
   the beat pattern. Your input, output, headroom, trigger, sync, DRY/WET, HEAR and the sample blend's levels stay as
   they are when you change slot. Changes are written into a slot only when you press **SAVE**. A project saved by an older version keeps its
-  sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then.
+  sixteen slots where they were; recalling one of those leaves the effects as they are, as it did then. A project
+  remembers the pack presets it uses by name, so it opens on the same preset when a newer version moves it to
+  another slot (projects saved before LIGHT TOUCH moved to the front are matched by sound and name).
 - **Search** with **Ctrl+F** (Cmd+F on a Mac), or *Search presets...* at the top of the preset menu. Type part of a
   name, or what a preset uses (*flanger*, *ping*, *swing*, *formant*, *lanes*), or its slot number; every word must
   match. **Up** and **Down** play each result as you reach it, so you can browse by ear, **Return** keeps the one
   highlighted, and **Esc** goes back to where you started (Ctrl+Z brings back unsaved edits).
-- **Click the name** (or the arrow beside it) for the preset menu. The presets are **grouped by what they use**:
-  under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or after each pick, long sequences, step
-  lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the stutter types), SOUND (bit crush and sample
-  rate, filter types and resonance), EFFECTS (distortion, tremolo, delay, tape wobble, reverb, EQ) and MORPH. A preset
-  is in every group it uses, and your own saved sounds are sorted the same way. **All presets** lists the 142 in order
-  and **Your slots** the empty ones. Then **Undo** and **Redo**, save, rename, **Export to a file** and **Import from
+- **Favourites**: click the **star** at the left of the preset name (or *Add to favourites* in the preset menu) to
+  star the preset showing; click it again to take it off. Your favourites have their own list, **Favourites**, at the
+  top of the preset menu, show a star in the search, and typing *favourite* (or *favorite*) in the search lists only
+  them. They are remembered on this computer for every project and every copy of BitVibe, not saved in the project.
+  A factory or pack preset stays a favourite if you rename or overwrite it, or a new version moves it to another
+  slot; one of your own slots (13 to 20) stays starred whatever you save in it.
+- **Click the name** (or the arrow beside it) for the preset menu. It starts with the easy way in: **Search
+  presets...**, **Start here: Light Touch** and your **Favourites**. Under BANKS is a list per bank (**Factory**,
+  **Your slots**, **Preset pack**, **Looper**, **Dreamy Loops**) and **All presets**, the 142 in order. **By what
+  they use** groups the presets by feature: under SEQUENCER (pitch, filter or sample-rate steps, plays on its own or
+  after each pick, long sequences, step lanes, the sequence loop, the beat pattern), STUTTER (the stutter, the
+  stutter types), SOUND (bit crush and sample rate, filter types and resonance), EFFECTS (distortion, tremolo, delay,
+  tape wobble, reverb, EQ), MORPH and LOOPER. A preset is in every group it uses, and your own saved sounds are sorted
+  the same way. Then **Undo** and **Redo**, save, rename, add to favourites, **Export to a file** and **Import from
   a file**.
   Export saves the sound you hear as an XML file (in `Documents/BitVibe/Presets` by default) to give to
   other players. It holds the knobs, steps, effects, beat pattern and the names of your sounds, but not the
   audio files, and not your own levels, trigger setting or sync. Import loads such a file into the slot
   that is showing, so pick a free slot first to keep yours.
-- **Preset pack:** sixty-six sounds built around the 16-step sequencer, its lanes, the stutter types, the tremolo,
-  the delay's tape wobble, the filter types, swing, the ping, the ring mod, the phaser / flanger and SPLICE, in slots 21 to 92, and fifteen
-  **LOOPER** sounds built around REPLAY in slots 93 to 107 and ten **DREAMY LOOPS** (REPLAY's speed, direction,
-  stretch, swell and wear, for atmospheres) in slots 108 to 117 (your picked sounds stay as they are). **LIGHT
-  TOUCH** (slots 118 to 142) is the place to start: twenty-five presets, each showing one feature used gently over a
-  simple four-step sequence, from the pitch steps and the beat pattern to the morph, SPLICE and REPLAY. Save over
-  one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
+- **Preset pack:** it opens with **LIGHT TOUCH** (slots 21 to 45), the place to start: twenty-five presets, each
+  showing one feature used gently over a simple four-step sequence, from the pitch steps and the beat pattern to the
+  morph, SPLICE and REPLAY. Then seventy-two sounds built around the 16-step sequencer, its lanes, the stutter types,
+  the tremolo, the delay's tape wobble, the filter types, swing, the ping, the ring mod, the phaser / flanger and
+  SPLICE, in slots 46 to 117, fifteen **LOOPER** sounds built around REPLAY in slots 118 to 132 and ten **DREAMY
+  LOOPS** (REPLAY's speed, direction, stretch, swell and wear, for atmospheres) in slots 133 to 142 (your picked
+  sounds stay as they are). Save over one and it stays yours; the same files are in [`Presets/`](Presets) to share or import.
   The long patterns switch **PATTERN LOCK** on, so they run freely and a pick fires only the stutter.
 
   | | | |

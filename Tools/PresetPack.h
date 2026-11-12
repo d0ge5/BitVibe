@@ -62,14 +62,12 @@ struct Builder
     }
     void reverb(int type, float mix, float decay, bool reverse = false)
     {
-        static const char* reverseIds[6] { ids::reverbReverseRoom, ids::reverbReverseHall, ids::reverbReverseSpring,
-                                           ids::reverbReversePlate, ids::reverbReverseShimmer, ids::reverbReverseGated };
         on(ids::reverbOn);
         set(ids::reverbType, (float) type);
         set(ids::reverbMix, mix);
         set(ids::reverbDecay, decay);
         if (reverse)
-            on(reverseIds[type]);
+            on(ids::reverbReverse);
     }
     void delay(int division, float mix, float decay, int repeats)
     {
@@ -203,9 +201,10 @@ struct Preset
     std::function<void(Builder&)> build;
     const char* section = nullptr; // the section of the bank it is listed under (nullptr = the pack itself)
 };
-// The sections after the pack, as the preset menu shows them: LOOPER (presets built around REPLAY) and DREAMY LOOPS
-// (REPLAY's playback: speed, direction, stretch, swell and wear, for atmospheres)
-// and LIGHT TOUCH (one feature each, used gently: a place to start)
+// The sections of the pack, in slot order, as the preset menu shows them: LIGHT TOUCH first (one feature each, used
+// gently: the place to start, right after your own slots), then the pack itself (no section), LOOPER (presets built
+// around REPLAY) and DREAMY LOOPS (REPLAY's playback: speed, direction, stretch, swell and wear, for atmospheres).
+// A section's presets must stay together.
 constexpr const char* kLooper = "Looper", *kDreamy = "Dreamy Loops", *kLight = "Light Touch";
 constexpr int kForward = 0, kBackwards = 1, kBackAndForth = 2; // REPLAY directions
 constexpr int kNormalSpeed = 0, kHalfSpeed = 1, kQuarterSpeed = 2;
@@ -213,6 +212,181 @@ constexpr int kNormalSpeed = 0, kHalfSpeed = 1, kQuarterSpeed = 2;
 inline const std::vector<Preset>& presets()
 {
     static const std::vector<Preset> list {
+        // ---- LIGHT TOUCH: one feature each, used gently over a simple sequence, so each is easy to hear and to play.
+        // A good place to start: every part of the plug-in, one at a time. ----
+        { "First Steps", [](Builder& b) {
+             // the sequencer's pitch steps on their own: your note, its octave, its fifth, its octave, round and round
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(7), P(12) });
+         }, kLight },
+        { "Pick and Answer", [](Builder& b) {
+             // every pick plays the four steps once and stops: play, and it answers
+             b.basic(110.0f);
+             b.set(ids::seqPlay, 1.0f);
+             b.set(ids::patternLock, 0.0f);
+             b.steps({ P(0), P(7), P(12), P(7) });
+         }, kLight },
+        { "Gentle Filter", [](Builder& b) {
+             // FILTER steps: the tone opens and closes softly, four times a bar
+             b.basic(100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.steps({ pct(0.06f), pct(0.2f), pct(0.1f), pct(0.4f) });
+         }, kLight },
+        { "Soft Crush", [](Builder& b) {
+             // RATE steps and a few bits less: a touch of old-sampler grit that comes and goes
+             b.basic(100.0f);
+             b.set(ids::seqType, 2.0f);
+             b.set(ids::bits, 0.65f);
+             b.steps({ pct(1.0f), pct(0.12f), pct(1.0f), pct(0.2f) });
+         }, kLight },
+        { "Long Walk", [](Builder& b) {
+             // a twelve-step melody: the sequence can be up to sixteen steps long
+             b.basic(110.0f);
+             b.sequence(12, 5, 1);
+             b.steps({ P(0), P(2), P(4), P(7), P(4), P(2), P(0), P(-3), P(0), P(4), P(7), P(12) });
+         }, kLight },
+        { "Accent Lanes", [](Builder& b) {
+             // the LEVEL lane: every step plays the note, but the first of each pair is louder
+             b.basic(110.0f);
+             b.steps({ P(0), P(0), P(7), P(0) });
+             b.lane(Lane::Level, { 1.0f, 0.55f });
+         }, kLight },
+        { "Loop Section", [](Builder& b) {
+             // steps 2 and 3 repeat twice before the sequence goes on to step 4
+             b.basic(110.0f);
+             b.steps({ P(0), P(7), P(5), P(12) });
+             b.on(ids::loopOn);
+             b.set(ids::loopFrom, 1.0f);
+             b.set(ids::loopTo, 2.0f);
+             b.set(ids::loopRepeats, 2.0f);
+         }, kLight },
+        { "Easy Swing", [](Builder& b) {
+             // SWING: every other step a little late, for a lilt
+             b.basic(96.0f);
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.set(ids::swing, 0.4f);
+         }, kLight },
+        { "On the Beat", [](Builder& b) {
+             // the BEAT PATTERN starts the four steps on beats 1 and 3 of every bar, in time, whatever you play
+             b.basic(100.0f);
+             b.set(ids::seqPlay, 1.0f);
+             b.steps({ P(0), P(12), P(7), P(0) });
+             b.pattern(0x0101u); // the first sixteenth of beats 1 and 3
+         }, kLight },
+        { "Little Stutter", [](Builder& b) {
+             // each pick repeats a sixteenth twice: the plainest stutter
+             b.basic(110.0f);
+             b.set(ids::seqPlay, 0.0f);
+             b.set(ids::patternLock, 0.0f);
+             b.stutter(0, 2, kRepeat, 2);
+         }, kLight },
+        { "Backwards Bit", [](Builder& b) {
+             // each pick plays an eighth note of itself backwards, once: a stutter type
+             b.basic(110.0f);
+             b.set(ids::seqPlay, 0.0f);
+             b.set(ids::patternLock, 0.0f);
+             b.stutter(0, 1, kReverse, 1);
+         }, kLight },
+        { "Warm Resonance", [](Builder& b) {
+             // the LOW PASS filter type, a little resonant, rounding off the top of the steps
+             b.basic(100.0f);
+             b.steps({ P(0), P(7), P(0), P(12) });
+             b.set(ids::filterType, (float) kLowPass);
+             b.set(ids::filter, 0.62f);
+             b.set(ids::filterRes, 0.5f);
+         }, kLight },
+        { "Talk Softly", [](Builder& b) {
+             // the FORMANT filter: the steps sound like a voice saying "ah", "eh"
+             b.basic(100.0f);
+             b.set(ids::seqType, 1.0f);
+             b.set(ids::filterType, (float) kFormant);
+             b.set(ids::filterRes, 0.35f);
+             b.set(ids::filter, 0.85f);
+             b.steps({ pct(0.4f), pct(0.7f), pct(0.4f), pct(1.0f) });
+         }, kLight },
+        { "Soft Ping", [](Builder& b) {
+             // PING: a quiet click at each step rings the resonant filter, a soft wooden tick under your notes
+             b.basic(110.0f);
+             b.steps({ P(0), P(0), P(0), P(0) });
+             b.set(ids::filter, 0.55f);
+             b.set(ids::filterRes, 0.8f);
+             b.on(ids::pingOn);
+             b.set(ids::pingLevel, 0.25f);
+         }, kLight },
+        { "Light Drive", [](Builder& b) {
+             // the overdrive, barely pushed: the steps get a little warmer and thicker
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.dist(0, 0.25f, 0.5f, 0.8f);
+         }, kLight },
+        { "Ring Shimmer", [](Builder& b) {
+             // a little RING MOD high up: a faint metallic shimmer over the notes
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.on(ids::ringOn);
+             b.set(ids::ringHz, 880.0f);
+             b.set(ids::ringMix, 0.3f);
+         }, kLight },
+        { "Slow Phaser", [](Builder& b) {
+             // the PHASER, sweeping once every two bars, half mixed in
+             b.basic(100.0f);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.sweep(kPhaser, kRate2Bars, 0.6f, 0.3f, 0.6f);
+         }, kLight },
+        { "Soft Flanger", [](Builder& b) {
+             // the FLANGER, slow and shallow: a gentle whoosh through the steps
+             b.basic(100.0f);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.sweep(kFlanger, kRate2Bars, 0.4f, 0.3f, 0.6f);
+         }, kLight },
+        { "Gentle Tremolo", [](Builder& b) {
+             // the TREMOLO, smooth and not too deep: the steps pulse a little
+             b.basic(100.0f);
+             b.steps({ P(0), P(0), P(7), P(0) });
+             b.tremolo(5.0f, 0.4f, 0.1f);
+         }, kLight },
+        { "Simple Echo", [](Builder& b) {
+             // the DELAY: three eighth-note echoes of the steps, with a touch of tape wobble
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(7), P(0) });
+             b.delay(k8th, 0.25f, 0.4f, 3);
+             b.set(ids::delayWobble, 0.15f);
+         }, kLight },
+        { "Small Room", [](Builder& b) {
+             // the REVERB: a small room around the steps
+             b.basic(110.0f);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.reverb(kRoom, 0.25f, 0.4f);
+         }, kLight },
+        { "Bright EQ", [](Builder& b) {
+             // the EQ last of all: a little less low end, a little more sparkle
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(0), P(7) });
+             b.on(ids::eqOn);
+             b.set(ids::eqBand(1, "Gain"), -4.0f);  // the low shelf at 100 Hz
+             b.set(ids::eqBand(6, "On"), 1.0f);     // the high shelf at 8 kHz
+             b.set(ids::eqBand(6, "Gain"), 6.0f);
+             b.set(ids::eqBand(4, "Gain"), 3.0f);   // a little presence at 2.5 kHz
+         }, kLight },
+        { "Two Moods", [](Builder& b) {
+             // MORPH: heel down the filter is open, toe down it closes (with an expression pedal, or the slider on top)
+             b.basic(110.0f);
+             b.steps({ P(0), P(12), P(7), P(12) });
+             b.morph([](Builder& m) { m.set(ids::filter, 0.45f); });
+         }, kLight },
+        { "Quiet Splice", [](Builder& b) {
+             // SPLICE: once in a while a step starts with the faint tick of an unfaded edit
+             b.basic(110.0f);
+             b.steps({ P(0), P(7), P(12), P(7) });
+             b.splice(0, 0.2f, 8.0f, 0.0f);
+         }, kLight },
+        { "Loop When You Stop", [](Builder& b) {
+             // REPLAY: play a phrase and stop, and it loops back an octave up, a little of it clean, until you play again
+             b.basic(110.0f);
+             b.steps({ P(12), P(12), P(7), P(12) });
+             b.replay(2.0f, 0.6f, bitvibe::kReplayForever, 0.4f);
+         }, kLight },
+        // ---- THE PACK ITSELF: one or two new things each, more involved than LIGHT TOUCH ----
         { "Arp Sixteen", [](Builder& b) {
              // a two-bar arpeggio in sixteenths, accented on the beat, with dotted echoes
              b.set(ids::tempo, 110.0f);
@@ -1256,180 +1430,6 @@ inline const std::vector<Preset>& presets()
              b.replay(8.0f, 1.2f, bitvibe::kReplayForever, 0.4f);
              b.replayPlayback(kHalfSpeed, kBackwards, 1.5f, 3.0f, 0.15f);
          }, kDreamy },
-        // ---- LIGHT TOUCH: one feature each, used gently over a simple sequence, so each is easy to hear and to play.
-        // A good place to start: every part of the plug-in, one at a time. ----
-        { "First Steps", [](Builder& b) {
-             // the sequencer's pitch steps on their own: your note, its octave, its fifth, its octave, round and round
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(7), P(12) });
-         }, kLight },
-        { "Pick and Answer", [](Builder& b) {
-             // every pick plays the four steps once and stops: play, and it answers
-             b.basic(110.0f);
-             b.set(ids::seqPlay, 1.0f);
-             b.set(ids::patternLock, 0.0f);
-             b.steps({ P(0), P(7), P(12), P(7) });
-         }, kLight },
-        { "Gentle Filter", [](Builder& b) {
-             // FILTER steps: the tone opens and closes softly, four times a bar
-             b.basic(100.0f);
-             b.set(ids::seqType, 1.0f);
-             b.steps({ pct(0.06f), pct(0.2f), pct(0.1f), pct(0.4f) });
-         }, kLight },
-        { "Soft Crush", [](Builder& b) {
-             // RATE steps and a few bits less: a touch of old-sampler grit that comes and goes
-             b.basic(100.0f);
-             b.set(ids::seqType, 2.0f);
-             b.set(ids::bits, 0.65f);
-             b.steps({ pct(1.0f), pct(0.12f), pct(1.0f), pct(0.2f) });
-         }, kLight },
-        { "Long Walk", [](Builder& b) {
-             // a twelve-step melody: the sequence can be up to sixteen steps long
-             b.basic(110.0f);
-             b.sequence(12, 5, 1);
-             b.steps({ P(0), P(2), P(4), P(7), P(4), P(2), P(0), P(-3), P(0), P(4), P(7), P(12) });
-         }, kLight },
-        { "Accent Lanes", [](Builder& b) {
-             // the LEVEL lane: every step plays the note, but the first of each pair is louder
-             b.basic(110.0f);
-             b.steps({ P(0), P(0), P(7), P(0) });
-             b.lane(Lane::Level, { 1.0f, 0.55f });
-         }, kLight },
-        { "Loop Section", [](Builder& b) {
-             // steps 2 and 3 repeat twice before the sequence goes on to step 4
-             b.basic(110.0f);
-             b.steps({ P(0), P(7), P(5), P(12) });
-             b.on(ids::loopOn);
-             b.set(ids::loopFrom, 1.0f);
-             b.set(ids::loopTo, 2.0f);
-             b.set(ids::loopRepeats, 2.0f);
-         }, kLight },
-        { "Easy Swing", [](Builder& b) {
-             // SWING: every other step a little late, for a lilt
-             b.basic(96.0f);
-             b.steps({ P(0), P(12), P(0), P(7) });
-             b.set(ids::swing, 0.4f);
-         }, kLight },
-        { "On the Beat", [](Builder& b) {
-             // the BEAT PATTERN starts the four steps on beats 1 and 3 of every bar, in time, whatever you play
-             b.basic(100.0f);
-             b.set(ids::seqPlay, 1.0f);
-             b.steps({ P(0), P(12), P(7), P(0) });
-             b.pattern(0x0101u); // the first sixteenth of beats 1 and 3
-         }, kLight },
-        { "Little Stutter", [](Builder& b) {
-             // each pick repeats a sixteenth twice: the plainest stutter
-             b.basic(110.0f);
-             b.set(ids::seqPlay, 0.0f);
-             b.set(ids::patternLock, 0.0f);
-             b.stutter(0, 2, kRepeat, 2);
-         }, kLight },
-        { "Backwards Bit", [](Builder& b) {
-             // each pick plays an eighth note of itself backwards, once: a stutter type
-             b.basic(110.0f);
-             b.set(ids::seqPlay, 0.0f);
-             b.set(ids::patternLock, 0.0f);
-             b.stutter(0, 1, kReverse, 1);
-         }, kLight },
-        { "Warm Resonance", [](Builder& b) {
-             // the LOW PASS filter type, a little resonant, rounding off the top of the steps
-             b.basic(100.0f);
-             b.steps({ P(0), P(7), P(0), P(12) });
-             b.set(ids::filterType, (float) kLowPass);
-             b.set(ids::filter, 0.62f);
-             b.set(ids::filterRes, 0.5f);
-         }, kLight },
-        { "Talk Softly", [](Builder& b) {
-             // the FORMANT filter: the steps sound like a voice saying "ah", "eh"
-             b.basic(100.0f);
-             b.set(ids::seqType, 1.0f);
-             b.set(ids::filterType, (float) kFormant);
-             b.set(ids::filterRes, 0.35f);
-             b.set(ids::filter, 0.85f);
-             b.steps({ pct(0.4f), pct(0.7f), pct(0.4f), pct(1.0f) });
-         }, kLight },
-        { "Soft Ping", [](Builder& b) {
-             // PING: a quiet click at each step rings the resonant filter, a soft wooden tick under your notes
-             b.basic(110.0f);
-             b.steps({ P(0), P(0), P(0), P(0) });
-             b.set(ids::filter, 0.55f);
-             b.set(ids::filterRes, 0.8f);
-             b.on(ids::pingOn);
-             b.set(ids::pingLevel, 0.25f);
-         }, kLight },
-        { "Light Drive", [](Builder& b) {
-             // the overdrive, barely pushed: the steps get a little warmer and thicker
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(0), P(7) });
-             b.dist(0, 0.25f, 0.5f, 0.8f);
-         }, kLight },
-        { "Ring Shimmer", [](Builder& b) {
-             // a little RING MOD high up: a faint metallic shimmer over the notes
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(0), P(7) });
-             b.on(ids::ringOn);
-             b.set(ids::ringHz, 880.0f);
-             b.set(ids::ringMix, 0.3f);
-         }, kLight },
-        { "Slow Phaser", [](Builder& b) {
-             // the PHASER, sweeping once every two bars, half mixed in
-             b.basic(100.0f);
-             b.steps({ P(0), P(7), P(12), P(7) });
-             b.sweep(kPhaser, kRate2Bars, 0.6f, 0.3f, 0.6f);
-         }, kLight },
-        { "Soft Flanger", [](Builder& b) {
-             // the FLANGER, slow and shallow: a gentle whoosh through the steps
-             b.basic(100.0f);
-             b.steps({ P(0), P(7), P(12), P(7) });
-             b.sweep(kFlanger, kRate2Bars, 0.4f, 0.3f, 0.6f);
-         }, kLight },
-        { "Gentle Tremolo", [](Builder& b) {
-             // the TREMOLO, smooth and not too deep: the steps pulse a little
-             b.basic(100.0f);
-             b.steps({ P(0), P(0), P(7), P(0) });
-             b.tremolo(5.0f, 0.4f, 0.1f);
-         }, kLight },
-        { "Simple Echo", [](Builder& b) {
-             // the DELAY: three eighth-note echoes of the steps, with a touch of tape wobble
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(7), P(0) });
-             b.delay(k8th, 0.25f, 0.4f, 3);
-             b.set(ids::delayWobble, 0.15f);
-         }, kLight },
-        { "Small Room", [](Builder& b) {
-             // the REVERB: a small room around the steps
-             b.basic(110.0f);
-             b.steps({ P(0), P(7), P(12), P(7) });
-             b.reverb(kRoom, 0.25f, 0.4f);
-         }, kLight },
-        { "Bright EQ", [](Builder& b) {
-             // the EQ last of all: a little less low end, a little more sparkle
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(0), P(7) });
-             b.on(ids::eqOn);
-             b.set(ids::eqBand(1, "Gain"), -4.0f);  // the low shelf at 100 Hz
-             b.set(ids::eqBand(6, "On"), 1.0f);     // the high shelf at 8 kHz
-             b.set(ids::eqBand(6, "Gain"), 6.0f);
-             b.set(ids::eqBand(4, "Gain"), 3.0f);   // a little presence at 2.5 kHz
-         }, kLight },
-        { "Two Moods", [](Builder& b) {
-             // MORPH: heel down the filter is open, toe down it closes (with an expression pedal, or the slider on top)
-             b.basic(110.0f);
-             b.steps({ P(0), P(12), P(7), P(12) });
-             b.morph([](Builder& m) { m.set(ids::filter, 0.45f); });
-         }, kLight },
-        { "Quiet Splice", [](Builder& b) {
-             // SPLICE: once in a while a step starts with the faint tick of an unfaded edit
-             b.basic(110.0f);
-             b.steps({ P(0), P(7), P(12), P(7) });
-             b.splice(0, 0.2f, 8.0f, 0.0f);
-         }, kLight },
-        { "Loop When You Stop", [](Builder& b) {
-             // REPLAY: play a phrase and stop, and it loops back an octave up, a little of it clean, until you play again
-             b.basic(110.0f);
-             b.steps({ P(12), P(12), P(7), P(12) });
-             b.replay(2.0f, 0.6f, bitvibe::kReplayForever, 0.4f);
-         }, kLight },
     };
     return list;
 }

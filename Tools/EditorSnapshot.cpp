@@ -13,13 +13,11 @@
 #include "ReplayPanel.h"
 #include "SamplePanel.h"
 #include "SamplerPage.h"
-#include "BeatDog.h"
 #include "TremoloPanel.h"
 #include "PresetSearch.h"
 #include "StepEditor.h"
 #include "PresetPack.h"
 #include "EffectGraphs.h"
-#include "BeatDogMesh.h"
 #include "UiSettings.h"
 #include "PluginProcessor.h"
 
@@ -39,13 +37,13 @@ void check(bool ok, const String& what)
 
 void setValue(BitVibeProcessor& p, const char* id, float plain)
 {
-    if (auto* prm = p.apvts.getParameter(id))
+    if (auto* prm = p.parameter(id))
         prm->setValueNotifyingHost(prm->convertTo0to1(plain));
 }
 
 float getValue(BitVibeProcessor& p, const char* id)
 {
-    auto* prm = p.apvts.getParameter(id);
+    auto* prm = p.parameter(id);
     return prm->convertFrom0to1(prm->getValue());
 }
 
@@ -80,11 +78,13 @@ std::unique_ptr<BitVibeProcessor> makeProcessor()
     return p;
 }
 
-// Every parameter's normalised value, in parameter order.
+// Every parameter's normalised value, in parameter order: the host's, then the hidden settings.
 std::vector<float> allValues(BitVibeProcessor& p)
 {
     std::vector<float> v;
     for (auto* prm : p.getParameters())
+        v.push_back(prm->getValue());
+    for (auto* prm : p.hiddenHost.getParameters())
         v.push_back(prm->getValue());
     return v;
 }
@@ -175,11 +175,12 @@ void testPresetsAndMorph()
     const int slotCount = bitvibe::kFirstPackSlot + BitVibeProcessor::numPackPresets();
     check(p->getNumPrograms() == slotCount && slotCount == 142 && p->getCurrentProgram() == 0,
           "one bank of " + String(p->getNumPrograms()) + " slots (12 factory, 8 empty, the pack, the looper, the dreamy loops, light touch), starts on slot 1");
-    check(BitVibeProcessor::firstLooperSlot() == 92 && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == 107
-              && BitVibeProcessor::firstSlotOfSection("Light Touch") == 117 && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
-          "LOOPER is slots " + String(BitVibeProcessor::firstLooperSlot() + 1) + " on, DREAMY LOOPS "
-              + String(BitVibeProcessor::firstSlotOfSection("Dreamy Loops") + 1) + " on, LIGHT TOUCH "
-              + String(BitVibeProcessor::firstSlotOfSection("Light Touch") + 1) + " to " + String(slotCount));
+    check(BitVibeProcessor::firstSlotOfSection("Light Touch") == 20 && BitVibeProcessor::packSection(24) == "Light Touch"
+              && BitVibeProcessor::packSection(25).isEmpty() && BitVibeProcessor::firstLooperSlot() == 117
+              && BitVibeProcessor::firstSlotOfSection("Dreamy Loops") == 132 && BitVibeProcessor::firstSlotOfSection("nowhere") == slotCount,
+          "LIGHT TOUCH comes first, slots " + String(BitVibeProcessor::firstSlotOfSection("Light Touch") + 1) + " to 45, then the pack, LOOPER "
+              + String(BitVibeProcessor::firstLooperSlot() + 1) + " on and DREAMY LOOPS "
+              + String(BitVibeProcessor::firstSlotOfSection("Dreamy Loops") + 1) + " to " + String(slotCount));
     check(p->getProgramName(0) == "Pitch Sequence" && p->getProgramName(19) == "Init 20" && p->getProgramName(20) == BitVibeProcessor::packPresetName(0)
               && p->getProgramName(slotCount - 1) == BitVibeProcessor::packPresetName(BitVibeProcessor::numPackPresets() - 1)
               && p->getProgramName(slotCount).isEmpty(),
@@ -209,18 +210,18 @@ void testPresetsAndMorph()
     // Rig settings and switches are not part of a slot.
     setValue(*p, ids::inputGain, 7.0f);
     setValue(*p, ids::mix, 0.4f);
-    setValue(*p, ids::fxTriggers, 1.0f);
+    setValue(*p, ids::hear, 1.0f);
     setValue(*p, ids::bypass, 1.0f);
     setValue(*p, ids::tempoSync, 1.0f);
     p->setCurrentProgram(4);
     check(std::abs(getValue(*p, ids::inputGain) - 7.0f) < 0.11f && getValue(*p, ids::bypass) > 0.5f &&
               getValue(*p, ids::tempoSync) > 0.5f,
           "recall leaves input gain, bypass and host sync alone");
-    check(std::abs(getValue(*p, ids::mix) - 0.4f) < 0.01f && getValue(*p, ids::fxTriggers) > 0.5f,
-          "recall leaves the mix and the trigger-only option alone");
+    check(std::abs(getValue(*p, ids::mix) - 0.4f) < 0.01f && roundToInt(getValue(*p, ids::hear)) == 1,
+          "recall leaves the mix and HEAR alone");
     setValue(*p, ids::inputGain, 0.0f);
     setValue(*p, ids::mix, 1.0f);
-    setValue(*p, ids::fxTriggers, 0.0f);
+    setValue(*p, ids::hear, 0.0f);
     setValue(*p, ids::bypass, 0.0f);
     setValue(*p, ids::tempoSync, 0.0f);
 
@@ -388,6 +389,63 @@ void testPresetsAndMorph()
     q->setCurrentProgram(5);
     check(q->getToeUp() == up && q->getToeDown() == down, "...and recalling slot 6 brings back the sets saved with it");
 
+    // Pack presets move (LIGHT TOUCH went to the front of the pack, 25 slots): a project finds them by the name they
+    // ship with. One saved before the names were kept, when the pack began at slot 21, is found by its sound and names.
+    {
+        auto slotNamed = [](BitVibeProcessor& proc, const String& name)
+        {
+            for (int i = 0; i < proc.getNumPrograms(); ++i)
+                if (proc.getProgramName(i) == name)
+                    return i;
+            return -1;
+        };
+        auto r = makeProcessor();
+        const int arp = slotNamed(*r, "Arp Sixteen"), tape = slotNamed(*r, "Tape Brake");
+        const int moved = 25; // how far LIGHT TOUCH moved the pack's own presets
+        r->setCurrentProgram(tape);
+        setValue(*r, ids::tempo, 150.0f);
+        r->saveCurrentPreset();
+        r->setCurrentProgram(arp);
+        MemoryBlock saved;
+        r->getStateInformation(saved);
+
+        // as an older version wrote it: no names, and the slots where the pack presets were then
+        auto xml = AudioProcessor::getXmlFromBinary(saved.getData(), (int) saved.getSize());
+        xml->removeAttribute("programShipped");
+        xml->setAttribute("program", arp - moved);
+        if (auto* bankXml = xml->getChildByName("PRESETS"))
+            for (auto* node : bankXml->getChildIterator())
+                if (node->getStringAttribute("shipped").isNotEmpty())
+                {
+                    node->removeAttribute("shipped");
+                    node->setAttribute("slot", node->getIntAttribute("slot") - moved);
+                }
+        MemoryBlock old;
+        AudioProcessor::copyXmlToBinary(*xml, old);
+
+        auto s = makeProcessor();
+        s->setStateInformation(old.getData(), (int) old.getSize());
+        check(s->getCurrentProgram() == arp, "an older project on a pack preset opens on it where it is now (slot "
+                                                   + String(s->getCurrentProgram() + 1) + ", '" + s->getProgramName(s->getCurrentProgram()) + "')");
+        s->setCurrentProgram(tape);
+        const float tapeTempo = getValue(*s, ids::tempo);
+        s->setCurrentProgram(tape - moved);
+        r->setCurrentProgram(tape - moved);
+        check(std::abs(tapeTempo - 150.0f) < 0.01f && s->getProgramName(tape - moved) == r->getProgramName(tape - moved)
+                  && allValues(*s) == allValues(*r),
+              "and a pack preset it changed comes back on that preset, leaving the slot it used to be in as it ships");
+
+        // a project from now on keeps the names: even with the wrong number, it opens on the preset by name
+        auto now = AudioProcessor::getXmlFromBinary(saved.getData(), (int) saved.getSize());
+        check(now->getStringAttribute("programShipped") == "Arp Sixteen", "a project keeps the name of the preset showing");
+        now->setAttribute("program", 30);
+        MemoryBlock renumbered;
+        AudioProcessor::copyXmlToBinary(*now, renumbered);
+        auto t = makeProcessor();
+        t->setStateInformation(renumbered.getData(), (int) renumbered.getSize());
+        check(t->getCurrentProgram() == arp, "and finds it by that name wherever it has moved to");
+    }
+
     // ---- old and damaged state -----------------------------------------------------------------------
     {
         // A state from before presets and morph existed: only the parameter tree.
@@ -469,25 +527,25 @@ void testReverbParams()
             check(isFinite(byType.back()) && maxDifference(byType.back(), plain) > 0.005f, "reverb type " + String(type) + " (plate, shimmer, gated) adds a reverb");
         }
         check(maxDifference(byType[0], byType[1]) > 0.005f && maxDifference(byType[1], byType[2]) > 0.005f, "plate, shimmer and gated sound different");
-        setValue(*p, ids::reverbReversePlate, 1.0f);
+        setValue(*p, ids::reverbReverse, 1.0f);
         setValue(*p, ids::reverbType, 3.0f);
-        check(maxDifference(run(*p, in), byType[0]) > 0.005f, "the plate has its own REVERSE tick");
-        setValue(*p, ids::reverbReversePlate, 0.0f);
+        check(maxDifference(run(*p, in), byType[0]) > 0.005f, "REVERSE turns the plate around too");
+        setValue(*p, ids::reverbReverse, 0.0f);
     }
     setValue(*p, ids::reverbType, 0.0f);
 
-    // Decay and reverse: each type of reverb has its own REVERSE tick.
+    // Decay and reverse: one REVERSE tick, whatever the type.
     setValue(*p, ids::reverbDecay, 1.0f);
     const auto longTail = run(*p, in);
     check(maxDifference(longTail, reverbed) > 0.005f, "reverb decay changes the tail");
     setValue(*p, ids::reverbDecay, 0.5f);
-    setValue(*p, ids::reverbReverseRoom, 1.0f);
+    setValue(*p, ids::reverbReverse, 1.0f);
     const auto roomReversed = run(*p, in);
-    check(maxDifference(roomReversed, reverbed) > 0.01f && isFinite(roomReversed), "ticking REVERSE for Room turns the room reverb around");
+    check(maxDifference(roomReversed, reverbed) > 0.01f && isFinite(roomReversed), "ticking REVERSE turns the room reverb around");
     setValue(*p, ids::reverbType, 1.0f);
-    check(maxDifference(run(*p, in), hall) < 1.0e-6f, "the Hall reverb is not affected by the Room tick");
+    check(maxDifference(run(*p, in), hall) > 0.01f, "and the Hall with it: the tick stays on when the type changes");
     setValue(*p, ids::reverbType, 0.0f);
-    setValue(*p, ids::reverbReverseRoom, 0.0f);
+    setValue(*p, ids::reverbReverse, 0.0f);
 
     setValue(*p, ids::reverbLowCut, 2000.0f);
     setValue(*p, ids::reverbHighCut, 200.0f);
@@ -496,11 +554,13 @@ void testReverbParams()
     setValue(*p, ids::reverbLowCut, 20.0f);
     setValue(*p, ids::reverbHighCut, 20000.0f);
 
-    setValue(*p, ids::reverbLevel, -30.0f);
-    const auto quiet = run(*p, in);
-    check(maxDifference(quiet, plain) < maxDifference(reverbed, plain) * 0.2f, "reverb level -30 dB: almost nothing is added");
-
-    setValue(*p, ids::reverbLevel, 0.0f);
+    {
+        const float mixWas = getValue(*p, ids::reverbMix);
+        setValue(*p, ids::reverbMix, mixWas * 0.05f);
+        const auto quiet = run(*p, in);
+        check(maxDifference(quiet, plain) < maxDifference(reverbed, plain) * 0.2f, "REVERB MIX is the reverb's volume: a twentieth of it adds almost nothing");
+        setValue(*p, ids::reverbMix, mixWas);
+    }
     setValue(*p, ids::mix, 0.0f);
     const auto clean = run(*p, in);
     check(maxDifference(clean, in) < 1.0e-5f, "dry/wet mix 0: the clean signal comes back without reverb");
@@ -694,8 +754,7 @@ void testSoundBanks()
 }
 
 // The page's layout: one tempo control (drag or type), SIMPLE hides the stutter and loop settings under the pedal and
-// says when one is on, a shorter window in SIMPLE with DOG5 in the right-hand column, and the host sees the
-// parameters in groups, named as on the pedal.
+// says when one is on, a shorter window in SIMPLE, and the host sees the parameters in groups, named as on the pedal.
 void testLayout(const File& outDir)
 {
     std::puts("layout");
@@ -706,7 +765,7 @@ void testLayout(const File& outDir)
         for (auto* g : p->getParameterTree().getSubgroups(false))
             groups.add(g->getName());
         check(groups.size() >= 10 && groups.contains("Pedal") && groups.contains("Input and Output") && groups.contains("Sample Blend")
-                  && groups.contains("Sampler"),
+                  && !groups.contains("Sampler") && !groups.contains("Drum Beat"),
               "the host sees the parameters in groups (" + groups.joinIntoString(", ") + ")");
         int outside = 0;
         for (auto* node : p->getParameterTree())
@@ -721,15 +780,12 @@ void testLayout(const File& outDir)
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int advancedHeight = ed->getHeight();
     TempoReadout* tempo = nullptr;
-    BeatDog* dog = nullptr;
     Component* holdBox = nullptr, *input = nullptr;
     int tempoKnobs = 0;
     for (auto* c : ed->getContent().getChildren())
     {
         if (tempo == nullptr)
             tempo = dynamic_cast<TempoReadout*>(c);
-        if (dog == nullptr)
-            dog = dynamic_cast<BeatDog*>(c);
         if (auto* box = dynamic_cast<ComboBox*>(c); box != nullptr && box->getTooltip().startsWith("STUTTER TYPE"))
             holdBox = box;
         if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith("INPUT:"))
@@ -737,9 +793,9 @@ void testLayout(const File& outDir)
         if (auto* tip = dynamic_cast<TooltipClient*>(c); tip != nullptr && tip->getTooltip().startsWith("TEMPO"))
             ++tempoKnobs;
     }
-    if (tempo == nullptr || dog == nullptr || holdBox == nullptr || input == nullptr)
+    if (tempo == nullptr || holdBox == nullptr || input == nullptr)
     {
-        check(false, "the tempo read-out, DOG5, the stutter type and the INPUT knob are on the page");
+        check(false, "the tempo read-out, the stutter type and the INPUT knob are on the page");
         return;
     }
     check(tempoKnobs == 1, "one tempo control on the page (the read-out on the pedal)");
@@ -749,8 +805,8 @@ void testLayout(const File& outDir)
     tempo->onDragEnd();
     check(std::abs(p->apvts.getRawParameterValue(ids::tempo)->load() - 130.0f) < 0.05f, "dragging the tempo up 20 pixels: 120 to 130 BPM");
     setValue(*p, ids::tempo, 120.0f);
-    check(dog->getX() > 480 && input->getX() > 480 && input->getY() > dog->getBottom() && holdBox->isVisible(),
-          "ADVANCED: DOG5 and the in / out panel under the effects in the right-hand column, the stutter type showing");
+    check(input->getX() > 480 && holdBox->isVisible(),
+          "ADVANCED: the in / out panel under the effects in the right-hand column, the stutter type showing");
     check(ed->getHeight() <= 1040 - 90, "the window fits a 1080p screen at full size (" + String(ed->getHeight()) + " px)");
 
     ed->setRightMode(false);
@@ -937,31 +993,6 @@ void testThemes(const File& outDir)
         check(pedalstyle::themeIndex() == (int) all.size() - 1, "a window opened later opens in it");
     }
     {
-        // DOG5's screen in the theme's colour: no green left in its pre-rendered frames
-        BeatDog* dog = nullptr;
-        for (auto* c : ed->getContent().getChildren())
-            if (dog == nullptr)
-                dog = dynamic_cast<BeatDog*>(c);
-        if (dog != nullptr)
-        {
-            pedalstyle::setTheme(pedalstyle::findTheme("SURPLUS"));
-            const auto shot = snapshot(*dog, 1.0f);
-            const int side = dog->getHeight() - 30; // the screen (BeatDog::screenArea)
-            const Rectangle<int> screen((dog->getWidth() - side) / 2, 22, side, side);
-            int green = 0, amber = 0;
-            for (int yy = screen.getY(); yy < screen.getBottom(); ++yy)
-                for (int xx = screen.getX(); xx < screen.getRight(); ++xx)
-                {
-                    const auto px = shot.getPixelAt(xx, yy);
-                    green += px.getGreen() > 120 && px.getRed() < px.getGreen() / 2 ? 1 : 0;
-                    amber += px.getRed() > 150 && px.getBlue() < px.getRed() / 3 ? 1 : 0;
-                }
-            check(green < 20 && amber > 300, "SURPLUS: DOG5 on an amber screen (" + String(amber) + " amber pixels, " + String(green) + " green)");
-        }
-        else
-            check(false, "DOG5 is on the page");
-    }
-    {
         // WIREFRAME: the outlines glow, brighter right on a beat, and flush to the accent while the sequencer acts
         pedalstyle::setTheme(pedalstyle::findTheme("WIREFRAME"));
         pedalstyle::setPulse(0.0f);
@@ -1015,7 +1046,7 @@ void testThemes(const File& outDir)
     std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
 }
 
-// The VIEW menu (window size, DOG5), the preset list, undo and redo, Shift for fine settings, the output meter, and
+// The VIEW menu (theme, window size), the preset list, undo and redo, Shift for fine settings, the output meter, and
 // the names a screen reader hears.
 void testPageTools()
 {
@@ -1049,7 +1080,8 @@ void testPageTools()
     // VIEW
     {
         int themes = 0, ticked = 0;
-        bool hundred = false, dog = false;
+        bool hundred = false;
+        int others = 0;
         for (const auto& i : items(ed->viewMenu()))
         {
             if (i.id >= BitVibeEditor::kViewTheme && i.id < BitVibeEditor::kViewSize)
@@ -1058,33 +1090,15 @@ void testPageTools()
                 ticked += i.ticked ? 1 : 0;
             }
             hundred = hundred || (i.text == "100%" && i.ticked);
-            dog = dog || (i.id == BitVibeEditor::kViewDog && i.ticked);
+            others += i.id >= BitVibeEditor::kViewSizeEnd ? 1 : 0;
         }
-        check(themes == (int) pedalstyle::themes().size() && ticked == 1 && hundred && dog,
-              "VIEW lists the themes (the one showing ticked), the window sizes (100% ticked) and Show DOG5 (ticked)");
+        check(themes == (int) pedalstyle::themes().size() && ticked == 1 && hundred && others == 0,
+              "VIEW lists the themes (the one showing ticked) and the window sizes (100% ticked), and nothing else");
     }
     ed->viewMenuChosen(BitVibeEditor::kViewSize + 125);
     check(ed->getWidth() == roundToInt(948.0f * 1.25f) && std::abs(uisettings::loadWindowScale() - 1.25f) < 0.01f,
           "VIEW > 125%: the window is a quarter bigger (" + String(ed->getWidth()) + " wide), and remembered");
     ed->setWindowScale(1.0f);
-    auto* dog = dynamic_cast<BeatDog*>(find("DOG5"));
-    auto* input = find("INPUT:");
-    if (dog == nullptr || input == nullptr)
-    {
-        check(false, "DOG5 and the INPUT knob are on the page");
-        return;
-    }
-    const int fullHeight = ed->getHeight(), inputY = input->getY();
-    ed->viewMenuChosen(BitVibeEditor::kViewDog);
-    check(!dog->isVisible() && !uisettings::beatDogShown() && ed->getHeight() < fullHeight && input->getY() < inputY,
-          "VIEW > Show DOG5 off: it is hidden (remembered), the in / out panel moves up and the window gets shorter");
-    ed->setRightMode(false);
-    const int simpleWithout = ed->getHeight();
-    ed->setBeatDogShown(true);
-    const int simpleWith = ed->getHeight();
-    check(simpleWithout < simpleWith - 40, "in SIMPLE too: " + String(simpleWith - simpleWithout) + " px shorter without it");
-    ed->setRightMode(true);
-    check(dog->isVisible() && ed->getHeight() == fullHeight && input->getY() == inputY, "and on again: as it was");
 
     // the preset list: groups by feature (as submenus), all of them, your slots
     {
@@ -1259,7 +1273,6 @@ void testPageTools()
                   "a hand-drawn button tells a screen reader its name, that it is a button, how to press it and its tooltip");
         }
     }
-    uisettings::setBeatDogShown(true);
 }
 
 // The TREMOLO panel's curve: drag the end point to speed it up, the middle to bend it, the start to move only the start;
@@ -1374,8 +1387,8 @@ void testReplayPanel(const File& outDir)
     check(panel->getHeight() == ReplayPanel::kCollapsedHeight && ed->getHeight() == closedHeight, "switched off, it folds and the window shrinks back");
 }
 
-// The pictures of the sound: the input history beside TRIGGER, the SCOPE on DOG5's screen and the graphs of the
-// distortion, the delay and the reverb.
+// The pictures of the sound: the input history beside TRIGGER and the graphs of the distortion, the delay and the
+// reverb.
 void testVisuals(const File& outDir)
 {
     std::puts("visuals");
@@ -1383,21 +1396,19 @@ void testVisuals(const File& outDir)
     uisettings::setAdvancedRight(true);
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     LevelMeter* history = nullptr;
-    BeatDog* dog = nullptr;
     DistortionGraph* distGraph = nullptr;
     DelayGraph* delayGraph = nullptr;
     ReverbGraph* reverbGraph = nullptr;
     for (auto* c : ed->getContent().getChildren())
     {
         history = history != nullptr ? history : dynamic_cast<LevelMeter*>(c);
-        dog = dog != nullptr ? dog : dynamic_cast<BeatDog*>(c);
         distGraph = distGraph != nullptr ? distGraph : dynamic_cast<DistortionGraph*>(c);
         delayGraph = delayGraph != nullptr ? delayGraph : dynamic_cast<DelayGraph*>(c);
         reverbGraph = reverbGraph != nullptr ? reverbGraph : dynamic_cast<ReverbGraph*>(c);
     }
-    if (history == nullptr || dog == nullptr || distGraph == nullptr || delayGraph == nullptr || reverbGraph == nullptr)
+    if (history == nullptr || distGraph == nullptr || delayGraph == nullptr || reverbGraph == nullptr)
     {
-        check(false, "the input history, DOG5 and the three effect graphs are on the page");
+        check(false, "the input history and the three effect graphs are on the page");
         return;
     }
 
@@ -1425,45 +1436,6 @@ void testVisuals(const File& outDir)
         check(lit > 40 && history->getWidth() > 60,
               "and draws them lit, in a strip " + String(history->getWidth()) + " px wide (" + String(lit) + " lit pixels)");
     }
-
-    // the scope: the engine keeps the input and the output on the beat clock, the screen draws it
-    run(*p, makeInput(48000 * 2));
-    const auto& feed = p->getEngine().getScope();
-    {
-        const auto newest = feed.newest();
-        int buckets = 0, withSound = 0, withStep = 0, differ = 0;
-        for (auto i = newest - 127; i <= newest; ++i) // two beats
-            if (feed.has(i))
-            {
-                const auto b = feed.get(i);
-                ++buckets;
-                withSound += b.inHi - b.inLo > 0.01f ? 1 : 0;
-                withStep += b.step >= 0 ? 1 : 0;
-                differ += std::abs((b.outHi - b.outLo) - (b.inHi - b.inLo)) > 0.01f ? 1 : 0;
-            }
-        check(newest > 128 && buckets == 128 && withSound > 60 && withStep > 30 && differ > 10,
-              "the scope feed holds the last beats bucket by bucket (" + String(buckets) + " buckets, " + String(withSound) + " with sound, "
-                  + String(withStep) + " with a step playing, " + String(differ) + " where the output differs)");
-    }
-    dog->setScope(true);
-    check(dog->isScope() && dog->isTimerRunning() && uisettings::beatDogScope(), "SCOPE on: the screen redraws by itself, and it is remembered");
-    {
-        const auto shot = snapshot(*dog, 2.0f);
-        const int side = dog->getHeight() - 30;
-        const Rectangle<int> screen(((dog->getWidth() - side) / 2) * 2, 22 * 2, side * 2, side * 2);
-        int bright = 0;
-        for (int y = screen.getY(); y < screen.getBottom(); ++y)
-            for (int x = screen.getX(); x < screen.getRight(); ++x)
-                bright += shot.getPixelAt(x, y).getBrightness() > 0.35f ? 1 : 0;
-        check(bright > 2000, "and draws the two beats in and out (" + String(bright) + " bright pixels)");
-        const File file = outDir.getChildFile("scope.png");
-        file.deleteFile();
-        if (auto out = std::unique_ptr<FileOutputStream>(file.createOutputStream()))
-            PNGImageFormat().writeImageToStream(shot, *out);
-        std::printf("wrote %s (%d bytes)\n", file.getFullPathName().toRawUTF8(), (int) file.getSize());
-    }
-    dog->setScope(false);
-    check(!dog->isScope() && !dog->isTimerRunning() && !uisettings::beatDogScope(), "SCOPE off: the dog again, and the timer stops");
 
     // the distortion graph: more drive, a squarer wave (its peak nearer its average level)
     {
@@ -1513,7 +1485,7 @@ void testVisuals(const File& outDir)
         {
             setValue(*p, ids::reverbType, (float) type);
             setValue(*p, ids::reverbDecay, decay);
-            setValue(*p, ids::reverbReverseHall, reverse ? 1.0f : 0.0f);
+            setValue(*p, ids::reverbReverse, reverse ? 1.0f : 0.0f);
             Thread::sleep(100);
             reverbGraph->refresh();
             const auto& env = reverbGraph->getEnvelope();
@@ -1830,6 +1802,236 @@ void testPresetSearch(const File& outDir)
     check(inMenu, "and the preset menu opens it too");
 }
 
+// FAVOURITES: the star by the preset name, the list in the preset menu, the search, and what they are remembered by.
+void testFavourites(const File& outDir)
+{
+    std::puts("favourites");
+    uisettings::setFavourites({});
+    auto p = makeProcessor();
+    std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
+    check(p->favouriteSlots().empty() && !ed->isFavouriteStarLit(), "no favourites to start with, and the star is not lit");
+
+    // the menu's list of favourites, as slot numbers
+    auto menuFavourites = [&](String& title)
+    {
+        std::vector<int> found;
+        const auto menu = ed->presetMenu();
+        PopupMenu::MenuItemIterator it(menu);
+        while (it.next())
+            if (it.getItem().text.startsWith("Favourites (") && it.getItem().subMenu != nullptr)
+            {
+                title = it.getItem().text;
+                PopupMenu::MenuItemIterator inner(*it.getItem().subMenu);
+                while (inner.next())
+                    if (inner.getItem().itemID >= BitVibeEditor::kMenuSlot)
+                        found.push_back(inner.getItem().itemID - BitVibeEditor::kMenuSlot);
+            }
+        return found;
+    };
+    String title;
+    check(menuFavourites(title).empty() && title == "Favourites (0)", "the preset menu has an empty Favourites list (" + title + ")");
+
+    ed->toggleFavourite(); // slot 1
+    const int light = BitVibeProcessor::firstSlotOfSection("Light Touch");
+    p->setCurrentProgram(light);
+    ed->refreshPresetName();
+    check(!ed->isFavouriteStarLit(), "another preset's star is not lit");
+    ed->presetMenuChosen(BitVibeEditor::kMenuFavourite); // the menu's "Add to favourites"
+    check(ed->isFavouriteStarLit() && p->isFavourite(light), "the star (or the menu) makes the preset showing a favourite");
+    const auto listed = menuFavourites(title);
+    check(listed == std::vector<int> { 0, light } && title == "Favourites (2)",
+          "and the menu lists them in slot order (" + title + ")");
+    save(*ed, outDir.getChildFile("editor_favourite.png"));
+
+    // remembered for the player: another copy of the plug-in sees them
+    {
+        auto other = makeProcessor();
+        check(other->favouriteSlots() == std::vector<int> { 0, light }, "a new copy of the plug-in has the same favourites");
+    }
+    // a shipped preset is known by its shipping name: renaming it in the project keeps it a favourite
+    const String shippedKey = p->favouriteKey(0);
+    p->changeProgramName(0, "Renamed");
+    check(p->isFavourite(0) && p->favouriteKey(0) == shippedKey && shippedKey.startsWith("preset "),
+          "a renamed factory preset is still a favourite (" + shippedKey + ")");
+    // one of your own slots by its number, whatever is saved in it
+    const int own = bitvibe::kNumFactoryPresets + 1;
+    p->setFavourite(own, true);
+    p->changeProgramName(own, "My Thing");
+    check(p->isFavourite(own) && p->favouriteKey(own) == "slot " + String(own + 1), "your own slot is a favourite by its number");
+
+    // FIND A PRESET: "favourite" (or "favorite") lists them
+    ed->openPresetSearch();
+    if (auto* s = ed->getPresetSearch())
+    {
+        s->setQuery("favourite");
+        const auto found = s->results();
+        s->setQuery("favorite");
+        check(found == std::vector<int> { 0, own, light } && s->results() == found,
+              "typing \"favourite\" or \"favorite\" in FIND A PRESET lists them (" + String((int) found.size()) + ")");
+        s->handleKey(KeyPress(KeyPress::escapeKey));
+    }
+
+    // and off again
+    p->setCurrentProgram(light);
+    ed->refreshPresetName();
+    ed->toggleFavourite();
+    p->setFavourite(own, false);
+    p->setFavourite(0, false);
+    check(!ed->isFavouriteStarLit() && p->favouriteSlots().empty(), "a second click takes the star off");
+    uisettings::setFavourites({});
+}
+
+// What older versions kept as parameters of the plug-in and this one does not: the settings that are hidden from the
+// host now (the step memories, the sampler's effects and EQ, the drum beat), and what became one parameter each
+// (REVERSE, the reverb's volume, HEAR). A project and a preset file from then open with everything where it was.
+void testOlderParameters()
+{
+    std::puts("older projects and the merged parameters");
+    auto p = makeProcessor();
+    check(p->apvts.getParameter(ids::smpVolume) == nullptr && p->apvts.getParameter(ids::stepMem(0, 0)) == nullptr
+              && p->apvts.getParameter(ids::beatPlay) == nullptr && p->apvts.getParameter("smpEq1Gain") == nullptr
+              && p->hidden.getParameter(ids::smpVolume) != nullptr && p->hidden.getParameter(ids::stepMem(2, 15)) != nullptr
+              && p->hidden.getParameter(ids::beatOutput) != nullptr && p->hidden.getParameter("smpEq8Q") != nullptr,
+          "the step memories, the sampler's settings and the drum beat are hidden from the host ("
+              + String(p->hiddenHost.getParameters().size()) + " of them)");
+    check(p->hiddenHost.getParameters().size() == 48 + 7 + 42 + 5, "102 hidden settings");
+    for (const char* gone : { "fxTriggers", "seqOnly", "reverbLevel", "reverbRevRoom", "reverbRevGated", "sampleLoopOwn", "sampleLoopMix" })
+        check(p->parameter(gone) == nullptr, String(gone) + " is no longer a parameter");
+
+    // hidden settings are saved with the project
+    setValue(*p, ids::smpVolume, -6.0f);
+    setValue(*p, "smpEq4Gain", -9.0f);
+    setValue(*p, ids::beatLevel, -12.0f);
+    setValue(*p, ids::stepMem(1, 3).toRawUTF8(), 0.25f);
+    setValue(*p, ids::hear, 1.0f);
+    setValue(*p, ids::reverbReverse, 1.0f);
+    MemoryBlock saved;
+    p->getStateInformation(saved);
+    {
+        auto q = makeProcessor();
+        q->setStateInformation(saved.getData(), (int) saved.getSize());
+        check(std::abs(getValue(*q, ids::smpVolume) + 6.0f) < 0.06f && std::abs(getValue(*q, "smpEq4Gain") + 9.0f) < 0.06f
+                  && std::abs(getValue(*q, ids::beatLevel) + 12.0f) < 0.06f && std::abs(getValue(*q, ids::stepMem(1, 3).toRawUTF8()) - 0.25f) < 0.001f
+                  && roundToInt(getValue(*q, ids::hear)) == 1 && getValue(*q, ids::reverbReverse) > 0.5f,
+              "the hidden settings, HEAR and REVERSE are saved with the project");
+    }
+
+    // as an older version wrote it: the hidden settings among the plug-in's parameters, six REVERSE ticks, a reverb
+    // LEVEL in dB beside MIX, two switches for HEAR, and the loop section's own sample levels
+    auto xml = AudioProcessor::getXmlFromBinary(saved.getData(), (int) saved.getSize());
+    auto addParam = [&](const String& id, double value)
+    {
+        for (auto* e : xml->getChildWithTagNameIterator("PARAM"))
+            if (e->getStringAttribute("id") == id)
+            {
+                e->setAttribute("value", value);
+                return;
+            }
+        auto* e = xml->createNewChildElement("PARAM");
+        e->setAttribute("id", id);
+        e->setAttribute("value", value);
+    };
+    auto removeParam = [&](const String& id)
+    {
+        for (auto* e : xml->getChildWithTagNameIterator("PARAM"))
+            if (e->getStringAttribute("id") == id)
+            {
+                xml->removeChildElement(e, true);
+                return;
+            }
+    };
+    if (auto* hiddenXml = xml->getChildByName("BitVibeHidden"))
+        xml->removeChildElement(hiddenXml, true);
+    else
+        check(false, "the project holds the hidden settings in a tree of their own");
+    removeParam(ids::hear);
+    removeParam(ids::reverbReverse);
+    addParam(ids::smpVolume, -3.0);
+    addParam("smpEq2Gain", 4.0);
+    addParam(ids::beatLevel, -20.0);
+    addParam(ids::pickTriggers, 0.0);
+    addParam(ids::stepMem(0, 2), 0.5);
+    addParam(ids::reverbType, 3.0); // Plate
+    addParam("reverbRevRoom", 0.0);
+    addParam("reverbRevPlate", 1.0);
+    addParam(ids::reverbMix, 0.8);
+    addParam("reverbLevel", -6.0206);
+    addParam("fxTriggers", 1.0);
+    addParam("seqOnly", 1.0);
+    addParam("sampleLoopOwn", 1.0);
+    addParam("sampleLoopMix", 0.75);
+    MemoryBlock old;
+    AudioProcessor::copyXmlToBinary(*xml, old);
+    {
+        auto q = makeProcessor();
+        q->setStateInformation(old.getData(), (int) old.getSize());
+        check(std::abs(getValue(*q, ids::smpVolume) + 3.0f) < 0.06f && std::abs(getValue(*q, "smpEq2Gain") - 4.0f) < 0.06f
+                  && std::abs(getValue(*q, ids::beatLevel) + 20.0f) < 0.06f && getValue(*q, ids::pickTriggers) < 0.5f
+                  && std::abs(getValue(*q, ids::stepMem(0, 2).toRawUTF8()) - 0.5f) < 0.001f,
+              "an older project's sampler, drum beat and step memory settings come back as hidden settings");
+        check(std::abs(getValue(*q, "smpEq4Gain")) < 0.01f && std::abs(getValue(*q, ids::smpTone) - 0.5f) < 0.001f,
+              "and those it does not mention are at their defaults");
+        check(getValue(*q, ids::reverbReverse) > 0.5f, "REVERSE: the tick of the type the reverb was on (Plate)");
+        check(std::abs(getValue(*q, ids::reverbMix) - 0.4f) < 0.005f,
+              "the reverb's LEVEL is folded into MIX (80% at -6 dB: " + String(roundToInt(getValue(*q, ids::reverbMix) * 100.0f)) + "%)");
+        check(roundToInt(getValue(*q, ids::hear)) == 2, "HEAR: the two old switches as one choice (effect only wins)");
+        MemoryBlock again;
+        q->getStateInformation(again);
+        const auto text = AudioProcessor::getXmlFromBinary(again.getData(), (int) again.getSize())->toString();
+        check(!text.contains("reverbRevPlate") && !text.contains("fxTriggers") && !text.contains("sampleLoopOwn") && !text.contains("\"reverbLevel\""),
+              "and saved again, the old parameters are gone from the project");
+    }
+    {
+        // the other reverb types' ticks do not count, and one switch alone is CLEAN IN BETWEEN
+        addParam(ids::reverbType, 0.0);
+        addParam("seqOnly", 0.0);
+        MemoryBlock other;
+        AudioProcessor::copyXmlToBinary(*xml, other);
+        auto q = makeProcessor();
+        q->setStateInformation(other.getData(), (int) other.getSize());
+        check(getValue(*q, ids::reverbReverse) < 0.5f && roundToInt(getValue(*q, ids::hear)) == 1,
+              "a tick for another type is left behind; FX ONLY ON TRIGGERS alone is CLEAN IN BETWEEN");
+    }
+
+    // a preset file from then
+    {
+        auto file = p->exportPreset();
+        auto* effects = file->getChildByName("EFFECTS");
+        check(effects != nullptr && file->toString().contains("\"hear\"") && file->toString().contains("\"reverbReverse\"")
+                  && !file->toString().contains("smpVolume") && !file->toString().contains("beatPlay"),
+              "a preset file holds HEAR and REVERSE, and none of the sampler's or the drum beat's settings");
+        if (effects != nullptr)
+        {
+            auto setEffect = [&](const String& id, double value)
+            {
+                for (auto* e : effects->getChildWithTagNameIterator("PARAM"))
+                    if (e->getStringAttribute("id") == id)
+                    {
+                        e->setAttribute("value", value);
+                        return;
+                    }
+                auto* e = effects->createNewChildElement("PARAM");
+                e->setAttribute("id", id);
+                e->setAttribute("value", value);
+            };
+            for (auto* e : effects->getChildWithTagNameIterator("PARAM"))
+                if (e->getStringAttribute("id") == ids::hear || e->getStringAttribute("id") == ids::reverbReverse)
+                    e->setAttribute("id", "unused");
+            setEffect(ids::reverbType, 1.0); // Hall
+            setEffect("reverbRevHall", 1.0);
+            setEffect(ids::reverbMix, 0.5);
+            setEffect("reverbLevel", 6.0);
+            setEffect("fxTriggers", 1.0);
+            setEffect("seqOnly", 0.0);
+            auto q = makeProcessor();
+            String message;
+            check(q->importPreset(*file, message) && getValue(*q, ids::reverbReverse) > 0.5f && std::abs(getValue(*q, ids::reverbMix) - 0.998f) < 0.005f
+                      && roundToInt(getValue(*q, ids::hear)) == 1,
+                  "an older preset file: its Hall tick is REVERSE, MIX 50% at +6 dB is 100%, and its switch is CLEAN IN BETWEEN");
+        }
+    }
+}
+
 void testPresetPack(const File& outDir)
 {
     std::puts("preset pack");
@@ -1904,7 +2106,8 @@ void testPresetPack(const File& outDir)
     {
         auto p = makeProcessor();
         uint32_t used = 0;
-        for (int slot = BitVibeProcessor::firstSlotOfSection("Light Touch"); slot < p->getNumPrograms(); ++slot)
+        for (int slot = BitVibeProcessor::firstSlotOfSection("Light Touch");
+             BitVibeProcessor::packSection(slot - bitvibe::kFirstPackSlot) == "Light Touch"; ++slot)
             used |= p->presetFeatures(slot);
         StringArray missing;
         for (int f = 0; f < BitVibeProcessor::kNumPresetFeatures; ++f)
@@ -2070,7 +2273,7 @@ void testResizing()
     auto p = makeProcessor();
     std::unique_ptr<BitVibeEditor> ed(static_cast<BitVibeEditor*>(p->createEditor()));
     const int w = ed->getWidth(), h = ed->getHeight();
-    check(w == 948 && h == 856, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
+    check(w == 948 && h == 684, "the editor opens at its designed size (" + String(w) + " x " + String(h) + ")");
     check(ed->isResizable(), "the editor can be resized");
 
     ed->setSize(w * 3 / 2, h * 3 / 2);
@@ -2131,18 +2334,18 @@ void testRightModes(const File& outDir)
     save(*ed, outDir.getChildFile("editor_simple.png"));
     ed->setRightMode(true);
     const int advanced = countRight(*ed);
-    check(advanced == simple + 8, "ADVANCED shows the stutter's length, type and hold, the filter's type and resonance, SWING and the PING (" + String(simple) + " then " + String(advanced) + ")");
+    check(advanced == simple + 9, "ADVANCED shows LEVEL, the stutter's length, type and hold, the filter's type and resonance, SWING and the PING (" + String(simple) + " then " + String(advanced) + ")");
     check(ed->getEffectTab() == BitVibeEditor::kTabSamples, "the sample blend is the effect panel showing first");
     {
         // the effect tabs: one panel at a time, ADVANCED adds the extra controls of the one showing
         int extra = 0;
-        for (const auto& [tab, more] : { std::pair { BitVibeEditor::kTabDist, 2 }, std::pair { BitVibeEditor::kTabDelay, 2 }, std::pair { BitVibeEditor::kTabReverb, 4 } })
+        for (const auto& [tab, more] : { std::pair { BitVibeEditor::kTabDist, 2 }, std::pair { BitVibeEditor::kTabDelay, 2 }, std::pair { BitVibeEditor::kTabReverb, 3 } })
         {
             ed->setRightMode(false);
             ed->setEffectTab(tab);
             const int few = countRight(*ed);
             ed->setRightMode(true);
-            extra += countRight(*ed) - few == more + 8 ? 1 : 0;
+            extra += countRight(*ed) - few == more + 9 ? 1 : 0;
         }
         check(extra == 3, "each of the distortion, delay and reverb tabs shows its extra controls in ADVANCED (" + String(extra) + " of 3)");
         ed->setEffectTab(BitVibeEditor::kTabEq);
@@ -2311,7 +2514,6 @@ void testLoopSectionSounds()
     bank.setLoopOwnSounds(false);
     bank.setSelected({ library[0].getFileName(), library[1].getFileName() }, false);
     check(!bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == bank.getSelected(), "the loop section starts with the main list");
-    check(getValue(*p, ids::sampleLoopOwn) < 0.5f, "and with the main levels");
     bank.setSelected({ library[1].getFileName() }, true, SampleBank::kLoop);
     check(bank.loopHasOwnSounds() && bank.getSelected(SampleBank::kLoop) == StringArray { library[1].getFileName() } && bank.getSelected().size() == 2
               && bank.getNumSelected(SampleBank::kLoop) == 1,
@@ -2328,7 +2530,7 @@ void testLoopSectionSounds()
     check(q->getSampleBank().loopHasOwnSounds() && q->getSampleBank().getSelected(SampleBank::kLoop) == bank.getSelected(SampleBank::kLoop),
           "the loop list is saved with the project");
     const auto text = p->exportPreset()->toString();
-    check(text.contains("LOOP_SOUNDS") && text.contains("sampleLoopOwn"), "a preset file holds the loop list and levels");
+    check(text.contains("LOOP_SOUNDS") && !text.contains("sampleLoop"), "a preset file holds the loop list (its levels are the main ones)");
     auto r = makeProcessor();
     r->getSampleBank().setLoopOwnSounds(false, false);
     String message;
@@ -2337,10 +2539,9 @@ void testLoopSectionSounds()
                   && r->getSampleBank().getSelected(SampleBank::kLoop) == bank.getSelected(SampleBank::kLoop),
               "and importing it brings the loop list along");
     {
-        // the panel's LOOP section, with its own list and levels
+        // the panel's LOOP section, with its own list
         setValue(*p, ids::loopOn, 1.0f);
-        setValue(*p, ids::sampleLoopOwn, 1.0f);
-        setValue(*p, ids::sampleLoopMix, 0.75f);
+        setValue(*p, ids::sampleMix, 0.75f);
         PedalLookAndFeel lookAndFeel;
         SamplePanel panel(*p, lookAndFeel);
         panel.refresh();
@@ -2606,182 +2807,6 @@ void testSampler(const File& outDir)
     ed->showSampler(false);
 }
 
-// DOG5: the sprite sheet is built in, and the frame follows the beat phase (the head nods forward on the beat).
-void testBeatDog()
-{
-    std::puts("beat dog");
-    PedalLookAndFeel lookAndFeel;
-    BeatDog dog(lookAndFeel);
-    dog.setLive(false);
-    dog.setSize(456, 164);
-    check(dog.hasSheet(), "the headbang frames are built into the plug-in");
-    dog.setBeat(0.0f, 0);
-    const auto onBeat = snapshot(dog, 1.0f);
-    check(dog.getFrame() <= 1 || dog.getFrame() >= 28, "on the beat: the head pulled back, about to nod (frame " + String(dog.getFrame()) + ")");
-    dog.setBeat(0.15f, 1);
-    check(dog.getFrame() >= 16 && dog.getFrame() <= 19, "a moment later: nodded forward (frame " + String(dog.getFrame()) + ")");
-    dog.setBeat(0.5f, 2);
-    const auto between = snapshot(dog, 1.0f);
-    check(dog.getFrame() > 19 && dog.getFrame() < 31, "halfway to the next beat: pulling back (frame " + String(dog.getFrame()) + ")");
-    int changed = 0;
-    for (int y = 0; y < onBeat.getHeight(); y += 2)
-        for (int x = 0; x < onBeat.getWidth(); x += 2)
-            changed += onBeat.getPixelAt(x, y) != between.getPixelAt(x, y) ? 1 : 0;
-    check(changed > 200, "the picture moves (" + String(changed) + " pixels differ)");
-    dog.setBeat(0.9999f, 3);
-    check(dog.getFrame() >= 28, "the last moment before a beat: pulled back");
-
-    // LIVE 3D: drawn from the mesh at the frame rate chosen, both remembered
-    check(beatdog::kNumVerts > 100 && beatdog::kNumEdges > 300 && beatdog::kNumFaces > 200,
-          "the head's mesh is built in (" + String(beatdog::kNumVerts) + " points, " + String(beatdog::kNumEdges) + " lines)");
-    dog.setLive(true);
-    check(dog.isLive() && dog.isTimerRunning() && dog.getTimerInterval() <= 17, "LIVE 3D on: drawn 60 times a second by default");
-    dog.renderLiveFrame(0.0f);
-    const auto down = dog.getLiveImage().createCopy();
-    dog.renderLiveFrame(0.5f);
-    const auto up = dog.getLiveImage().createCopy();
-    int lit = 0, moved = 0;
-    for (int y = 0; y < down.getHeight(); ++y)
-        for (int x = 0; x < down.getWidth(); ++x)
-        {
-            lit += down.getPixelAt(x, y).getGreen() > 120 ? 1 : 0;
-            moved += down.getPixelAt(x, y) != up.getPixelAt(x, y) ? 1 : 0;
-        }
-    check(lit > 1500, "the live frame draws the wireframe (" + String(lit) + " bright pixels)");
-    check(moved > 1000, "and the head moves between the beat and halfway (" + String(moved) + " pixels differ)");
-    {
-        const auto start = Time::getMillisecondCounterHiRes();
-        for (int i = 0; i < 120; ++i)
-            dog.renderLiveFrame((float) i / 120.0f);
-        const double ms = (Time::getMillisecondCounterHiRes() - start) / 120.0;
-        check(ms < 8.0, "a live frame takes " + String(ms, 2) + " ms to draw (" + String(ms * 60.0 / 10.0, 1) + "% of one core at 60 FPS)");
-    }
-    dog.setBeat(0.0f, 0, 128.0f);
-    dog.renderLiveFrame(0.0f);
-    const auto liveFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_beat_dog_live.png");
-    liveFile.deleteFile();
-    if (auto out = std::unique_ptr<FileOutputStream>(liveFile.createOutputStream()))
-        PNGImageFormat().writeImageToStream(snapshot(dog, 2.0f), *out);
-    dog.setFrameRate(30);
-    check(dog.getFrameRate() == 30 && dog.getTimerInterval() >= 32 && dog.getTimerInterval() <= 34, "30 FPS: the timer runs at 30");
-    dog.setFrameRate(15);
-    check(dog.getFrameRate() == 15 && dog.getTimerInterval() >= 65 && dog.getTimerInterval() <= 68, "15 FPS");
-    check(uisettings::beatDogLive() && uisettings::beatDogFps() == 15, "both remembered for next time");
-    {
-        BeatDog another(lookAndFeel);
-        check(another.isLive() && another.getFrameRate() == 15, "a new editor opens with them");
-    }
-    dog.setLive(false);
-    check(!dog.isTimerRunning() && !uisettings::beatDogLive(), "LIVE 3D off: the timer stops, back to the pre-rendered frames");
-    dog.setFrameRate(60);
-
-    // the picked beats: the head nods on those only, pulling back in between
-    const auto near = [](float a, float b) { return std::abs(a - b) < 0.01f; };
-    dog.setBeatMask(0x1);
-    check(near(dog.motionAt(0.0f, 0, 16).since, 0.0f) && near(dog.motionAt(0.0f, 0, 16).gap, 4.0f)
-              && near(dog.motionAt(0.0f, 2, 16).between, 0.5f) && near(dog.motionAt(0.0f, 2, 16).since, 2.0f),
-          "beat 1 only: one headbang a bar");
-    dog.setBeat(0.0f, 2);
-    check(dog.getFrame() > 19 && dog.getFrame() < 31, "the pre-rendered frames follow it (frame " + String(dog.getFrame()) + " halfway through the bar)");
-    dog.setBeatMask(0x5);
-    check(near(dog.motionAt(0.0f, 2, 16).since, 0.0f) && near(dog.motionAt(0.0f, 1, 16).between, 0.5f), "beats 1 and 3: two a bar");
-    dog.setBeatMask(0x9);
-    check(near(dog.motionAt(0.0f, 0, 12).since, 0.0f) && near(dog.motionAt(0.5f, 1, 12).between, 0.5f),
-          "a beat the bar does not have (beat 4 of 3/4) is left out");
-    dog.setBeatMask(0);
-    check(dog.motionAt(0.0f, 0, 16).gap == 0.0f && near(dog.headAngle(dog.motionAt(0.3f, 2, 16)), beatdog::kHeadAngle[0]),
-          "no beats picked: the head waits, pulled back");
-    check(uisettings::beatDogBeats() == 0, "the picked beats are remembered");
-    dog.setBeatMask(0x3f);
-
-    // the sway lands on one side at a picked beat and on the other at the next
-    const float firstSide = dog.motionAt(0.0f, 0, 16).side;
-    const float midway = dog.motionAt(0.5f, 0, 16).side;
-    dog.motionAt(0.9f, 0, 16);
-    const float nextSide = dog.motionAt(0.0f, 1, 16).side;
-    check(std::abs(firstSide) > 0.99f && std::abs(midway) < 0.01f && near(nextSide, -firstSide) && dog.motionAt(0.5f, 1, 16).lift > 0.99f,
-          "the sway swings from one side to the other between picked beats, floating up in the middle");
-
-    // both move the live picture
-    const auto liveAt = [&](float smooth, float swayAmount, float phase) {
-        dog.setSmoothness(smooth);
-        dog.setSway(swayAmount);
-        dog.renderLiveFrame(phase, 0, 16);
-        return dog.getLiveImage().createCopy();
-    };
-    const auto differ = [](const Image& a, const Image& b) {
-        int n = 0;
-        for (int y = 0; y < a.getHeight(); ++y)
-            for (int x = 0; x < a.getWidth(); ++x)
-                n += a.getPixelAt(x, y) != b.getPixelAt(x, y) ? 1 : 0;
-        return n;
-    };
-    const int bySmooth = differ(liveAt(0.0f, 0.0f, 0.3f), liveAt(1.0f, 0.0f, 0.3f));
-    const int bySway = differ(liveAt(0.0f, 0.0f, 0.1f), liveAt(0.0f, 1.0f, 0.1f));
-    check(bySmooth > 500 && bySway > 500, "SMOOTH and SWAY move the live head (" + String(bySmooth) + " and " + String(bySway) + " pixels)");
-    dog.setSmoothness(0.3f);
-    dog.setSway(0.8f);
-    dog.saveSettings();
-    {
-        BeatDog another(lookAndFeel);
-        check(near(another.getSmoothness(), 0.3f) && near(another.getSway(), 0.8f), "the knobs are remembered");
-    }
-    dog.setLive(true);
-    dog.setBeatMask(0x5);
-    dog.setBeat(0.0f, 0, 128.0f);
-    dog.renderLiveFrame(0.6f, 1, 16);
-    const auto controlsFile = File::getSpecialLocation(File::tempDirectory).getChildFile("bitvibe_beat_dog_controls.png");
-    controlsFile.deleteFile();
-    if (auto out = std::unique_ptr<FileOutputStream>(controlsFile.createOutputStream()))
-        PNGImageFormat().writeImageToStream(snapshot(dog, 2.0f), *out);
-    dog.setLive(false);
-    dog.setBeatMask(0x3f);
-
-    // the headbang: on the beat the head nods forward (the snout down: the angle goes negative), then pulls back
-    // smoothly; SMOOTH sets how much quicker the nod is, down to none
-    dog.setSway(0.0f);
-    const auto angleAt = [&](float since) {
-        BeatDog::Motion m;
-        m.since = m.between = since;
-        return dog.headAngle(m);
-    };
-    const auto fastest = [&](float from, float to, float sign) { // the quickest move one way, in radians a beat
-        float most = 0.0f;
-        for (float p = from; p < to - 0.005f; p += 0.005f)
-            most = jmax(most, sign * (angleAt(p + 0.005f) - angleAt(p)) / 0.005f);
-        return most;
-    };
-    float nodSpeed[3], backSpeed[3];
-    for (int i = 0; i < 3; ++i)
-    {
-        dog.setSmoothness(0.5f * (float) i);
-        nodSpeed[i] = fastest(0.0f, 1.0f, -1.0f);
-        backSpeed[i] = fastest(0.0f, 1.0f, 1.0f);
-    }
-    dog.setSmoothness(0.0f);
-    check(nodSpeed[0] > 3.0f * backSpeed[0], "SMOOTH left: the nod forward is sudden and the pull back smooth (fastest nod "
-              + String(nodSpeed[0], 1) + ", fastest pull back " + String(backSpeed[0], 1) + " a beat)");
-    check(angleAt(0.02f) < angleAt(0.0f) && angleAt(0.15f) < angleAt(0.5f) && angleAt(0.5f) < angleAt(0.0f),
-          "on the beat the head is pulled back and starts forward, nodded right forward a moment later");
-    check(std::abs(angleAt(0.0f) - angleAt(0.9999f)) < 0.02f, "and is pulled back again for the next beat");
-    check(nodSpeed[1] < nodSpeed[0] && nodSpeed[1] > nodSpeed[2], "SMOOTH halfway: a gentler nod (fastest " + String(nodSpeed[1], 1) + ")");
-    check(std::abs(nodSpeed[2] - backSpeed[2]) < 0.05f * backSpeed[2], "SMOOTH right: forward and back alike (fastest "
-              + String(nodSpeed[2], 2) + " and " + String(backSpeed[2], 2) + ")");
-    BeatDog::Motion nodding, pulling;
-    nodding.since = 0.08f;
-    pulling.since = 0.5f;
-    const int noddingFrame = dog.frameFor(nodding), pullingFrame = dog.frameFor(pulling);
-    check(noddingFrame <= 19 && pullingFrame >= 19, "the pre-rendered frames follow it, going the right way (frames "
-              + String(noddingFrame) + " nodding, " + String(pullingFrame) + " pulling back)");
-    dog.setSmoothness(1.0f);
-    const int evenFrame = dog.frameFor(pulling);
-    dog.setSmoothness(0.0f);
-    check(evenFrame != dog.frameFor(pulling), "and SMOOTH moves them too (frame " + String(evenFrame) + " for an even bob)");
-    dog.setSmoothness(0.0f);
-    dog.setSway(0.5f);
-    dog.saveSettings();
-}
-
 // Preset files: export a sound from one plug-in, import it into another, and it sounds the same; the receiver's own
 // rig settings stay as they were; files that are not presets are refused.
 void testPresetFiles()
@@ -2842,10 +2867,10 @@ void testMixAndTriggerOnly()
     const auto full = run(*p, in);
     check(maxDifference(full, in) > 0.01, "the Lo-Fi Radio sound changes the signal (max diff " + String(maxDifference(full, in), 4) + ")");
 
-    setValue(*p, ids::fxTriggers, 1.0f);
+    setValue(*p, ids::hear, 1.0f);
     const double idle = maxDifference(run(*p, in), in);
     check(idle < 1.0e-6, "trigger-only option on, nothing triggering: the signal stays clean (max diff " + String(idle, 8) + ")");
-    setValue(*p, ids::fxTriggers, 0.0f);
+    setValue(*p, ids::hear, 0.0f);
 
     setValue(*p, ids::mix, 0.0f);
     const double zero = maxDifference(run(*p, in), in);
@@ -2866,7 +2891,7 @@ void testMixAndTriggerOnly()
     // makes no difference there.
     p->setCurrentProgram(0);
     const auto seqOff = run(*p, in);
-    setValue(*p, ids::fxTriggers, 1.0f);
+    setValue(*p, ids::hear, 1.0f);
     const auto seqOn = run(*p, in);
     check(maxDifference(seqOn, seqOff) < 1.0e-6, "a continuous sequencer keeps the effects on, so the option changes nothing");
 }
@@ -3046,7 +3071,7 @@ void testDrumMap()
     std::puts("drum map checks");
     {
         auto p = makeProcessor();
-        check(p->getParameters().size() == 377, "377 parameters (" + String(p->getParameters().size()) + ")");
+        check(p->getParameters().size() == 263, "263 parameters (" + String(p->getParameters().size()) + ")");
         const auto m = p->getDrumBeat().getModel();
         const auto s = p->getDrumBeat().getSettings();
         check(!m.loaded && s[(size_t) Drum::Kick].action == DrumAction::RestartSequence
@@ -3669,7 +3694,6 @@ int main(int argc, char** argv)
     testLoopSectionSounds();
     testSoundSubfolders();
     testSampler(outDir);
-    testBeatDog();
     testPresetFiles();
     testBeatRouting();
     testEasierStart();
@@ -3682,6 +3706,8 @@ int main(int argc, char** argv)
     testStepEditor(outDir);
     testPresetPack(outDir);
     testPresetSearch(outDir);
+    testFavourites(outDir);
+    testOlderParameters();
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL OK" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

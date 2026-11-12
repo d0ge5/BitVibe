@@ -57,6 +57,7 @@ private:
     float yForLevel(float dbfs) const;
 
     BitVibeProcessor& proc;
+    juce::AudioProcessorValueTreeState& state; // the plug-in's own parameters, or the hidden ones for the sampler's EQ
     PedalLookAndFeel& laf;
     const juce::String idPrefix, onId, outputId;
     const bool referenceTools;

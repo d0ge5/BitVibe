@@ -2,6 +2,7 @@
 
 #include "BeatRoute.h"
 #include "DrumBeat.h"
+#include "HiddenHost.h"
 #include "Engine.h"
 #include "Morph.h"
 #include "Presets.h"
@@ -37,10 +38,11 @@ inline constexpr const char* stutterLen = "stutterLen";
 inline constexpr const char* expression = "expression";
 inline constexpr const char* morph = "morph";
 inline constexpr const char* mix = "mix";
-inline constexpr const char* fxTriggers = "fxTriggers";
-inline constexpr const char* seqOnly = "seqOnly";
-// The sampler's settings (not automatable, not in presets; saved with the project): smpEq... is its own EQ, set with the
-// same panel as the main EQ (prefix "smpEq": smpEqOn, smpEqOutput, smpEq1Freq ...).
+// HEAR, what comes out: 0 = guitar + effect, 1 = clean in between (the crush and filter act only while a stutter or
+// sequence plays), 2 = effect only (the clean guitar is cut).
+inline constexpr const char* hear = "hear";
+// The sampler's settings (hidden from the host, not in presets; saved with the project): smpEq... is its own EQ, set
+// with the same panel as the main EQ (prefix "smpEq": smpEqOn, smpEqOutput, smpEq1Freq ...).
 inline constexpr const char* smpVolume = "smpVolume";
 inline constexpr const char* smpDistType = "smpDistType";
 inline constexpr const char* smpDrive = "smpDrive";
@@ -59,7 +61,6 @@ inline constexpr const char* delayHighCut = "delayHighCut";
 inline constexpr const char* delayWobble = "delayWobble";
 inline constexpr const char* reverbTone = "reverbTone";
 inline constexpr const char* reverbMix = "reverbMix";
-inline constexpr const char* reverbLevel = "reverbLevel";
 inline constexpr const char* reverbType = "reverbType";
 inline constexpr const char* reverbOn = "reverbOn";
 inline constexpr const char* sampleOn = "sampleOn";
@@ -68,12 +69,7 @@ inline constexpr const char* eqOutput = "eqOutput";
 // One set per EQ band (1..8): eq3Freq, eq3Gain, eq3Q, eq3Type, eq3On.
 inline juce::String eqBand(int band, const char* what) { return "eq" + juce::String(band + 1) + what; }
 inline constexpr const char* reverbDecay = "reverbDecay";
-inline constexpr const char* reverbReverseRoom = "reverbRevRoom";
-inline constexpr const char* reverbReverseHall = "reverbRevHall";
-inline constexpr const char* reverbReverseSpring = "reverbRevSpring";
-inline constexpr const char* reverbReversePlate = "reverbRevPlate";
-inline constexpr const char* reverbReverseShimmer = "reverbRevShimmer";
-inline constexpr const char* reverbReverseGated = "reverbRevGated";
+inline constexpr const char* reverbReverse = "reverbReverse";
 inline constexpr const char* distOn = "distOn";
 inline constexpr const char* distType = "distType";
 inline constexpr const char* distDrive = "distDrive";
@@ -91,15 +87,10 @@ inline constexpr const char* sampleMix = "sampleMix";
 inline constexpr const char* sampleChance = "sampleChance";
 inline constexpr const char* sampleBase = "sampleBase";
 inline constexpr const char* sampleMax = "sampleMax";
-// The sequence's loop section: its own sample volumes (when sampleLoopOwn is on; otherwise the ones above).
 inline constexpr const char* sampleMaxBeats = "sampleMaxBeats";
-inline constexpr const char* sampleLoopOwn = "sampleLoopOwn";
-inline constexpr const char* sampleLoopMix = "sampleLoopMix";
-inline constexpr const char* sampleLoopChance = "sampleLoopChance";
-inline constexpr const char* sampleLoopBase = "sampleLoopBase";
-inline constexpr const char* sampleLoopMax = "sampleLoopMax";
 inline constexpr const char* reverbLowCut = "reverbLowCut";
 inline constexpr const char* reverbHighCut = "reverbHighCut";
+// The drum beat of the DRUMS tab (hidden from the host, like the sampler's settings; patternLock is the beat pattern's).
 inline constexpr const char* beatPlay = "beatPlay";
 inline constexpr const char* beatLevel = "beatLevel";
 inline constexpr const char* pickTriggers = "pickTriggers";
@@ -145,7 +136,7 @@ inline juce::String step(int index) { return "step" + juce::String(index + 1); }
 // What a step controls: 0 = the sequencer type, 1..3 = pitch, filter, sample rate.
 inline juce::String stepType(int index) { return "stepType" + juce::String(index + 1); }
 // Where each sequencer type (0 = pitch, 1 = filter, 2 = sample rate) keeps the step knobs while another type is in use:
-// stepMem0_1 .. stepMem2_16. -1 = that type has not been used yet in this preset.
+// stepMem0_1 .. stepMem2_16. -1 = that type has not been used yet in this preset. Hidden from the host.
 inline juce::String stepMem(int type, int index) { return "stepMem" + juce::String(type) + "_" + juce::String(index + 1); }
 // A step's value in a lane (bitvibe::Lane): laneCrush1 .. laneStutter16.
 inline const char* laneName(int lane)
@@ -246,6 +237,15 @@ public:
     static const char* presetFeatureGroup(int feature); // "SEQUENCER", "STUTTER", "SOUND", "EFFECTS", "MORPH" or "LOOPER"
     uint32_t presetFeatures(int slot) const;
 
+    // FAVOURITES: the presets the player has starred (message thread). They are remembered for the player, beside the
+    // window size (UiSettings.h), not in the project. A factory or pack preset is known by the name it ships with, so
+    // it stays a favourite when a project renames or overwrites it, or a newer version moves it to another slot; one of
+    // your own slots (13 to 20) by its number, whatever is saved in it.
+    juce::String favouriteKey(int slot) const;
+    bool isFavourite(int slot) const;
+    void setFavourite(int slot, bool on);
+    std::vector<int> favouriteSlots() const; // in slot order
+
     // ---- the sampler ----------------------------------------------------------------------------------------
     // Records programs on this computer (see AppAudioCapture).
     AppAudioCapture& getAppCapture() { return appCapture; }
@@ -295,6 +295,16 @@ public:
     void switchSequencerType(int newType);
 
     juce::AudioProcessorValueTreeState apvts;
+    // Settings that are saved (with the project; the step memories in the preset slots too) but are no business of the
+    // host's: the step knobs each sequencer type was left with, the sampler's effects and its EQ, and the drum beat of
+    // the DRUMS tab. They are parameters of a second processor the host never meets (HiddenHost.h), so the pages'
+    // attachments, the preset slots and undo treat them like any other, and the host lists only what a player can turn.
+    HiddenHost hiddenHost;
+    juce::AudioProcessorValueTreeState hidden;
+    // A parameter by its id, whichever of the two holds it (nullptr when neither does), and the state that holds it
+    // (the plug-in's own for an id neither knows).
+    juce::RangedAudioParameter* parameter(const juce::String& id) const;
+    juce::AudioProcessorValueTreeState& stateFor(const juce::String& id);
     bitvibe::Engine& getEngine() { return engine; }
 
     // Undo and redo for the changes made on the page (not for the stutter hold, which is held down and let go).
@@ -350,6 +360,7 @@ private:
     };
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    static juce::AudioProcessorValueTreeState::ParameterLayout createHiddenLayout();
     bitvibe::Params readParams();
     bitvibe::KnobSet liveKnobs() const;
     void refreshMorphCache();
@@ -358,6 +369,9 @@ private:
     PresetSlot makeFactorySlot(int index) const; // the slot as it ships (from the cache once it is built)
     PresetSlot buildFactorySlot(int index) const;
     PresetSlot snapshotCurrent() const;
+    // Where the pack preset that shipped with this name is now (LIGHT TOUCH moved to the front of the pack, and new
+    // presets move the ones after them): slot itself when it is not a pack slot, or no pack preset has the name.
+    int packSlotNamed(const juce::String& shippedName, int slot) const;
     void applySlot(const PresetSlot&);
     void recallProgram(int index);
     // withEffects: also the effects and the pattern, as children (the project state); a preset file keeps them apart.
@@ -447,8 +461,7 @@ private:
     std::atomic<float>* pExpression = nullptr;
     std::atomic<float>* pMorph = nullptr;
     std::atomic<float>* pMix = nullptr;
-    std::atomic<float>* pFxTriggers = nullptr;
-    std::atomic<float>* pSeqOnly = nullptr;
+    std::atomic<float>* pHear = nullptr;
     std::atomic<float>* pDelayOn = nullptr;
     std::atomic<float>* pDelayTime = nullptr;
     std::atomic<float>* pDelayMix = nullptr;
@@ -459,7 +472,6 @@ private:
     std::atomic<float>* pDelayWobble = nullptr;
     std::atomic<float>* pReverbTone = nullptr;
     std::atomic<float>* pReverbMix = nullptr;
-    std::atomic<float>* pReverbLevel = nullptr;
     std::atomic<float>* pReverbType = nullptr;
     std::atomic<float>* pReverbOn = nullptr;
     std::atomic<float>* pSampleOn = nullptr;
@@ -475,7 +487,7 @@ private:
     };
     std::array<EqBandParams, bitvibe::kNumEqBands> pEqBands {};
     std::atomic<float>* pReverbDecay = nullptr;
-    std::array<std::atomic<float>*, 6> pReverbReverse {}; // one per type of reverb, in the order of the types
+    std::atomic<float>* pReverbReverse = nullptr;
     std::atomic<float>* pDistOn = nullptr;
     std::atomic<float>* pDistType = nullptr;
     std::atomic<float>* pDistDrive = nullptr;
@@ -493,12 +505,7 @@ private:
     std::atomic<float>* pSampleChance = nullptr;
     std::atomic<float>* pSampleBase = nullptr;
     std::atomic<float>* pSampleMax = nullptr;
-    std::atomic<float>* pSampleLoopOwn = nullptr;
     std::atomic<float>* pSampleMaxBeats = nullptr;
-    std::atomic<float>* pSampleLoopMix = nullptr;
-    std::atomic<float>* pSampleLoopChance = nullptr;
-    std::atomic<float>* pSampleLoopBase = nullptr;
-    std::atomic<float>* pSampleLoopMax = nullptr;
     std::atomic<float>* pReverbLowCut = nullptr;
     std::atomic<float>* pReverbHighCut = nullptr;
     std::atomic<float>* pBeatPlay = nullptr;

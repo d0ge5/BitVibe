@@ -88,38 +88,6 @@ inline void setEqClipSeconds(float seconds)
     write(*xml);
 }
 
-// DOG5: the live 3D version on or off, and its frame rate (60, 30 or 15).
-inline bool beatDogLive() { return read()->getBoolAttribute("beatDogLive", false); }
-
-inline void setBeatDogLive(bool live)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogLive", live);
-    write(*xml);
-}
-
-// DOG5's screen showing the scope instead of the dog.
-inline bool beatDogScope() { return read()->getBoolAttribute("beatDogScope", false); }
-
-inline void setBeatDogScope(bool on)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogScope", on);
-    write(*xml);
-}
-
-// DOG5 shown, or hidden from the VIEW menu.
-inline bool beatDogShown() { return read()->getBoolAttribute("beatDogShown", true); }
-
-inline void setBeatDogShown(bool shown)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogShown", shown);
-    write(*xml);
-}
-
-inline int beatDogFps() { return read()->getIntAttribute("beatDogFps", 60); }
-
 // The effect panel showing on the right-hand side (0 = the sample blend .. 5 = the EQ).
 inline int effectTab() { return juce::jlimit(0, 6, read()->getIntAttribute("effectTab", 0)); }
 
@@ -127,34 +95,6 @@ inline void setEffectTab(int tab)
 {
     auto xml = read();
     xml->setAttribute("effectTab", juce::jlimit(0, 6, tab));
-    write(*xml);
-}
-
-inline void setBeatDogFps(int fps)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogFps", fps);
-    write(*xml);
-}
-
-// DOG5's picked beats (bit n = beat n + 1), and its SMOOTH and SWAY knobs (0..1).
-inline int beatDogBeats() { return read()->getIntAttribute("beatDogBeats", 0x3f); }
-
-inline void setBeatDogBeats(int mask)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogBeats", mask);
-    write(*xml);
-}
-
-inline float beatDogSmooth() { return (float) read()->getDoubleAttribute("beatDogSmooth", 0.0); }
-inline float beatDogSway() { return (float) read()->getDoubleAttribute("beatDogSway", 0.5); }
-
-inline void setBeatDogKnobs(float smooth, float sway)
-{
-    auto xml = read();
-    xml->setAttribute("beatDogSmooth", (double) smooth);
-    xml->setAttribute("beatDogSway", (double) sway);
     write(*xml);
 }
 
@@ -166,6 +106,29 @@ inline void setThemeName(const juce::String& name)
 {
     auto xml = read();
     xml->setAttribute("theme", name);
+    write(*xml);
+}
+
+// FAVOURITES: the presets the player has starred, by the key BitVibeProcessor::favouriteKey() gives each one. They
+// belong to the player, not to a project, so every project and every copy of the plug-in on this computer shares them.
+inline juce::StringArray favourites()
+{
+    juce::StringArray keys;
+    const auto xml = read();
+    if (const auto* list = xml->getChildByName("FAVOURITES"))
+        for (const auto* e : list->getChildWithTagNameIterator("PRESET"))
+            keys.addIfNotAlreadyThere(e->getStringAttribute("key"));
+    keys.removeEmptyStrings();
+    return keys;
+}
+
+inline void setFavourites(const juce::StringArray& keys)
+{
+    auto xml = read();
+    xml->deleteAllChildElementsWithTagName("FAVOURITES");
+    auto* list = xml->createNewChildElement("FAVOURITES");
+    for (const auto& key : keys)
+        list->createNewChildElement("PRESET")->setAttribute("key", key);
     write(*xml);
 }
 

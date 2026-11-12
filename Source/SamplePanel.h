@@ -7,7 +7,7 @@
 // and where the knobs are set is remembered between sessions (see SampleBank).
 //
 // While the sequence has a loop section, MAIN and LOOP buttons choose which steps the panel sets up: the loop section
-// can have a list of its own (until then it plays the main one) and, with OWN LEVELS, volumes and chance of its own.
+// can have a list of its own (until then it plays the main one); the volumes and the chance are the same for all steps.
 class SamplePanel : public juce::Component
 {
 public:
@@ -49,8 +49,7 @@ private:
     void previewAt(float volumeDb);
     float rawValue(const char* id) const;
     bool editingLoop() const { return section == SampleBank::kLoop; }
-    bool loopOwnLevels() const;
-    // The parameter each knob is set with: the loop section's own ones while they are in use.
+    // The parameter each knob is set with.
     const char* mixId() const;
     const char* chanceId() const;
     const char* baseId() const;
@@ -70,10 +69,7 @@ private:
     PedalButton previewButton { "PREVIEW" };
     PedalButton mainButton { "OTHER STEPS" }, loopButton { "LOOP STEPS" };
     PedalButton samplerButton { "SAMPLER" };
-    juce::ToggleButton ownLevelsButton { "OWN LEVELS FOR THE LOOP" };
-    std::unique_ptr<APVTS::ButtonAttachment> ownLevelsAtt;
     int section = SampleBank::kMain;
-    bool knobsOnLoop = false; // the knobs are attached to the loop section's own parameters
     bool loopShown = false;
     juce::ToggleButton onButton { "ON" };
     std::unique_ptr<APVTS::ButtonAttachment> onAtt;
